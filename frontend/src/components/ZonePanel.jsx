@@ -173,6 +173,7 @@ export default function ZonePanel({ zoneData, zoneId = 'zone_1' }) {
     zone_id = zoneId,
     zone_type = 'general',
     feed_source = 'live_webcam',
+    camera_type = 'drone',
     people_count = 0,
     density = 0,
     risk_level = 'green',
@@ -200,7 +201,7 @@ export default function ZonePanel({ zoneData, zoneId = 'zone_1' }) {
         className="px-5 py-3 border-b flex items-center justify-between"
         style={{ borderColor: 'var(--color-border)', background: 'var(--color-surface-hover)' }}
       >
-        <div className="flex items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs font-mono-num px-2.5 py-1 rounded-lg font-bold uppercase tracking-wider border shadow-xs"
                 style={{ background: 'var(--color-bg)', borderColor: 'var(--color-border)', color: 'var(--color-text)' }}>
             ZONE: {zone_id}
@@ -215,9 +216,17 @@ export default function ZonePanel({ zoneData, zoneId = 'zone_1' }) {
           </span>
 
           <span className={`text-[10px] px-2 py-0.5 rounded font-extrabold font-mono-num uppercase tracking-wider ${
+            camera_type === 'drone'
+              ? 'bg-indigo-600 text-white'
+              : 'bg-sky-700 text-white'
+          }`}>
+            {camera_type === 'drone' ? '🛸 DRONE OVERHEAD' : '📹 CCTV ANGLE'}
+          </span>
+
+          <span className={`text-[10px] px-2 py-0.5 rounded font-extrabold font-mono-num uppercase tracking-wider ${
             isLive ? 'bg-emerald-600 text-white' : 'bg-amber-600 text-white'
           }`}>
-            {isLive ? '🔴 LIVE WEBCAM / VIDEO' : '📼 PRE-RECORDED DEMO FEED'}
+            {isLive ? '🔴 LIVE' : '📼 DEMO FEED'}
           </span>
         </div>
 

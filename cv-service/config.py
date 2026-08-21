@@ -18,6 +18,10 @@ if video_files:
 VIDEO_SOURCE_Z1: str = os.getenv("VIDEO_SOURCE_Z1", os.getenv("VIDEO_SOURCE", default_z1_video))
 VIDEO_SOURCE_Z2: str = os.getenv("VIDEO_SOURCE_Z2", os.getenv("CORRIDOR_VIDEO_SOURCE", "models/sample_corridor.mp4"))
 
+# Camera Perspective Modes: "drone" (overhead low-threshold + tiling) vs "cctv" (angled high-threshold + full frame)
+CAMERA_TYPE_Z1: str = os.getenv("CAMERA_TYPE_Z1", os.getenv("CAMERA_TYPE", "drone" if default_z1_video != "0" else "cctv")).lower()
+CAMERA_TYPE_Z2: str = os.getenv("CAMERA_TYPE_Z2", "cctv").lower()
+
 BACKEND_URL: str = os.getenv("BACKEND_URL", "http://localhost:4000/api/density")
 ZONE_ID: str = os.getenv("ZONE_ID", "zone_1")
 ZONE_TYPE: str = os.getenv("ZONE_TYPE", "general")

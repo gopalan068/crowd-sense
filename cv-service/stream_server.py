@@ -1,8 +1,8 @@
 """
 cv-service/stream_server.py
-Lightweight MJPEG HTTP Streaming Server for CrowdSense Dashboard Video Feed.
+High-Definition MJPEG HTTP Streaming Server for CrowdSense Dashboard Video Feed.
 
-Serves live processed frames at:
+Serves live HD processed frames at:
   - http://localhost:5001/stream/zone_1
   - http://localhost:5001/stream/zone_2
 """
@@ -25,19 +25,20 @@ LOCK = threading.Lock()
 
 
 def update_zone_frame(zone_id: str, frame: np.ndarray) -> None:
-    """Encode BGR frame as JPEG and update LATEST_FRAMES buffer."""
+    """Encode BGR frame as high-quality HD JPEG and update LATEST_FRAMES buffer."""
     if frame is None or frame.size == 0:
         return
     
-    # Resize to standard preview size (640x360) for low bandwidth & high FPS
+    # Preserve high-definition crisp preview (1280px width max for crisp drone clarity)
     h, w = frame.shape[:2]
-    if w > 640:
-        target_h = int(360 * (h / w))
-        preview = cv2.resize(frame, (640, target_h))
+    if w > 1280:
+        target_h = int(1280 * (h / w))
+        preview = cv2.resize(frame, (1280, target_h), interpolation=cv2.INTER_AREA)
     else:
         preview = frame
 
-    ret, jpeg = cv2.imencode(".jpg", preview, [int(cv2.IMWRITE_JPEG_QUALITY), 75])
+    # High JPEG quality (92%) to preserve small overhead crowd details
+    ret, jpeg = cv2.imencode(".jpg", preview, [int(cv2.IMWRITE_JPEG_QUALITY), 92])
     if ret:
         with LOCK:
             LATEST_FRAMES[zone_id] = jpeg.tobytes()
@@ -76,12 +77,11 @@ class MJPEGStreamHandler(BaseHTTPRequestHandler):
                     self.wfile.write(frame_bytes)
                     self.wfile.write(b"\r\n")
                 
-                time.sleep(0.06)  # ~15 FPS stream cap
+                time.sleep(0.04)  # ~25 FPS crisp HD stream cap
         except (ConnectionResetError, BrokenPipeError):
             pass
 
     def log_message(self, format, *args) -> None:
-        # Suppress HTTP access logging to keep terminal clean
         return
 
 
@@ -89,5 +89,5 @@ def start_stream_server(host: str = "0.0.0.0", port: int = 5001) -> threading.Th
     server = ThreadedHTTPServer((host, port), MJPEGStreamHandler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
-    print(f"[StreamServer] Live MJPEG Video Feeds active → http://localhost:{port}/stream/zone_1 & zone_2")
+    print(f"[StreamServer] Live HD Video Feeds active → http://localhost:{port}/stream/zone_1 & zone_2")
     return thread

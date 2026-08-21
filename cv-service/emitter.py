@@ -13,27 +13,22 @@ import requests
 import config
 
 
-# ---------------------------------------------------------------------------
-# Payload builder
-# ---------------------------------------------------------------------------
-
 def build_payload(
     count_samples: List[int],
     zone_id: Optional[str] = None,
     zone_type: Optional[str] = None,
     area_sqm: Optional[float] = None,
     feed_source: Optional[str] = None,
+    camera_type: Optional[str] = None,
     flow_convergence: float = 0.0,
     flow_turbulence: float = 0.0,
     panic_signature: bool = False,
 ) -> dict:
-    """
-    Aggregate a window of per-frame person counts into one contract-compliant payload.
-    """
     zid = zone_id or config.ZONE_ID
     ztype = zone_type or config.ZONE_TYPE
     asqm = area_sqm if area_sqm is not None else config.AREA_SQM
     fsrc = feed_source or ("live_webcam" if zid == "zone_1" else "pre_recorded")
+    ctype = camera_type or (config.CAMERA_TYPE_Z1 if zid == "zone_1" else config.CAMERA_TYPE_Z2)
 
     avg_count = round(sum(count_samples) / len(count_samples)) if count_samples else 0
     density = round(avg_count / asqm, 3)
@@ -42,6 +37,7 @@ def build_payload(
         "zone_id": zid,
         "zone_type": ztype,
         "feed_source": fsrc,
+        "camera_type": ctype,
         "people_count": avg_count,
         "area_sqm": asqm,
         "density": density,
@@ -52,29 +48,24 @@ def build_payload(
     }
 
 
-# ---------------------------------------------------------------------------
-# Emitter
-# ---------------------------------------------------------------------------
-
 def emit(
     count_samples: List[int],
     zone_id: Optional[str] = None,
     zone_type: Optional[str] = None,
     area_sqm: Optional[float] = None,
     feed_source: Optional[str] = None,
+    camera_type: Optional[str] = None,
     flow_convergence: float = 0.0,
     flow_turbulence: float = 0.0,
     panic_signature: bool = False,
 ) -> dict:
-    """
-    Build the payload, POST it to the backend, and return the payload dict.
-    """
     payload = build_payload(
         count_samples,
         zone_id=zone_id,
         zone_type=zone_type,
         area_sqm=area_sqm,
         feed_source=feed_source,
+        camera_type=camera_type,
         flow_convergence=flow_convergence,
         flow_turbulence=flow_turbulence,
         panic_signature=panic_signature,
