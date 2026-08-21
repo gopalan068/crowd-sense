@@ -1,0 +1,95 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Light-First High-Contrast Operational Tokens (Default Day Mode) ──── */
+:root {
+  /* Canvas & Layout Surfaces */
+  --color-bg:        #F8FAFC; /* Slate 50 — Light-first daylight high contrast */
+  --color-surface:   #FFFFFF; /* Pure White Card Surfaces */
+  --color-surface-hover: #F1F5F9;
+  --color-border:    #CBD5E1; /* Slate 300 — Sharp operational borders */
+  --color-text:      #0F172A; /* Slate 900 — Maximum contrast text under sunlight */
+  --color-muted:     #475569; /* Slate 600 — Readable secondary hierarchy */
+  --color-accent:    #0284C7; /* Sky 600 — Operational focus accent */
+
+  /* Semantic Risk Colors (Paired with shapes & labels) */
+  --risk-green:      #059669; /* Emerald 600 */
+  --risk-green-bg:   #ECFDF5;
+  --risk-green-border:#A7F3D0;
+
+  --risk-yellow:     #D97706; /* Amber 600 */
+  --risk-yellow-bg:  #FFFBEB;
+  --risk-yellow-border:#FDE68A;
+
+  --risk-orange:     #EA580C; /* Orange 600 */
+  --risk-orange-bg:  #FFF7ED;
+  --risk-orange-border:#FDBA74;
+
+  --risk-red:        #DC2626; /* Red 600 */
+  --risk-red-bg:     #FEF2F2;
+  --risk-red-border: #FCA5A5;
+
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+/* ── Night Mode Palette (Control Tent / Low-Light Toggle) ─────────────── */
+[data-theme="night"] {
+  --color-bg:        #0F172A; /* Slate 900 */
+  --color-surface:   #1E293B; /* Slate 800 */
+  --color-surface-hover: #334155;
+  --color-border:    #334155; /* Slate 700 */
+  --color-text:      #F8FAFC; /* Slate 50 */
+  --color-muted:     #94A3B8; /* Slate 400 */
+  --color-accent:    #38BDF8; /* Sky 400 */
+
+  --risk-green:      #10B981;
+  --risk-green-bg:   #064E3B;
+  --risk-green-border:#047857;
+
+  --risk-yellow:     #F59E0B;
+  --risk-yellow-bg:  #78350F;
+  --risk-yellow-border:#B45309;
+
+  --risk-orange:     #F97316;
+  --risk-orange-bg:  #7C2D12;
+  --risk-orange-border:#C2410C;
+
+  --risk-red:        #EF4444;
+  --risk-red-bg:     #7F1D1D;
+  --risk-red-border: #B91C1C;
+}
+
+body {
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  margin: 0;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Monospace font class for numeric data & timestamps */
+.font-mono-num {
+  font-family: ui-monospace, 'SFMono-Regular', Menlo, Monaco, Consolas, 'Courier New', monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Accessibility: Visible keyboard focus ring */
+*:focus-visible {
+  outline: 3px solid var(--color-accent) !important;
+  outline-offset: 2px !important;
+}
+
+/* Operational Alert Animations — Motion reserved strictly for state changes */
+@keyframes panic-burst {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.02); opacity: 0.92; }
+}
+.animate-panic {
+  animation: panic-burst 0.8s ease-in-out infinite;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.5; transform: scale(0.85); }
+}
+.pulse-dot { animation: pulse-dot 2s ease-in-out infinite; }

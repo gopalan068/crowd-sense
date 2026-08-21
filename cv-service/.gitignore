@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+*.pyo
+.env
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+.pytest_cache/
+
+# Model weights — ~6 MB, commit if your team wants zero-setup clones;
+# uncomment the line below to exclude from git and rely on download_model.py.
+# models/*.pt

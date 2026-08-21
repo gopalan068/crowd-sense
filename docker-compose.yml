@@ -1,0 +1,80 @@
+# docker-compose.yml — Crowd Safety System
+#
+# SCOPE: backend + frontend only.
+#
+# WHY cv-service IS NOT HERE:
+#   Docker Desktop on Mac/Windows does not reliably pass through USB webcam
+#   devices (no /dev/video0 equivalent on non-Linux hosts). Since Phase 2's
+#   acceptance check and the final demo both require a live webcam path, running
+#   cv-service inside Docker would silently break webcam support and only be
+#   discovered at the worst moment. Decision: cv-service runs NATIVELY on the
+#   host for all webcam testing; Docker covers backend + frontend + CI-style
+#   file-based CV testing.
+#
+# For CI / file-based CV testing only (no webcam), you can uncomment and adapt
+# the cv-service block at the bottom of this file.
+#
+# Start everything (backend + frontend via Docker, cv-service natively):
+#   Windows: .\start.bat
+#   Linux/Mac: ./start.sh
+
+version: '3.9'
+
+services:
+
+  # ── Backend (Express + Socket.io) ──────────────────────────────────────────
+  backend:
+    image: node:20-alpine
+    working_dir: /app
+    volumes:
+      - ./backend:/app
+    command: sh -c "npm install && npm start"
+    ports:
+      - "4000:4000"
+    environment:
+      - PORT=4000
+      - FRONTEND_URL=http://localhost:5173
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:4000/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  # ── Frontend (Vite + React + Tailwind) ─────────────────────────────────────
+  frontend:
+    image: node:20-alpine
+    working_dir: /app
+    volumes:
+      - ./frontend:/app
+    command: sh -c "npm install && npm run dev"
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_BACKEND_URL=http://localhost:4000
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  # ── CV Service (FILE-BASED ONLY — uncomment for Docker CI testing) ──────────
+  # cv-service-ci:
+  #   image: python:3.11-slim
+  #   working_dir: /app
+  #   volumes:
+  #     - ./cv-service:/app
+  #   command: sh -c "pip install -r requirements.txt && python main.py"
+  #   environment:
+  #     - VIDEO_SOURCE=/app/sample.mp4   # must exist inside cv-service/
+  #     - BACKEND_URL=http://backend:4000/api/density
+  #     - ZONE_ID=zone_1
+  #     - ZONE_TYPE=general
+  #     - AREA_SQM=20.0
+  #     - FRAME_SAMPLE_RATE=5
+  #     - MODEL_PATH=models/yolov8n.pt
+  #   depends_on:
+  #     backend:
+  #       condition: service_healthy
+  #   # No webcam device mapping — file-source only in Docker.
+  #   # For Linux hosts only, webcam can be added:
+  #   #   devices:
+  #   #     - /dev/video0:/dev/video0
