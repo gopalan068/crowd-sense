@@ -27,7 +27,7 @@ export default function AuditLogView({ logs = [], onRefresh }) {
         <div className="flex items-center gap-2">
           <span className="text-lg">📜</span>
           <h2 className="font-bold text-sm tracking-wide uppercase" style={{ color: 'var(--color-text)' }}>
-            Tamper-Evident Incident Audit Log
+            Read-Only Incident Audit Log
           </h2>
         </div>
 

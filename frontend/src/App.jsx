@@ -1,10 +1,9 @@
 /**
  * frontend/src/App.jsx
- * Multi-Zone Operational Control Dashboard Shell — Phase 3.
+ * Multi-Zone Operational Control Dashboard Shell — Phase 4.
  *
- * Renders concurrent Zone 1 (Live Webcam) and Zone 2 (Emergency Corridor) side-by-side,
- * Trend Extrapolation graph with linear ETA projection, formula breakdown modal,
- * active incident alerts, and timestamped audit log.
+ * Includes Live Operations, Post-Event Analysis, Venue Bottleneck Map,
+ * Optical Flow Metrics Gauges, Mock Dispatch Controls, and Known Limitations Drawer.
  */
 import React, { useEffect, useState } from 'react'
 import { io } from 'socket.io-client'
@@ -13,11 +12,17 @@ import ZonePanel from './components/ZonePanel'
 import AlertPanel from './components/AlertPanel'
 import AuditLogView from './components/AuditLogView'
 import TrendExtrapolationGraph from './components/TrendExtrapolationGraph'
+import FlowMetricsDisplay from './components/FlowMetricsDisplay'
+import PostEventAnalysisView from './components/PostEventAnalysisView'
+import BottleneckExitMap from './components/BottleneckExitMap'
+import MockDispatchControl from './components/MockDispatchControl'
+import KnownLimitationsModal from './components/KnownLimitationsModal'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000'
 
 export default function App() {
   const [theme, setTheme] = useState('day')
+  const [activeTab, setActiveTab] = useState('LIVE') // 'LIVE', 'POST_EVENT', 'VENUE_MAP'
   const [connected, setConnected] = useState(false)
   const [zoneMap, setZoneMap] = useState({
     zone_1: null,
@@ -26,6 +31,8 @@ export default function App() {
   const [selectedTrendZone, setSelectedTrendZone] = useState('zone_1')
   const [activeAlerts, setActiveAlerts] = useState([])
   const [auditLogs, setAuditLogs] = useState([])
+  const [mockToasts, setMockToasts] = useState([])
+  const [showLimitations, setShowLimitations] = useState(false)
   const [socketInstance, setSocketInstance] = useState(null)
 
   const toggleTheme = () => {
@@ -67,7 +74,6 @@ export default function App() {
       setConnected(false)
     })
 
-    // Listen to multi-zone density updates
     socket.on('density_update', (payload) => {
       setZoneMap((prev) => ({
         ...prev,
@@ -75,7 +81,6 @@ export default function App() {
       }))
     })
 
-    // Alert events
     socket.on('alert_triggered', (alert) => {
       console.warn('[Socket.io] Alert triggered:', alert)
       setActiveAlerts((prev) => {
@@ -95,6 +100,11 @@ export default function App() {
       console.log('[Socket.io] Alert acknowledged:', alert)
       setActiveAlerts((prev) => prev.filter((a) => a.alert_id !== alert.alert_id))
       fetchAuditLogs()
+    })
+
+    socket.on('mock_dispatch_toast', (toast) => {
+      console.log('[Socket.io] Simulation Toast:', toast)
+      setMockToasts((prev) => [toast, ...prev.slice(0, 4)])
     })
 
     fetchAuditLogs()
@@ -124,6 +134,10 @@ export default function App() {
     }
   }
 
+  const handleDismissToast = (index) => {
+    setMockToasts((prev) => prev.filter((_, i) => i !== index))
+  }
+
   const currentTrendData = zoneMap[selectedTrendZone] || zoneMap.zone_1 || zoneMap.zone_2
 
   return (
@@ -131,7 +145,7 @@ export default function App() {
 
       {/* Header Bar */}
       <header
-        className="flex flex-wrap items-center justify-between px-6 py-3 border-b shadow-xs"
+        className="flex flex-wrap items-center justify-between px-6 py-3 border-b shadow-xs gap-4"
         style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
       >
         <div className="flex items-center gap-3">
@@ -143,16 +157,44 @@ export default function App() {
           </div>
           <div>
             <h1 className="text-base font-bold tracking-tight flex items-center gap-2" style={{ color: 'var(--color-text)' }}>
-              CrowdSense <span className="text-xs font-mono-num font-normal opacity-70">Multi-Zone Ops v0.3</span>
+              CrowdSense <span className="text-xs font-mono-num font-normal opacity-70">Ops Control v0.4</span>
             </h1>
             <p className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
-              Concurrent Multi-Zone Safety &amp; Egress Monitoring System
+              Live Crowd Early-Warning, Flow Analysis &amp; Accountability System
             </p>
           </div>
         </div>
 
+        {/* Navigation Tabs */}
+        <div className="flex items-center gap-1.5 font-mono-num text-xs">
+          {[
+            { id: 'LIVE', label: '🔴 LIVE OPERATIONS' },
+            { id: 'POST_EVENT', label: '📊 POST-EVENT ANALYSIS' },
+            { id: 'VENUE_MAP', label: '🗺️ VENUE MAP & EGRESS' },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`px-3 py-1.5 rounded-lg font-bold transition-all ${
+                activeTab === tab.id
+                  ? 'bg-sky-600 text-white shadow-xs'
+                  : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
         {/* Header Right Tools */}
-        <div className="flex items-center gap-4 text-xs font-mono-num">
+        <div className="flex items-center gap-3 text-xs font-mono-num">
+          <button
+            onClick={() => setShowLimitations(true)}
+            className="px-3 py-1.5 rounded-lg border font-bold text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-950/60 border-amber-300 dark:border-amber-800 hover:bg-amber-200"
+          >
+            ℹ️ LIMITATIONS
+          </button>
+
           <div className="flex items-center gap-1.5 px-3 py-1 rounded-full border"
                style={{ background: 'var(--color-bg)', borderColor: 'var(--color-border)', color: 'var(--color-muted)' }}>
             <span
@@ -167,71 +209,89 @@ export default function App() {
             className="px-3 py-1.5 rounded-lg border font-bold shadow-xs transition-all hover:bg-slate-200 dark:hover:bg-slate-800 flex items-center gap-1.5"
             style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)', color: 'var(--color-text)' }}
           >
-            <span>{theme === 'day' ? '☀️ DAY MODE' : '🌙 NIGHT MODE'}</span>
+            <span>{theme === 'day' ? '☀️ DAY' : '🌙 NIGHT'}</span>
           </button>
         </div>
       </header>
 
-      {/* Main Multi-Zone Operations Grid */}
+      {/* Main Operations Layout */}
       <main className="flex-1 p-6 space-y-6 max-w-7xl mx-auto w-full">
 
-        {/* Row 1: Side-by-Side Multi-Zone Panels */}
-        <div className="space-y-2">
-          <div className="flex items-center justify-between px-1">
-            <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500 font-mono-num">
-              MONITORED EVENT ZONES (2 ACTIVE CONCURRENT FEEDS)
-            </h2>
-          </div>
+        {/* Mock Dispatch Toasts */}
+        <MockDispatchControl activeToasts={mockToasts} onDismissToast={handleDismissToast} />
 
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-            <ZonePanel zoneData={zoneMap.zone_1} zoneId="zone_1" />
-            <ZonePanel zoneData={zoneMap.zone_2} zoneId="zone_2" />
-          </div>
-        </div>
-
-        {/* Row 2: Active Alerts Panel + Trend Graph Selection */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          <div className="lg:col-span-4">
-            <AlertPanel alerts={activeAlerts} onAcknowledgeAlert={handleAcknowledgeAlert} />
-          </div>
-
-          <div className="lg:col-span-8 flex flex-col space-y-3">
-            {/* Zone Selector for Trend Graph */}
-            <div className="flex items-center justify-between px-2 font-mono-num text-xs">
-              <span className="font-bold uppercase tracking-wider" style={{ color: 'var(--color-muted)' }}>
-                SELECT ZONE FOR TREND EXTRAPOLATION:
-              </span>
-              <div className="flex gap-2">
-                {['zone_1', 'zone_2'].map((zId) => (
-                  <button
-                    key={zId}
-                    onClick={() => setSelectedTrendZone(zId)}
-                    className={`px-3 py-1 rounded font-bold transition-all ${
-                      selectedTrendZone === zId
-                        ? 'bg-sky-600 text-white shadow-xs'
-                        : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
-                    }`}
-                  >
-                    {zId === 'zone_1' ? 'ZONE 1 (GENERAL)' : 'ZONE 2 (CORRIDOR)'}
-                  </button>
-                ))}
+        {/* Tab 1: Live Operations */}
+        {activeTab === 'LIVE' && (
+          <div className="space-y-6">
+            {/* Multi-Zone Grid */}
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+              <div className="space-y-3">
+                <ZonePanel zoneData={zoneMap.zone_1} zoneId="zone_1" />
+                <FlowMetricsDisplay zoneData={zoneMap.zone_1} />
+              </div>
+              <div className="space-y-3">
+                <ZonePanel zoneData={zoneMap.zone_2} zoneId="zone_2" />
+                <FlowMetricsDisplay zoneData={zoneMap.zone_2} />
               </div>
             </div>
 
-            <TrendExtrapolationGraph zoneData={currentTrendData} />
-          </div>
-        </div>
+            {/* Alert Panel & Trend Graph */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+              <div className="lg:col-span-4">
+                <AlertPanel alerts={activeAlerts} onAcknowledgeAlert={handleAcknowledgeAlert} />
+              </div>
 
-        {/* Row 3: Tamper-Evident Audit Log Viewer */}
-        <AuditLogView logs={auditLogs} onRefresh={fetchAuditLogs} />
+              <div className="lg:col-span-8 flex flex-col space-y-3">
+                <div className="flex items-center justify-between px-2 font-mono-num text-xs">
+                  <span className="font-bold uppercase tracking-wider" style={{ color: 'var(--color-muted)' }}>
+                    SELECT ZONE FOR TREND EXTRAPOLATION:
+                  </span>
+                  <div className="flex gap-2">
+                    {['zone_1', 'zone_2'].map((zId) => (
+                      <button
+                        key={zId}
+                        onClick={() => setSelectedTrendZone(zId)}
+                        className={`px-3 py-1 rounded font-bold transition-all ${
+                          selectedTrendZone === zId
+                            ? 'bg-sky-600 text-white shadow-xs'
+                            : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+                        }`}
+                      >
+                        {zId === 'zone_1' ? 'ZONE 1 (GENERAL)' : 'ZONE 2 (CORRIDOR)'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <TrendExtrapolationGraph zoneData={currentTrendData} />
+              </div>
+            </div>
+
+            {/* Read-Only Audit Log */}
+            <AuditLogView logs={auditLogs} onRefresh={fetchAuditLogs} />
+          </div>
+        )}
+
+        {/* Tab 2: Post-Event Analysis */}
+        {activeTab === 'POST_EVENT' && (
+          <PostEventAnalysisView auditLogs={auditLogs} />
+        )}
+
+        {/* Tab 3: Venue Map & Egress Bottlenecks */}
+        {activeTab === 'VENUE_MAP' && (
+          <BottleneckExitMap />
+        )}
 
       </main>
+
+      {/* Known Limitations Drawer Modal */}
+      <KnownLimitationsModal isOpen={showLimitations} onClose={() => setShowLimitations(false)} />
 
       <footer
         className="text-center text-xs py-3 border-t font-mono-num"
         style={{ borderColor: 'var(--color-border)', color: 'var(--color-muted)' }}
       >
-        CrowdSense · SIH Internal Hackathon Phase 3 · Multi-Zone &amp; Trend Extrapolation Pipeline
+        CrowdSense · SIH Internal Hackathon Phase 4 · Flow Analysis &amp; Post-Event Accountability Pipeline
       </footer>
     </div>
   )

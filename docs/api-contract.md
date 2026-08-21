@@ -22,6 +22,7 @@ Pushed as a **REST POST** to `POST /api/density` once per second, per zone.
   "density": 2.1,
   "flow_convergence": 0.3,
   "flow_turbulence": 0.15,
+  "panic_signature": false,
   "timestamp": "2026-08-20T10:15:32Z"
 }
 ```
@@ -36,8 +37,9 @@ Pushed as a **REST POST** to `POST /api/density` once per second, per zone.
 | `people_count`    | integer         | CV service | **Window average** of per-frame detections in the 1-sec window        |
 | `area_sqm`        | float           | CV config  | Manually configured constant — no homography correction               |
 | `density`         | float           | CV service | `people_count / area_sqm`, rounded to 3 decimal places               |
-| `flow_convergence`| float 0–1       | CV service | **Tier 2** — optical flow placeholder (emit `0.0`)                    |
-| `flow_turbulence` | float 0–1       | CV service | **Tier 2** — optical flow placeholder (emit `0.0`)                    |
+| `flow_convergence`| float 0–1       | CV service | Farneback optical flow motion vector agreement to focal point         |
+| `flow_turbulence` | float 0–1       | CV service | Farneback optical flow circular variance of motion directions         |
+| `panic_signature` | boolean         | CV service | True when density ≥ 1.5 p/m² and sustained turbulence/acceleration surge occurs |
 | `timestamp`       | ISO 8601 UTC    | CV service | Must include `Z` suffix                                               |
 
 ---
@@ -58,6 +60,9 @@ Includes computed risk fields and normalized breakdown components that the backe
   "density_norm": 0.60,
   "trend_slope": 0.12,
   "trend_norm": 0.06,
+  "flow_convergence": 0.3,
+  "flow_turbulence": 0.15,
+  "panic_signature": false,
   "eta_to_red_min": 6,
   "timestamp": "2026-08-20T10:15:32Z"
 }
@@ -76,6 +81,9 @@ Includes computed risk fields and normalized breakdown components that the backe
 | `density_norm`  | float 0–1                                 | Backend | `min(1.0, density / red_threshold)` normalized term          |
 | `trend_slope`   | float                                     | Backend | Rate of density change (people/sqm per minute)               |
 | `trend_norm`    | float 0–1                                 | Backend | `min(1.0, max(0.0, trend_slope / 2.0))` normalized term      |
+| `flow_convergence`| float 0–1                               | Backend | Passed through from CV payload                               |
+| `flow_turbulence` | float 0–1                               | Backend | Passed through from CV payload                               |
+| `panic_signature` | boolean                                 | Backend | Passed through from CV payload; triggers panic bypass        |
 | `eta_to_red_min`| integer \| `null`                         | Backend | Linear extrapolation to red threshold                        |
 | `timestamp`     | ISO 8601 UTC                              | Backend | Passed through from CV payload                               |
 
@@ -84,7 +92,7 @@ Includes computed risk fields and normalized breakdown components that the backe
 ## 3. Alert / Audit Log Entry
 
 Written to the database when an alert is triggered, acknowledged, or escalated.
-Also surfaced in the frontend audit log viewer.
+Surfaced in the read-only incident audit log viewer.
 
 ```json
 {
@@ -101,20 +109,34 @@ Also surfaced in the frontend audit log viewer.
 }
 ```
 
-### Field Notes
+---
 
-| Field             | Type            | Notes                                                                 |
-|-------------------|-----------------|-----------------------------------------------------------------------|
-| `alert_id`        | string          | Unique identifier; backend generates (e.g. UUID or sequential)        |
-| `zone_id`         | string          | Links alert to a zone                                                 |
-| `severity`        | `"yellow"` \| `"orange"` \| `"red"` | Severity level at time of trigger                  |
-| `alert_type`      | `"graduated_escalation"` \| `"immediate_panic_alert"` | Distinguishes escalation mode |
-| `triggered_at`    | ISO 8601 UTC    | When the threshold was first breached                                 |
-| `assigned_to`     | string \| `null`| Official initially assigned; may be `null` if unassigned              |
-| `acknowledged_at` | ISO 8601 UTC \| `null` | Null until the assigned official acknowledges               |
-| `acknowledged_by` | string \| `null`| Official who acknowledged the alert; null until acknowledged         |
-| `escalated_at`    | ISO 8601 UTC \| `null` | Null until auto-escalation fires                            |
-| `escalated_to`    | string \| `null`| Official escalated to; null until escalated                           |
+## 4. Post-Event Timeline Endpoint
+
+Served at `GET /api/post-event-timeline` returning historical timeline density readings and alert milestone markers for post-event analysis.
+
+```json
+{
+  "zone_id": "zone_1",
+  "timeline": [
+    {
+      "timestamp": "2026-08-20T10:15:32Z",
+      "density": 2.1,
+      "risk_level": "yellow",
+      "risk_score": 0.58
+    }
+  ],
+  "alerts": [
+    {
+      "alert_id": "a123",
+      "zone_id": "zone_1",
+      "severity": "red",
+      "alert_type": "immediate_panic_alert",
+      "triggered_at": "2026-08-20T10:16:00Z"
+    }
+  ]
+}
+```
 
 ---
 
@@ -124,4 +146,7 @@ Also surfaced in the frontend audit log viewer.
 |------------|---------------------------------|--------|
 | 2026-08-20 | Initial contract — verbatim §9  | Scaffolding |
 | 2026-08-21 | Added alert_type & acknowledged_by to §3 | Phase 2 Backend |
+| 2026-08-21 | Added multi-zone feed_source & component breakdown | Phase 3 Backend |
+| 2026-08-21 | Added flow_convergence, flow_turbulence, panic_signature, and §4 timeline API | Phase 4 Backend |
+
 

@@ -23,6 +23,9 @@ def build_payload(
     zone_type: Optional[str] = None,
     area_sqm: Optional[float] = None,
     feed_source: Optional[str] = None,
+    flow_convergence: float = 0.0,
+    flow_turbulence: float = 0.0,
+    panic_signature: bool = False,
 ) -> dict:
     """
     Aggregate a window of per-frame person counts into one contract-compliant payload.
@@ -42,8 +45,9 @@ def build_payload(
         "people_count": avg_count,
         "area_sqm": asqm,
         "density": density,
-        "flow_convergence": 0.0,
-        "flow_turbulence": 0.0,
+        "flow_convergence": flow_convergence,
+        "flow_turbulence": flow_turbulence,
+        "panic_signature": panic_signature,
         "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
 
@@ -58,6 +62,9 @@ def emit(
     zone_type: Optional[str] = None,
     area_sqm: Optional[float] = None,
     feed_source: Optional[str] = None,
+    flow_convergence: float = 0.0,
+    flow_turbulence: float = 0.0,
+    panic_signature: bool = False,
 ) -> dict:
     """
     Build the payload, POST it to the backend, and return the payload dict.
@@ -68,6 +75,9 @@ def emit(
         zone_type=zone_type,
         area_sqm=area_sqm,
         feed_source=feed_source,
+        flow_convergence=flow_convergence,
+        flow_turbulence=flow_turbulence,
+        panic_signature=panic_signature,
     )
 
     try:
