@@ -1,8 +1,8 @@
 """
 cv-service/main.py
-Multi-Zone Computer Vision Microservice with Real-Time 1.0x Wall-Clock Playback Engine.
-
-Guarantees 1.0x real-time wall-clock video playback speed for live crowd monitoring.
+Multi-Zone Entry Point: single-threaded round-robin execution across
+Zone 1 and Zone 2 with Adaptive Drone Overhead vs CCTV Camera Modes.
+Smooth High-FPS Motion Playback Engine.
 """
 from __future__ import annotations
 
@@ -12,7 +12,6 @@ import math
 import os
 os.environ["OPENCV_LOG_LEVEL"] = "OFF"
 import sys
-import threading
 import time
 import numpy as np
 
@@ -26,84 +25,7 @@ from stream_server import start_stream_server, update_zone_frame
 
 
 def parse_source(src: str) -> int | str:
-    return int(src) if str(src).isdigit() else src
-
-
-class RealtimeVideoReader:
-    """
-    Background Threaded Video Reader that guarantees true 1.0x real-time wall-clock playback.
-    """
-
-    def __init__(self, source: int | str, name: str = "Zone") -> None:
-        self.source = source
-        self.name = name
-        self.cap = cv2.VideoCapture(source)
-        self.is_open = self.cap.isOpened()
-        self.is_file = isinstance(source, str) and not str(source).isdigit()
-
-        if self.is_file and self.is_open:
-            self.fps = self.cap.get(cv2.CAP_PROP_FPS) or 30.0
-            self.total_frames = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT) or 1)
-        else:
-            self.fps = 30.0
-            self.total_frames = 1
-
-        self.latest_frame: np.ndarray | None = None
-        self.stopped = False
-        self.lock = threading.Lock()
-        self.start_time = time.monotonic()
-
-        if self.is_open:
-            ret, frame = self.cap.read()
-            if ret:
-                self.latest_frame = frame
-            
-            self.thread = threading.Thread(target=self._reader_loop, daemon=True)
-            self.thread.start()
-
-    def _reader_loop(self) -> None:
-        frame_interval = 1.0 / self.fps
-        next_frame_time = time.monotonic()
-
-        while not self.stopped and self.is_open:
-            now = time.monotonic()
-            
-            if self.is_file:
-                # Synchronize frame position to real-time wall-clock elapsed time (1.0x speed)
-                elapsed_sec = (now - self.start_time) % (self.total_frames / self.fps)
-                target_frame = int(elapsed_sec * self.fps)
-                
-                curr_pos = int(self.cap.get(cv2.CAP_PROP_POS_FRAMES))
-                # Frame catch-up if CPU inference caused lag
-                if abs(target_frame - curr_pos) > 2:
-                    self.cap.set(cv2.CAP_PROP_POS_FRAMES, target_frame)
-
-            ret, frame = self.cap.read()
-            if ret:
-                with self.lock:
-                    self.latest_frame = frame
-            else:
-                if self.is_file:
-                    self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                    self.start_time = time.monotonic()
-
-            next_frame_time += frame_interval
-            sleep_dur = next_frame_time - time.monotonic()
-            if sleep_dur > 0:
-                time.sleep(sleep_dur)
-            else:
-                next_frame_time = time.monotonic()
-
-    def get_frame(self) -> tuple[bool, np.ndarray | None]:
-        with self.lock:
-            if self.latest_frame is not None:
-                return True, self.latest_frame.copy()
-            return False, None
-
-    def release(self) -> None:
-        self.stopped = True
-        if self.cap and self.cap.isOpened():
-            self.cap.release()
+    return int(src) if src.isdigit() else src
 
 
 def create_demo_crowd_frame(step: int) -> np.ndarray:
@@ -150,7 +72,6 @@ def main() -> None:
     print(
         f"\n[CV] Multi-Zone Engine Starting — Model: {config.MODEL_PATH}\n"
         f"     Optical Flow Enabled: {config.ENABLE_OPTICAL_FLOW}\n"
-        f"     Real-Time Mode: 1.0x Wall-Clock Clock Synchronized\n"
         f"     Zone 1: 'zone_1' ({config.ZONE_TYPE})  Source: {z1_source_str!r} Mode: [{type_z1.upper()}]\n"
         f"     Zone 2: 'zone_2' (corridor) Source: {z2_source_str!r} Mode: [{type_z2.upper()}]\n"
     )
@@ -163,9 +84,17 @@ def main() -> None:
     flow_z1 = FlowAnalyzer(config.FOCAL_POINTS["zone_1"]) if config.ENABLE_OPTICAL_FLOW else None
     flow_z2 = FlowAnalyzer(config.FOCAL_POINTS["zone_2"]) if config.ENABLE_OPTICAL_FLOW else None
 
-    # Start Realtime Threaded Video Readers
-    reader_z1 = RealtimeVideoReader(src_z1, "Zone 1")
-    reader_z2 = RealtimeVideoReader(src_z2, "Zone 2") if (isinstance(src_z2, str) and os.path.exists(src_z2)) or isinstance(src_z2, int) else None
+    cap_z1 = cv2.VideoCapture(src_z1)
+    if not cap_z1.isOpened():
+        print(f"[CV] WARN: Cannot open Zone 1 video source {z1_source_str!r}")
+
+    cap_z2 = None
+    if isinstance(src_z2, str) and os.path.exists(src_z2):
+        cap_z2 = cv2.VideoCapture(src_z2)
+    elif isinstance(src_z2, int):
+        cap_z2 = cv2.VideoCapture(src_z2)
+    else:
+        print(f"[CV] INFO: Zone 2 file {z2_source_str!r} not found — falling back to synthetic generator.")
 
     z1_samples: list[int] = []
     z2_samples: list[int] = []
@@ -180,37 +109,45 @@ def main() -> None:
     z2_start = time.monotonic()
 
     frame_step = 0
-    print("[CV] Running 1.0x Real-Time Wall-Clock monitoring loop. Press Ctrl+C to stop.\n")
+    print("[CV] Running smooth high-FPS multi-zone loop. Press Ctrl+C to stop.\n")
 
     try:
         while True:
             frame_step += 1
-            loop_start = time.monotonic()
 
             # --- Zone 1 Processing ---
-            ret1, frame1 = reader_z1.get_frame()
-            if ret1 and frame1 is not None:
-                if frame_step % config.FRAME_SAMPLE_RATE == 0:
-                    c1, z1_last_boxes = detector_z1.detect(frame1)
-                    z1_samples.append(c1)
-                    if flow_z1:
-                        curr_den = (sum(z1_samples) / len(z1_samples)) / config.AREA_SQM if z1_samples else 0.0
-                        z1_conv, z1_turb, z1_panic = flow_z1.analyze(frame1, curr_den)
-
-                annotated1 = detector_z1.annotate(frame1, z1_last_boxes)
-                update_zone_frame("zone_1", annotated1)
+            if cap_z1 and cap_z1.isOpened():
+                ret1, frame1 = cap_z1.read()
+                if ret1:
+                    if frame_step % config.FRAME_SAMPLE_RATE == 0:
+                        c1, z1_last_boxes = detector_z1.detect(frame1)
+                        z1_samples.append(c1)
+                        if flow_z1:
+                            curr_den = (sum(z1_samples) / len(z1_samples)) / config.AREA_SQM if z1_samples else 0.0
+                            z1_conv, z1_turb, z1_panic = flow_z1.analyze(frame1, curr_den)
+                    
+                    # Annotate and update stream buffer on every frame for butter-smooth 30 FPS motion
+                    annotated1 = detector_z1.annotate(frame1, z1_last_boxes)
+                    update_zone_frame("zone_1", annotated1)
+                else:
+                    if isinstance(src_z1, str):
+                        cap_z1.set(cv2.CAP_PROP_POS_FRAMES, 0)
 
             # --- Zone 2 Processing ---
-            if reader_z2:
-                ret2, frame2 = reader_z2.get_frame()
-                if ret2 and frame2 is not None:
+            if cap_z2 and cap_z2.isOpened():
+                ret2, frame2 = cap_z2.read()
+                if not ret2:
+                    if isinstance(src_z2, str):
+                        cap_z2.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                        ret2, frame2 = cap_z2.read()
+                if ret2:
                     if frame_step % config.FRAME_SAMPLE_RATE == 0:
                         c2, z2_last_boxes = detector_z2.detect(frame2)
                         z2_samples.append(c2)
                         if flow_z2:
                             curr_den = (sum(z2_samples) / len(z2_samples)) / 15.0 if z2_samples else 0.0
                             z2_conv, z2_turb, z2_panic = flow_z2.analyze(frame2, curr_den)
-
+                    
                     annotated2 = detector_z2.annotate(frame2, z2_last_boxes)
                     update_zone_frame("zone_2", annotated2)
             else:
@@ -260,17 +197,15 @@ def main() -> None:
                 z2_samples = []
                 z2_start = now
 
-            # Paced at ~30 FPS wall-clock speed
-            elapsed = time.monotonic() - loop_start
-            sleep_time = max(0.001, (1.0 / 30.0) - elapsed)
-            time.sleep(sleep_time)
+            time.sleep(0.015)  # Paced ~30 FPS smooth video playback loop
 
     except KeyboardInterrupt:
         print("\n[CV] Stopped by user.")
     finally:
-        reader_z1.release()
-        if reader_z2:
-            reader_z2.release()
+        if cap_z1:
+            cap_z1.release()
+        if cap_z2:
+            cap_z2.release()
 
 
 if __name__ == "__main__":
