@@ -1,29 +1,35 @@
 /**
  * frontend/src/components/ZonePanel.jsx
- * Operational Zone Panel displaying live camera feed, corridor stream canvas,
+ * Operational Zone Panel displaying live camera feed, real input video stream,
  * density metrics, and intensity overlay.
- *
- * Secure Context Safe: Handles cases where navigator.mediaDevices is undefined
- * (e.g. accessing via HTTP IP address like http://10.111.15.191:5173 instead of localhost).
  */
 import React, { useEffect, useRef, useState } from 'react'
 import ZoneIntensityOverlay from './ZoneIntensityOverlay'
+
+const STREAM_BASE_URL = 'http://localhost:5001/stream'
 
 export default function ZonePanel({ zoneData, zoneId = 'zone_1' }) {
   const videoRef = useRef(null)
   const canvasRef = useRef(null)
   const z1CanvasRef = useRef(null)
+
+  const [useMjpegStream, setUseMjpegStream] = useState(true)
   const [cameraActive, setCameraActive] = useState(false)
   const [cameraError, setCameraError] = useState(null)
 
   const isCorridor = zoneData?.zone_type === 'corridor' || zoneId === 'zone_2'
   const isLive = zoneData?.feed_source === 'live_webcam' || zoneId === 'zone_1'
 
-  // Safely attach browser webcam feed for Zone 1
+  // Reset MJPEG stream on zone change
+  useEffect(() => {
+    setUseMjpegStream(true)
+  }, [zoneId])
+
+  // Safely attach browser webcam feed for Zone 1 if MJPEG is unavailable
   useEffect(() => {
     let stream = null
 
-    if (isLive && !isCorridor) {
+    if (isLive && !isCorridor && !useMjpegStream) {
       if (navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === 'function') {
         navigator.mediaDevices
           .getUserMedia({ video: { width: { ideal: 640 }, height: { ideal: 480 } } })
@@ -41,7 +47,6 @@ export default function ZonePanel({ zoneData, zoneId = 'zone_1' }) {
             setCameraActive(false)
           })
       } else {
-        console.warn('[ZonePanel] navigator.mediaDevices is unavailable (requires localhost or HTTPS context)')
         setCameraError('Webcam API unavailable over HTTP IP. Open via http://localhost:5173')
         setCameraActive(false)
       }
@@ -52,11 +57,11 @@ export default function ZonePanel({ zoneData, zoneId = 'zone_1' }) {
         stream.getTracks().forEach((track) => track.stop())
       }
     }
-  }, [isLive, isCorridor])
+  }, [isLive, isCorridor, useMjpegStream])
 
-  // Canvas animation for Zone 1 fallback when webcam is inactive or over non-secure IP
+  // Canvas animation for Zone 1 fallback when webcam & MJPEG are inactive
   useEffect(() => {
-    if (isLive && !isCorridor && !cameraActive && z1CanvasRef.current) {
+    if (isLive && !isCorridor && !useMjpegStream && !cameraActive && z1CanvasRef.current) {
       const canvas = z1CanvasRef.current
       const ctx = canvas.getContext('2d')
       let animId
@@ -67,7 +72,6 @@ export default function ZonePanel({ zoneData, zoneId = 'zone_1' }) {
         ctx.fillStyle = '#090d16'
         ctx.fillRect(0, 0, canvas.width, canvas.height)
 
-        // Grid lines
         ctx.strokeStyle = 'rgba(56, 189, 248, 0.1)'
         ctx.lineWidth = 1
         for (let x = 0; x < canvas.width; x += 25) {
@@ -77,7 +81,6 @@ export default function ZonePanel({ zoneData, zoneId = 'zone_1' }) {
           ctx.stroke()
         }
 
-        // Draw crowd silhouettes for Zone 1
         const now = Date.now() * 0.0015
         for (let i = 0; i < count; i++) {
           const x = 30 + ((i * 53 + Math.sin(now + i) * 20) % (canvas.width - 60))
@@ -100,11 +103,11 @@ export default function ZonePanel({ zoneData, zoneId = 'zone_1' }) {
       render()
       return () => cancelAnimationFrame(animId)
     }
-  }, [isLive, isCorridor, cameraActive, zoneData?.people_count])
+  }, [isLive, isCorridor, useMjpegStream, cameraActive, zoneData?.people_count])
 
-  // Canvas animation for Zone 2 Emergency Corridor video simulation
+  // Canvas animation for Zone 2 Emergency Corridor simulation fallback
   useEffect(() => {
-    if (isCorridor && canvasRef.current) {
+    if (isCorridor && !useMjpegStream && canvasRef.current) {
       const canvas = canvasRef.current
       const ctx = canvas.getContext('2d')
       let animationFrameId
@@ -115,7 +118,6 @@ export default function ZonePanel({ zoneData, zoneId = 'zone_1' }) {
         ctx.fillStyle = '#0f172a'
         ctx.fillRect(0, 0, canvas.width, canvas.height)
 
-        // Draw corridor walls
         ctx.strokeStyle = '#ef4444'
         ctx.lineWidth = 3
         ctx.beginPath()
@@ -125,17 +127,6 @@ export default function ZonePanel({ zoneData, zoneId = 'zone_1' }) {
         ctx.lineTo(canvas.width - 40, canvas.height)
         ctx.stroke()
 
-        // Draw grid overlay
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)'
-        ctx.lineWidth = 1
-        for (let x = 0; x < canvas.width; x += 20) {
-          ctx.beginPath()
-          ctx.moveTo(x, 0)
-          ctx.lineTo(x, canvas.height)
-          ctx.stroke()
-        }
-
-        // Draw simulated crowd silhouettes
         const now = Date.now() * 0.002
         for (let i = 0; i < count; i++) {
           const x = 60 + ((i * 47 + Math.sin(now + i) * 15) % (canvas.width - 120))
@@ -159,7 +150,7 @@ export default function ZonePanel({ zoneData, zoneId = 'zone_1' }) {
 
       return () => cancelAnimationFrame(animationFrameId)
     }
-  }, [isCorridor, zoneData?.people_count])
+  }, [isCorridor, useMjpegStream, zoneData?.people_count])
 
   if (!zoneData) {
     return (
@@ -172,7 +163,7 @@ export default function ZonePanel({ zoneData, zoneId = 'zone_1' }) {
           Awaiting {zoneId} Stream Data…
         </p>
         <p className="text-sm mt-1" style={{ color: 'var(--color-muted)' }}>
-          Start the CV service or synthetic data generator.
+          Start the CV service (`python main.py --z1 video.mp4`).
         </p>
       </div>
     )
@@ -183,7 +174,6 @@ export default function ZonePanel({ zoneData, zoneId = 'zone_1' }) {
     zone_type = 'general',
     feed_source = 'live_webcam',
     people_count = 0,
-    area_sqm = 20,
     density = 0,
     risk_level = 'green',
     risk_score = 0,
@@ -192,6 +182,8 @@ export default function ZonePanel({ zoneData, zoneId = 'zone_1' }) {
     red_threshold = zone_type === 'corridor' ? 2.0 : 3.5,
     timestamp = new Date().toISOString(),
   } = zoneData
+
+  const streamUrl = `${STREAM_BASE_URL}/${zone_id}`
 
   return (
     <div
@@ -225,7 +217,7 @@ export default function ZonePanel({ zoneData, zoneId = 'zone_1' }) {
           <span className={`text-[10px] px-2 py-0.5 rounded font-extrabold font-mono-num uppercase tracking-wider ${
             isLive ? 'bg-emerald-600 text-white' : 'bg-amber-600 text-white'
           }`}>
-            {isLive ? '🔴 LIVE WEBCAM' : '📼 PRE-RECORDED DEMO FEED'}
+            {isLive ? '🔴 LIVE WEBCAM / VIDEO' : '📼 PRE-RECORDED DEMO FEED'}
           </span>
         </div>
 
@@ -240,8 +232,19 @@ export default function ZonePanel({ zoneData, zoneId = 'zone_1' }) {
         {/* Video / Visual Stream Box (7 Cols) */}
         <div className="lg:col-span-7 relative min-h-[260px] rounded-xl overflow-hidden bg-slate-950 border border-slate-700 flex items-center justify-center">
 
-          {/* Video Stream Element for Live Webcam (Zone 1) */}
-          {isLive && !isCorridor ? (
+          {/* MJPEG Live Stream from CV Service */}
+          {useMjpegStream ? (
+            <img
+              src={streamUrl}
+              alt={`Live Stream ${zone_id}`}
+              className="w-full h-full object-cover"
+              onError={() => {
+                console.warn(`[ZonePanel] MJPEG Stream not available at ${streamUrl}, falling back to webcam/simulator.`)
+                setUseMjpegStream(false)
+              }}
+            />
+          ) : isLive && !isCorridor ? (
+            /* Webcam Fallback */
             <div className="absolute inset-0 flex items-center justify-center bg-black">
               <video
                 ref={videoRef}
@@ -267,7 +270,7 @@ export default function ZonePanel({ zoneData, zoneId = 'zone_1' }) {
               )}
             </div>
           ) : (
-            /* Canvas Video Feed Simulation for Zone 2 Emergency Corridor */
+            /* Canvas Video Feed Simulation Fallback */
             <div className="absolute inset-0 flex items-center justify-center bg-slate-950">
               <canvas
                 ref={canvasRef}
@@ -284,7 +287,6 @@ export default function ZonePanel({ zoneData, zoneId = 'zone_1' }) {
 
         {/* Metrics Column (5 Cols) */}
         <div className="lg:col-span-5 flex flex-col justify-between space-y-3">
-          {/* Main Density Readout Card */}
           <div className="p-4 rounded-xl border flex items-center justify-between"
                style={{ background: 'var(--color-bg)', borderColor: 'var(--color-border)' }}>
             <div>
@@ -306,9 +308,7 @@ export default function ZonePanel({ zoneData, zoneId = 'zone_1' }) {
             </div>
           </div>
 
-          {/* Metric Sub-Grid */}
           <div className="grid grid-cols-2 gap-3">
-            {/* Trend Slope */}
             <div className="p-3 rounded-lg border" style={{ background: 'var(--color-bg)', borderColor: 'var(--color-border)' }}>
               <p className="text-[10px] uppercase font-bold tracking-wider" style={{ color: 'var(--color-muted)' }}>
                 Rate of Rise (Slope)
@@ -320,7 +320,6 @@ export default function ZonePanel({ zoneData, zoneId = 'zone_1' }) {
               </p>
             </div>
 
-            {/* ETA to Red */}
             <div className="p-3 rounded-lg border" style={{ background: 'var(--color-bg)', borderColor: 'var(--color-border)' }}>
               <p className="text-[10px] uppercase font-bold tracking-wider" style={{ color: 'var(--color-muted)' }}>
                 ETA to Red ({red_threshold} p/m²)
@@ -337,7 +336,6 @@ export default function ZonePanel({ zoneData, zoneId = 'zone_1' }) {
             </div>
           </div>
 
-          {/* Area & Threshold Footer */}
           <div className="p-2.5 rounded-lg border text-[11px] flex justify-between items-center font-mono-num"
                style={{ background: 'var(--color-bg)', borderColor: 'var(--color-border)', color: 'var(--color-muted)' }}>
             <span>Red Threshold Limit:</span>

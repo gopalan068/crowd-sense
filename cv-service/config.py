@@ -3,11 +3,21 @@ cv-service/config.py
 All configuration is loaded from environment variables (or a .env file via dotenv).
 """
 import os
+from glob import glob
 from dotenv import load_dotenv
 
 load_dotenv()
 
-VIDEO_SOURCE: str = os.getenv("VIDEO_SOURCE", "0")
+# Automatically discover custom video in cv-service/videos/ if available
+default_z1_video = "0"
+video_files = glob("videos/*.mp4") + glob("videos/*.avi") + glob("videos/*.mov")
+if video_files:
+    default_z1_video = video_files[0].replace("\\", "/")
+
+# Per-zone video sources (webcam index "0" or file path to real crowd video .mp4/.avi)
+VIDEO_SOURCE_Z1: str = os.getenv("VIDEO_SOURCE_Z1", os.getenv("VIDEO_SOURCE", default_z1_video))
+VIDEO_SOURCE_Z2: str = os.getenv("VIDEO_SOURCE_Z2", os.getenv("CORRIDOR_VIDEO_SOURCE", "models/sample_corridor.mp4"))
+
 BACKEND_URL: str = os.getenv("BACKEND_URL", "http://localhost:4000/api/density")
 ZONE_ID: str = os.getenv("ZONE_ID", "zone_1")
 ZONE_TYPE: str = os.getenv("ZONE_TYPE", "general")

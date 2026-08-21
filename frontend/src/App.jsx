@@ -1,9 +1,6 @@
 /**
  * frontend/src/App.jsx
- * Multi-Zone Operational Control Dashboard Shell — Phase 4.
- *
- * Includes Live Operations, Post-Event Analysis, Venue Bottleneck Map,
- * Optical Flow Metrics Gauges, Mock Dispatch Controls, and Known Limitations Drawer.
+ * Multi-Zone Operational Control Dashboard Shell — Phase 5 Hardened Edition.
  */
 import React, { useEffect, useState } from 'react'
 import { io } from 'socket.io-client'
@@ -17,13 +14,15 @@ import PostEventAnalysisView from './components/PostEventAnalysisView'
 import BottleneckExitMap from './components/BottleneckExitMap'
 import MockDispatchControl from './components/MockDispatchControl'
 import KnownLimitationsModal from './components/KnownLimitationsModal'
+import ConnectionStatusBanner from './components/ConnectionStatusBanner'
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000'
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || `${window.location.protocol}//${window.location.hostname}:4000`
 
 export default function App() {
   const [theme, setTheme] = useState('day')
-  const [activeTab, setActiveTab] = useState('LIVE') // 'LIVE', 'POST_EVENT', 'VENUE_MAP'
+  const [activeTab, setActiveTab] = useState('LIVE')
   const [connected, setConnected] = useState(false)
+  const [reconnectCount, setReconnectCount] = useState(0)
   const [zoneMap, setZoneMap] = useState({
     zone_1: null,
     zone_2: null,
@@ -66,12 +65,17 @@ export default function App() {
     socket.on('connect', () => {
       console.log('[Socket.io] Connected to backend')
       setConnected(true)
+      setReconnectCount(0)
       fetchAuditLogs()
     })
 
     socket.on('disconnect', () => {
       console.log('[Socket.io] Disconnected from backend')
       setConnected(false)
+    })
+
+    socket.io.on('reconnect_attempt', (attempt) => {
+      setReconnectCount(attempt)
     })
 
     socket.on('density_update', (payload) => {
@@ -82,7 +86,6 @@ export default function App() {
     })
 
     socket.on('alert_triggered', (alert) => {
-      console.warn('[Socket.io] Alert triggered:', alert)
       setActiveAlerts((prev) => {
         const exists = prev.some((a) => a.alert_id === alert.alert_id)
         return exists ? prev.map((a) => (a.alert_id === alert.alert_id ? alert : a)) : [alert, ...prev]
@@ -91,19 +94,16 @@ export default function App() {
     })
 
     socket.on('alert_escalated', (alert) => {
-      console.warn('[Socket.io] Alert escalated:', alert)
       setActiveAlerts((prev) => prev.map((a) => (a.alert_id === alert.alert_id ? alert : a)))
       fetchAuditLogs()
     })
 
     socket.on('alert_acknowledged', (alert) => {
-      console.log('[Socket.io] Alert acknowledged:', alert)
       setActiveAlerts((prev) => prev.filter((a) => a.alert_id !== alert.alert_id))
       fetchAuditLogs()
     })
 
     socket.on('mock_dispatch_toast', (toast) => {
-      console.log('[Socket.io] Simulation Toast:', toast)
       setMockToasts((prev) => [toast, ...prev.slice(0, 4)])
     })
 
@@ -113,6 +113,12 @@ export default function App() {
       socket.disconnect()
     }
   }, [])
+
+  const handleManualReconnect = () => {
+    if (socketInstance) {
+      socketInstance.connect()
+    }
+  }
 
   const handleAcknowledgeAlert = async (alertId) => {
     if (socketInstance) {
@@ -143,6 +149,13 @@ export default function App() {
   return (
     <div className="min-h-screen flex flex-col font-sans transition-colors duration-200" style={{ background: 'var(--color-bg)' }}>
 
+      {/* Global Connection Error Banner */}
+      <ConnectionStatusBanner
+        connected={connected}
+        reconnectAttempts={reconnectCount}
+        onRetry={handleManualReconnect}
+      />
+
       {/* Header Bar */}
       <header
         className="flex flex-wrap items-center justify-between px-6 py-3 border-b shadow-xs gap-4"
@@ -157,12 +170,18 @@ export default function App() {
           </div>
           <div>
             <h1 className="text-base font-bold tracking-tight flex items-center gap-2" style={{ color: 'var(--color-text)' }}>
-              CrowdSense <span className="text-xs font-mono-num font-normal opacity-70">Ops Control v0.4</span>
+              CrowdSense <span className="text-xs font-mono-num font-normal opacity-70">Ops Control v0.5</span>
             </h1>
             <p className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
-              Live Crowd Early-Warning, Flow Analysis &amp; Accountability System
+              Flow-Aware Crowd Early-Warning &amp; Automated Escalation System
             </p>
           </div>
+        </div>
+
+        {/* Privacy Disclosure Badge */}
+        <div className="hidden lg:flex items-center gap-2 px-3 py-1 rounded-full border text-[11px] font-mono-num"
+             style={{ background: 'var(--color-bg)', borderColor: 'var(--color-border)', color: 'var(--color-muted)' }}>
+          <span>🛡️ Anonymous Headcount Only — Zero Facial Recognition / No Biometric Storage</span>
         </div>
 
         {/* Navigation Tabs */}
@@ -186,7 +205,7 @@ export default function App() {
           ))}
         </div>
 
-        {/* Header Right Tools */}
+        {/* Header Tools */}
         <div className="flex items-center gap-3 text-xs font-mono-num">
           <button
             onClick={() => setShowLimitations(true)}
@@ -214,16 +233,15 @@ export default function App() {
         </div>
       </header>
 
-      {/* Main Operations Layout */}
+      {/* Main Operations Shell */}
       <main className="flex-1 p-6 space-y-6 max-w-7xl mx-auto w-full">
 
-        {/* Mock Dispatch Toasts */}
+        {/* Mock Dispatch Simulation Toasts */}
         <MockDispatchControl activeToasts={mockToasts} onDismissToast={handleDismissToast} />
 
         {/* Tab 1: Live Operations */}
         {activeTab === 'LIVE' && (
           <div className="space-y-6">
-            {/* Multi-Zone Grid */}
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
               <div className="space-y-3">
                 <ZonePanel zoneData={zoneMap.zone_1} zoneId="zone_1" />
@@ -235,7 +253,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* Alert Panel & Trend Graph */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
               <div className="lg:col-span-4">
                 <AlertPanel alerts={activeAlerts} onAcknowledgeAlert={handleAcknowledgeAlert} />
@@ -267,7 +284,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* Read-Only Audit Log */}
             <AuditLogView logs={auditLogs} onRefresh={fetchAuditLogs} />
           </div>
         )}
@@ -284,14 +300,14 @@ export default function App() {
 
       </main>
 
-      {/* Known Limitations Drawer Modal */}
+      {/* Known Limitations Drawer */}
       <KnownLimitationsModal isOpen={showLimitations} onClose={() => setShowLimitations(false)} />
 
       <footer
         className="text-center text-xs py-3 border-t font-mono-num"
         style={{ borderColor: 'var(--color-border)', color: 'var(--color-muted)' }}
       >
-        CrowdSense · SIH Internal Hackathon Phase 4 · Flow Analysis &amp; Post-Event Accountability Pipeline
+        CrowdSense · SIH Hackathon Phase 5 · Flow-Aware Early-Warning &amp; Automated Escalation System
       </footer>
     </div>
   )
