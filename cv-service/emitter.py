@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from typing import List
+from typing import List, Optional
 
 import requests
 
@@ -17,29 +17,31 @@ import config
 # Payload builder
 # ---------------------------------------------------------------------------
 
-def build_payload(count_samples: List[int]) -> dict:
+def build_payload(
+    count_samples: List[int],
+    zone_id: Optional[str] = None,
+    zone_type: Optional[str] = None,
+    area_sqm: Optional[float] = None,
+    feed_source: Optional[str] = None,
+) -> dict:
     """
     Aggregate a window of per-frame person counts into one contract-compliant payload.
-
-    Aggregation method: WINDOW AVERAGE.
-    Rationale: averaging the ~6 samples collected in a 1-second window smooths
-    per-frame detection jitter (YOLO sometimes misses one person for a single
-    frame). The alternative — last-sample — is jumpier and would feed noisier
-    density readings into Phase 3's ETA-to-red linear projection, amplifying
-    false spikes. Max would similarly over-react to single-frame outliers.
-    Averaging is pinned here as an explicit contract, not left to discretion.
     """
+    zid = zone_id or config.ZONE_ID
+    ztype = zone_type or config.ZONE_TYPE
+    asqm = area_sqm if area_sqm is not None else config.AREA_SQM
+    fsrc = feed_source or ("live_webcam" if zid == "zone_1" else "pre_recorded")
+
     avg_count = round(sum(count_samples) / len(count_samples)) if count_samples else 0
-    density = round(avg_count / config.AREA_SQM, 3)
+    density = round(avg_count / asqm, 3)
 
     return {
-        "zone_id": config.ZONE_ID,
-        "zone_type": config.ZONE_TYPE,
+        "zone_id": zid,
+        "zone_type": ztype,
+        "feed_source": fsrc,
         "people_count": avg_count,
-        "area_sqm": config.AREA_SQM,
+        "area_sqm": asqm,
         "density": density,
-        # flow_convergence / flow_turbulence: Tier 2 (optical flow).
-        # Emit 0.0 as placeholder so the contract shape is always fully populated.
         "flow_convergence": 0.0,
         "flow_turbulence": 0.0,
         "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -50,21 +52,29 @@ def build_payload(count_samples: List[int]) -> dict:
 # Emitter
 # ---------------------------------------------------------------------------
 
-def emit(count_samples: List[int]) -> dict:
+def emit(
+    count_samples: List[int],
+    zone_id: Optional[str] = None,
+    zone_type: Optional[str] = None,
+    area_sqm: Optional[float] = None,
+    feed_source: Optional[str] = None,
+) -> dict:
     """
-    Build the payload, POST it to the backend, and return the payload dict
-    (so main.py can log it regardless of whether the POST succeeded).
-
-    POST failures are logged as warnings — the CV service should keep running
-    even if the backend is briefly unavailable (e.g. during startup sequencing).
+    Build the payload, POST it to the backend, and return the payload dict.
     """
-    payload = build_payload(count_samples)
+    payload = build_payload(
+        count_samples,
+        zone_id=zone_id,
+        zone_type=zone_type,
+        area_sqm=area_sqm,
+        feed_source=feed_source,
+    )
 
     try:
         resp = requests.post(
             config.BACKEND_URL,
             json=payload,
-            timeout=2,  # don't block the 1-sec emission loop on a slow backend
+            timeout=2,
         )
         resp.raise_for_status()
     except requests.exceptions.ConnectionError:

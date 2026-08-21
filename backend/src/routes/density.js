@@ -1,12 +1,8 @@
 /**
  * backend/src/routes/density.js
- * POST /api/density — receives a density reading from the CV service,
+ * POST /api/density — receives density readings from CV service,
  * computes composite risk & trend, evaluates thresholds & escalation timers,
  * logs to audit DB, and emits Backend→Frontend shape over Socket.io.
- *
- * Contract:
- *   CV → Backend: docs/api-contract.md §1
- *   Backend → Frontend: docs/api-contract.md §2
  */
 'use strict';
 
@@ -39,13 +35,13 @@ router.post('/density', async (req, res) => {
     });
   }
 
-  const { zone_id, zone_type, density, flow_convergence, flow_turbulence, timestamp } = payload;
+  const { zone_id, zone_type, density, flow_convergence, flow_turbulence, timestamp, feed_source } = payload;
 
-  // 1. Calculate trend slope (people/m² per minute)
-  const trend_slope = updateAndGetTrendSlope(zone_id, density);
+  // 1. Calculate trend slope (people/m² per minute) and fetch rolling history
+  const { slope: trend_slope, history: historyArray } = updateAndGetTrendSlope(zone_id, density);
   payload.trend_slope = trend_slope;
 
-  // 2. Compute composite risk score matching Blueprint Section 5 formula signature
+  // 2. Compute composite risk score matching Blueprint Section 5 formula
   const riskResult = computeRiskScore(
     density,
     trend_slope,
@@ -58,28 +54,32 @@ router.post('/density', async (req, res) => {
   const io = req.app.get('io');
   await processZoneAlerts(riskResult, payload, io);
 
-  // 4. Construct exact Backend → Frontend Socket.io payload (docs/api-contract.md §2)
+  // 4. Construct Backend → Frontend Socket.io payload (docs/api-contract.md §2)
   const socketPayload = {
     zone_id,
+    zone_type,
+    feed_source: feed_source || (zone_id === 'zone_1' ? 'live_webcam' : 'pre_recorded'),
     risk_level: riskResult.risk_level,
     risk_score: riskResult.risk_score,
     density,
+    density_norm: riskResult.breakdown.density_norm,
     trend_slope,
+    trend_norm: riskResult.breakdown.trend_norm,
     eta_to_red_min: riskResult.eta_to_red_min,
+    red_threshold: riskResult.red_threshold,
     timestamp,
-    // Include extra metrics for rich dashboard readouts
     people_count: payload.people_count,
     area_sqm: payload.area_sqm,
-    zone_type: payload.zone_type,
+    breakdown: riskResult.breakdown,
+    history: historyArray,
   };
 
   console.log(
-    `[Backend] density_update zone=${zone_id} ` +
+    `[Backend] density_update zone=${zone_id} (${zone_type}) ` +
     `density=${density} risk=${riskResult.risk_level} (${riskResult.risk_score}) ` +
     `slope=${trend_slope} eta=${riskResult.eta_to_red_min}m`
   );
 
-  // Emit Backend → Frontend shape to all connected frontend clients
   if (io) {
     io.emit('density_update', socketPayload);
   }

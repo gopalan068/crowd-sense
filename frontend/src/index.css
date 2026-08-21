@@ -67,7 +67,6 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* Monospace font class for numeric data & timestamps */
 .font-mono-num {
   font-family: ui-monospace, 'SFMono-Regular', Menlo, Monaco, Consolas, 'Courier New', monospace;
   font-variant-numeric: tabular-nums;
@@ -79,7 +78,17 @@ body {
   outline-offset: 2px !important;
 }
 
-/* Operational Alert Animations — Motion reserved strictly for state changes */
+/* Emergency Corridor Hazard Striping */
+.corridor-hazard-border {
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(220, 38, 38, 0.08),
+    rgba(220, 38, 38, 0.08) 10px,
+    transparent 10px,
+    transparent 20px
+  );
+}
+
 @keyframes panic-burst {
   0%, 100% { transform: scale(1); opacity: 1; }
   50% { transform: scale(1.02); opacity: 0.92; }

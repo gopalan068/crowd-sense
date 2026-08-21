@@ -1,22 +1,23 @@
 /**
  * backend/src/services/riskEngine.js
- * Composite Risk Score Computation Engine.
+ * Normalized Composite Risk Score Computation Engine & Trend Extrapolation.
  *
- * Implements blueprint §5:
+ * Implements blueprint §5 formula:
  *   risk_score = f(density, density_trend_slope, flow_convergence, flow_turbulence)
  *
- * Maintains a sliding window of density readings per zone to calculate
- * density_trend_slope (rate of change in people/sqm per minute).
+ * Normalization Scale:
+ *   1. density_norm = min(1.0, density / red_density)  [Weight: 0.50]
+ *   2. trend_norm   = min(1.0, max(0.0, trend_slope / 2.0))  [Weight: 0.30]
+ *   3. flow_convergence = float 0.0-1.0  [Weight: 0.10]
+ *   4. flow_turbulence  = float 0.0-1.0  [Weight: 0.10]
  */
 'use strict';
 
-// Per-zone density history windows: Map<zone_id, Array<{ density: number, timestamp: number }>>
+// Per-zone rolling history windows (60 seconds)
 const zoneHistories = new Map();
+const HISTORY_WINDOW_MS = 60 * 1000;
 
-// History window duration in milliseconds (30 seconds)
-const HISTORY_WINDOW_MS = 30 * 1000;
-
-// Default threshold configurations by zone_type
+// Per-zone threshold definitions
 const THRESHOLDS = {
   general: {
     green: 0.35,
@@ -28,16 +29,16 @@ const THRESHOLDS = {
     green: 0.25,
     yellow: 0.50,
     orange: 0.70,
-    red_density: 2.0, // emergency corridors have tighter thresholds
+    red_density: 2.0, // emergency corridor egress path threshold
   },
 };
 
 /**
- * Record a density reading and calculate the trend slope (rate of density change per minute).
+ * Record a density reading and return stored history + trend slope.
  * @param {string} zoneId
  * @param {number} density
  * @param {number} nowMs
- * @returns {number} trend_slope in people/m² per minute
+ * @returns {{ slope: number, history: Array<{ density: number, timestamp: number }> }}
  */
 function updateAndGetTrendSlope(zoneId, density, nowMs = Date.now()) {
   if (!zoneHistories.has(zoneId)) {
@@ -47,14 +48,14 @@ function updateAndGetTrendSlope(zoneId, density, nowMs = Date.now()) {
   const history = zoneHistories.get(zoneId);
   history.push({ density, timestamp: nowMs });
 
-  // Trim readings older than window
+  // Trim readings older than 60s
   const cutoff = nowMs - HISTORY_WINDOW_MS;
   while (history.length > 0 && history[0].timestamp < cutoff) {
     history.shift();
   }
 
   if (history.length < 2) {
-    return 0.0;
+    return { slope: 0.0, history: [...history] };
   }
 
   const oldest = history[0];
@@ -62,24 +63,25 @@ function updateAndGetTrendSlope(zoneId, density, nowMs = Date.now()) {
   const timeDeltaMin = (newest.timestamp - oldest.timestamp) / 60000;
 
   if (timeDeltaMin <= 0) {
-    return 0.0;
+    return { slope: 0.0, history: [...history] };
   }
 
-  const densityDelta = newest.density - oldest.density;
-  const slope = densityDelta / timeDeltaMin;
-  return Math.round(slope * 100) / 100;
+  const slope = (newest.density - oldest.density) / timeDeltaMin;
+  return {
+    slope: Math.round(slope * 100) / 100,
+    history: [...history],
+  };
 }
 
 /**
- * Composite risk calculation matching Blueprint Section 5 full signature.
- * Flow terms are stubbed at 0.0 in Phase 2.
+ * Normalized composite risk calculation (Blueprint Section 5).
  *
  * @param {number} density
  * @param {number} trend_slope
  * @param {number} flow_convergence
  * @param {number} flow_turbulence
  * @param {string} zone_type
- * @returns {{ risk_score: number, risk_level: string, eta_to_red_min: number|null }}
+ * @returns {Object}
  */
 function computeRiskScore(
   density,
@@ -89,53 +91,72 @@ function computeRiskScore(
   zone_type = 'general'
 ) {
   const config = THRESHOLDS[zone_type] || THRESHOLDS.general;
-  const maxDensity = config.red_density;
+  const redThreshold = config.red_density;
 
-  // Base density score (0.0 to ~1.0)
-  const densityScore = Math.min(1.0, density / maxDensity);
+  // 1. Normalized density term (0.0 to 1.0)
+  const density_norm = Math.min(1.0, Math.max(0.0, density / redThreshold));
 
-  // Trend slope component (positive slope increases risk)
-  // E.g., slope of +1.0 person/m²/min adds 0.15 to risk score
-  const trendScore = Math.max(0, trend_slope) * 0.15;
+  // 2. Normalized trend slope term (0.0 to 1.0, where 2.0 p/m²/min is max expected slope)
+  const trend_norm = Math.min(1.0, Math.max(0.0, trend_slope / 2.0));
 
-  // Flow components (stubbed at 0.0 for Phase 2; will add to score in Tier 2)
-  const flowScore = (flow_convergence * 0.2) + (flow_turbulence * 0.2);
+  // 3. Flow terms (already 0.0 to 1.0, stubs emit 0.0)
+  const conv_norm = Math.min(1.0, Math.max(0.0, flow_convergence));
+  const turb_norm = Math.min(1.0, Math.max(0.0, flow_turbulence));
 
-  // Raw composite score
-  const rawScore = (densityScore * 0.7) + trendScore + flowScore;
+  // 4. Weighted composite formula
+  const rawScore =
+    (density_norm * 0.50) +
+    (trend_norm * 0.30) +
+    (conv_norm * 0.10) +
+    (turb_norm * 0.10);
+
   const risk_score = Math.min(1.0, Math.max(0.0, Math.round(rawScore * 100) / 100));
 
-  // Determine risk level
+  // Determine risk level based on score & density
   let risk_level = 'green';
-  if (risk_score >= config.orange || density >= config.red_density) {
+  if (risk_score >= config.orange || density >= redThreshold) {
     risk_level = 'red';
-  } else if (risk_score >= config.yellow || density >= config.red_density * 0.6) {
+  } else if (risk_score >= config.yellow || density >= redThreshold * 0.6) {
     risk_level = 'orange';
-  } else if (risk_score >= config.green || density >= config.red_density * 0.3) {
+  } else if (risk_score >= config.green || density >= redThreshold * 0.3) {
     risk_level = 'yellow';
   }
 
-  // Calculate ETA to red threshold (minutes)
+  // Calculate linear extrapolation ETA to red threshold
   let eta_to_red_min = null;
-  if (density >= config.red_density) {
+  if (density >= redThreshold) {
     eta_to_red_min = 0;
   } else if (trend_slope > 0) {
-    const remainingDensity = config.red_density - density;
-    const minutes = remainingDensity / trend_slope;
-    eta_to_red_min = Math.max(1, Math.ceil(minutes));
+    const remaining = redThreshold - density;
+    const mins = remaining / trend_slope;
+    eta_to_red_min = Math.max(1, Math.ceil(mins));
   }
 
   return {
     risk_score,
     risk_level,
     eta_to_red_min,
+    red_threshold: redThreshold,
+    breakdown: {
+      density_raw: density,
+      density_norm: Math.round(density_norm * 100) / 100,
+      density_weight: 0.50,
+
+      trend_slope_raw: trend_slope,
+      trend_norm: Math.round(trend_norm * 100) / 100,
+      trend_weight: 0.30,
+
+      flow_convergence_raw: flow_convergence,
+      flow_convergence_norm: Math.round(conv_norm * 100) / 100,
+      flow_convergence_weight: 0.10,
+
+      flow_turbulence_raw: flow_turbulence,
+      flow_turbulence_norm: Math.round(turb_norm * 100) / 100,
+      flow_turbulence_weight: 0.10,
+    },
   };
 }
 
-/**
- * Reset history for tests or zone resets.
- * @param {string} zoneId
- */
 function resetZoneHistory(zoneId) {
   if (zoneId) {
     zoneHistories.delete(zoneId);
@@ -148,4 +169,5 @@ module.exports = {
   updateAndGetTrendSlope,
   computeRiskScore,
   resetZoneHistory,
+  THRESHOLDS,
 };

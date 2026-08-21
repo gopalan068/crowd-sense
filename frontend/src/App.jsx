@@ -1,10 +1,10 @@
 /**
  * frontend/src/App.jsx
- * Operational Control Dashboard Shell — Phase 2.
+ * Multi-Zone Operational Control Dashboard Shell — Phase 3.
  *
- * Implements high-contrast light-first theme (with Day/Night control tent toggle),
- * live Socket.io updates, ZonePanel, AlertPanel with acknowledge actions,
- * AuditLogView, and reserved slots for trend graphs.
+ * Renders concurrent Zone 1 (Live Webcam) and Zone 2 (Emergency Corridor) side-by-side,
+ * Trend Extrapolation graph with linear ETA projection, formula breakdown modal,
+ * active incident alerts, and timestamped audit log.
  */
 import React, { useEffect, useState } from 'react'
 import { io } from 'socket.io-client'
@@ -12,26 +12,28 @@ import { io } from 'socket.io-client'
 import ZonePanel from './components/ZonePanel'
 import AlertPanel from './components/AlertPanel'
 import AuditLogView from './components/AuditLogView'
-import TrendGraphPlaceholder from './components/TrendGraphPlaceholder'
+import TrendExtrapolationGraph from './components/TrendExtrapolationGraph'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000'
 
 export default function App() {
-  const [theme, setTheme] = useState('day') // 'day' (light-first high contrast default) or 'night'
+  const [theme, setTheme] = useState('day')
   const [connected, setConnected] = useState(false)
-  const [latestZoneData, setLatestZoneData] = useState(null)
+  const [zoneMap, setZoneMap] = useState({
+    zone_1: null,
+    zone_2: null,
+  })
+  const [selectedTrendZone, setSelectedTrendZone] = useState('zone_1')
   const [activeAlerts, setActiveAlerts] = useState([])
   const [auditLogs, setAuditLogs] = useState([])
   const [socketInstance, setSocketInstance] = useState(null)
 
-  // Toggle Day / Night operational themes
   const toggleTheme = () => {
     const nextTheme = theme === 'day' ? 'night' : 'day'
     setTheme(nextTheme)
     document.documentElement.setAttribute('data-theme', nextTheme)
   }
 
-  // Fetch timestamped audit log records from backend
   const fetchAuditLogs = async () => {
     try {
       const res = await fetch(`${BACKEND_URL}/api/audit-log?limit=50`)
@@ -44,7 +46,6 @@ export default function App() {
     }
   }
 
-  // Socket.io connection & event listeners
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', 'day')
 
@@ -66,12 +67,15 @@ export default function App() {
       setConnected(false)
     })
 
-    // Listen to Backend → Frontend density updates (docs/api-contract.md §2)
+    // Listen to multi-zone density updates
     socket.on('density_update', (payload) => {
-      setLatestZoneData(payload)
+      setZoneMap((prev) => ({
+        ...prev,
+        [payload.zone_id]: payload,
+      }))
     })
 
-    // Listen to alert life-cycle events
+    // Alert events
     socket.on('alert_triggered', (alert) => {
       console.warn('[Socket.io] Alert triggered:', alert)
       setActiveAlerts((prev) => {
@@ -100,7 +104,6 @@ export default function App() {
     }
   }, [])
 
-  // Acknowledge an alert
   const handleAcknowledgeAlert = async (alertId) => {
     if (socketInstance) {
       socketInstance.emit('acknowledge_alert', {
@@ -121,34 +124,35 @@ export default function App() {
     }
   }
 
+  const currentTrendData = zoneMap[selectedTrendZone] || zoneMap.zone_1 || zoneMap.zone_2
+
   return (
     <div className="min-h-screen flex flex-col font-sans transition-colors duration-200" style={{ background: 'var(--color-bg)' }}>
 
-      {/* ── Header Bar ─────────────────────────────────────────────────── */}
+      {/* Header Bar */}
       <header
-        className="flex flex-wrap items-center justify-between px-6 py-3 border-b shadow-sm"
+        className="flex flex-wrap items-center justify-between px-6 py-3 border-b shadow-xs"
         style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
       >
         <div className="flex items-center gap-3">
           <div
-            className="w-8 h-8 rounded-lg flex items-center justify-center text-white font-extrabold text-sm shadow-sm"
+            className="w-8 h-8 rounded-lg flex items-center justify-center text-white font-extrabold text-sm shadow-xs"
             style={{ background: 'var(--color-accent)' }}
           >
             CS
           </div>
           <div>
             <h1 className="text-base font-bold tracking-tight flex items-center gap-2" style={{ color: 'var(--color-text)' }}>
-              CrowdSense <span className="text-xs font-mono-num font-normal opacity-70">Ops Control v0.2</span>
+              CrowdSense <span className="text-xs font-mono-num font-normal opacity-70">Multi-Zone Ops v0.3</span>
             </h1>
             <p className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
-              Live Crowd Early-Warning & Escalation Monitoring System
+              Concurrent Multi-Zone Safety &amp; Egress Monitoring System
             </p>
           </div>
         </div>
 
-        {/* Right Header Tools: Connection Indicator + Day/Night Toggle */}
+        {/* Header Right Tools */}
         <div className="flex items-center gap-4 text-xs font-mono-num">
-          {/* Socket status */}
           <div className="flex items-center gap-1.5 px-3 py-1 rounded-full border"
                style={{ background: 'var(--color-bg)', borderColor: 'var(--color-border)', color: 'var(--color-muted)' }}>
             <span
@@ -158,10 +162,9 @@ export default function App() {
             <span>{connected ? 'WS LIVE' : 'WS DISCONNECTED'}</span>
           </div>
 
-          {/* Theme Switcher Button */}
           <button
             onClick={toggleTheme}
-            className="px-3 py-1.5 rounded-lg border font-bold shadow-sm transition-all hover:bg-slate-200 dark:hover:bg-slate-800 flex items-center gap-1.5"
+            className="px-3 py-1.5 rounded-lg border font-bold shadow-xs transition-all hover:bg-slate-200 dark:hover:bg-slate-800 flex items-center gap-1.5"
             style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)', color: 'var(--color-text)' }}
           >
             <span>{theme === 'day' ? '☀️ DAY MODE' : '🌙 NIGHT MODE'}</span>
@@ -169,33 +172,66 @@ export default function App() {
         </div>
       </header>
 
-      {/* ── Main Operations Layout ───────────────────────────────────────── */}
+      {/* Main Multi-Zone Operations Grid */}
       <main className="flex-1 p-6 space-y-6 max-w-7xl mx-auto w-full">
 
-        {/* Row 1: Live Zone Panel (8 cols) + Active Incident Alerts Panel (4 cols) */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          <div className="lg:col-span-7">
-            <ZonePanel zoneData={latestZoneData} />
+        {/* Row 1: Side-by-Side Multi-Zone Panels */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between px-1">
+            <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500 font-mono-num">
+              MONITORED EVENT ZONES (2 ACTIVE CONCURRENT FEEDS)
+            </h2>
           </div>
-          <div className="lg:col-span-5">
-            <AlertPanel alerts={activeAlerts} onAcknowledgeAlert={handleAcknowledgeAlert} />
+
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+            <ZonePanel zoneData={zoneMap.zone_1} zoneId="zone_1" />
+            <ZonePanel zoneData={zoneMap.zone_2} zoneId="zone_2" />
           </div>
         </div>
 
-        {/* Row 2: Trend Graph Reserved Slot */}
-        <TrendGraphPlaceholder />
+        {/* Row 2: Active Alerts Panel + Trend Graph Selection */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          <div className="lg:col-span-4">
+            <AlertPanel alerts={activeAlerts} onAcknowledgeAlert={handleAcknowledgeAlert} />
+          </div>
+
+          <div className="lg:col-span-8 flex flex-col space-y-3">
+            {/* Zone Selector for Trend Graph */}
+            <div className="flex items-center justify-between px-2 font-mono-num text-xs">
+              <span className="font-bold uppercase tracking-wider" style={{ color: 'var(--color-muted)' }}>
+                SELECT ZONE FOR TREND EXTRAPOLATION:
+              </span>
+              <div className="flex gap-2">
+                {['zone_1', 'zone_2'].map((zId) => (
+                  <button
+                    key={zId}
+                    onClick={() => setSelectedTrendZone(zId)}
+                    className={`px-3 py-1 rounded font-bold transition-all ${
+                      selectedTrendZone === zId
+                        ? 'bg-sky-600 text-white shadow-xs'
+                        : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+                    }`}
+                  >
+                    {zId === 'zone_1' ? 'ZONE 1 (GENERAL)' : 'ZONE 2 (CORRIDOR)'}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <TrendExtrapolationGraph zoneData={currentTrendData} />
+          </div>
+        </div>
 
         {/* Row 3: Tamper-Evident Audit Log Viewer */}
         <AuditLogView logs={auditLogs} onRefresh={fetchAuditLogs} />
 
       </main>
 
-      {/* ── Footer ──────────────────────────────────────────────────────── */}
       <footer
         className="text-center text-xs py-3 border-t font-mono-num"
         style={{ borderColor: 'var(--color-border)', color: 'var(--color-muted)' }}
       >
-        CrowdSense · SIH Internal Hackathon Phase 2 · Single-Zone Core Integration Pipeline
+        CrowdSense · SIH Internal Hackathon Phase 3 · Multi-Zone &amp; Trend Extrapolation Pipeline
       </footer>
     </div>
   )

@@ -1,13 +1,13 @@
 /**
  * backend/scripts/fake_generator.js
- * Synthetic CV Data Generator Script.
+ * Multi-Zone Synthetic CV Data Generator Script.
  *
- * Ramps up crowd density over time to simulate a building crowd surge.
- * Allows full end-to-end testing of green → yellow → orange → red → panic alerts
- * and auto-escalation timers without a camera feed.
+ * Emits concurrent readings for:
+ *   - zone_1 (general, live_webcam): Ramps gradually (safe → moderate)
+ *   - zone_2 (corridor, pre_recorded): Ramps aggressively, pushing density past corridor red threshold (2.0 p/m²)
  *
  * Usage:
- *   node backend/scripts/fake_generator.js [--panic] [--fast] [--zone=zone_1]
+ *   node backend/scripts/fake_generator.js [--panic] [--fast]
  */
 'use strict';
 
@@ -19,45 +19,25 @@ const BACKEND_PORT = process.env.BACKEND_PORT || 4000;
 const args = process.argv.slice(2);
 const isPanicMode = args.includes('--panic');
 const isFastMode = args.includes('--fast');
-
-const zoneArg = args.find((a) => a.startsWith('--zone='));
-const zone_id = zoneArg ? zoneArg.split('=')[1] : 'zone_1';
-
 const intervalMs = isFastMode ? 500 : 1000;
-const area_sqm = 20.0;
-
-let currentPeople = isPanicMode ? 70 : 8; // start light unless panic flag passed
-const targetPeopleMax = 95; // density ~4.75 (triggers panic alert)
-
-console.log(`[FakeGenerator] Starting density generator for zone '${zone_id}'...`);
-console.log(`[FakeGenerator] Target backend: http://${BACKEND_HOST}:${BACKEND_PORT}/api/density`);
-console.log(`[FakeGenerator] Interval: ${intervalMs}ms | Mode: ${isPanicMode ? 'PANIC SURGE' : 'RAMP UP'}`);
 
 let step = 0;
 
-function sendReading() {
-  step++;
+let z1_people = 10; // Zone 1 General (20 sqm area)
+let z2_people = 15; // Zone 2 Corridor (15 sqm area)
 
-  if (isPanicMode) {
-    currentPeople = Math.min(targetPeopleMax, currentPeople + 8);
-  } else {
-    // Gradual rise over 30 steps, then reset to simulate crowd flow cycle
-    if (step % 40 < 10) {
-      currentPeople = Math.max(5, currentPeople - 2); // green/yellow
-    } else if (step % 40 < 25) {
-      currentPeople += 3; // yellow/orange
-    } else {
-      currentPeople += 4; // red / surge
-    }
-  }
+console.log(`[FakeGenerator] Multi-Zone Generator starting...`);
+console.log(`[FakeGenerator] Target backend: http://${BACKEND_HOST}:${BACKEND_PORT}/api/density`);
+console.log(`[FakeGenerator] Interval: ${intervalMs}ms | Mode: ${isPanicMode ? 'PANIC SURGE' : 'RAMP UP'}`);
 
-  const people_count = currentPeople;
+function sendZoneReading(zone_id, zone_type, feed_source, people_count, area_sqm) {
   const density = Math.round((people_count / area_sqm) * 1000) / 1000;
   const timestamp = new Date().toISOString();
 
   const payload = JSON.stringify({
     zone_id,
-    zone_type: 'general',
+    zone_type,
+    feed_source,
     people_count,
     area_sqm,
     density,
@@ -78,25 +58,51 @@ function sendReading() {
       },
     },
     (res) => {
-      if (res.statusCode === 200) {
-        console.log(
-          `[FakeGenerator] Sent reading #${step}: count=${people_count} ` +
-          `density=${density}/m² timestamp=${timestamp}`
-        );
-      } else {
+      if (res.statusCode !== 200) {
         console.warn(`[FakeGenerator] Backend returned status ${res.statusCode}`);
       }
     }
   );
 
   req.on('error', (err) => {
-    console.error(`[FakeGenerator] Failed to send reading: ${err.message}`);
+    console.error(`[FakeGenerator] Error for ${zone_id}: ${err.message}`);
   });
 
   req.write(payload);
   req.end();
 }
 
-// Start sending every second
-setInterval(sendReading, intervalMs);
-sendReading();
+function tick() {
+  step++;
+
+  if (isPanicMode) {
+    z1_people = Math.min(80, z1_people + 5);
+    z2_people = Math.min(65, z2_people + 8);
+  } else {
+    // Zone 1: Moderate variation (density 0.5 to 2.2)
+    if (step % 30 < 15) {
+      z1_people = Math.min(44, z1_people + 2);
+    } else {
+      z1_people = Math.max(10, z1_people - 2);
+    }
+
+    // Zone 2 Corridor: Surging (density 1.0 to 3.2 - BREACHES CORRIDOR RED THRESHOLD 2.0)
+    if (step % 20 < 12) {
+      z2_people = Math.min(50, z2_people + 3);
+    } else {
+      z2_people = Math.max(15, z2_people - 4);
+    }
+  }
+
+  // Send readings for both zones
+  sendZoneReading('zone_1', 'general', 'live_webcam', z1_people, 20.0);
+  sendZoneReading('zone_2', 'corridor', 'pre_recorded', z2_people, 15.0);
+
+  console.log(
+    `[FakeGenerator] #${step} | Z1 (General): ${z1_people}p (${(z1_people/20).toFixed(2)}/m²) | ` +
+    `Z2 (Corridor): ${z2_people}p (${(z2_people/15).toFixed(2)}/m²)`
+  );
+}
+
+setInterval(tick, intervalMs);
+tick();

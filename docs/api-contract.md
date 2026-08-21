@@ -16,6 +16,7 @@ Pushed as a **REST POST** to `POST /api/density` once per second, per zone.
 {
   "zone_id": "zone_1",
   "zone_type": "general | corridor",
+  "feed_source": "live_webcam | pre_recorded",
   "people_count": 42,
   "area_sqm": 20,
   "density": 2.1,
@@ -31,27 +32,32 @@ Pushed as a **REST POST** to `POST /api/density` once per second, per zone.
 |-------------------|-----------------|------------|-----------------------------------------------------------------------|
 | `zone_id`         | string          | CV config  | Matches zone keys used in backend and frontend                        |
 | `zone_type`       | `"general"` \| `"corridor"` | CV config | Determines threshold logic in backend                  |
+| `feed_source`     | `"live_webcam"` \| `"pre_recorded"` | CV config | Explicit stream provenance tag for demo honesty (§3 blueprint) |
 | `people_count`    | integer         | CV service | **Window average** of per-frame detections in the 1-sec window        |
-| `area_sqm`        | float           | CV config  | Manually configured constant — no homography correction (Phase 1 scope cut, see §12 of blueprint) |
+| `area_sqm`        | float           | CV config  | Manually configured constant — no homography correction               |
 | `density`         | float           | CV service | `people_count / area_sqm`, rounded to 3 decimal places               |
-| `flow_convergence`| float 0–1       | CV service | **Tier 2** — optical flow not implemented in Phase 1; emit `0.0`      |
-| `flow_turbulence` | float 0–1       | CV service | **Tier 2** — optical flow not implemented in Phase 1; emit `0.0`      |
-| `timestamp`       | ISO 8601 UTC    | CV service | Must include `Z` suffix, not `+00:00`                                 |
+| `flow_convergence`| float 0–1       | CV service | **Tier 2** — optical flow placeholder (emit `0.0`)                    |
+| `flow_turbulence` | float 0–1       | CV service | **Tier 2** — optical flow placeholder (emit `0.0`)                    |
+| `timestamp`       | ISO 8601 UTC    | CV service | Must include `Z` suffix                                               |
 
 ---
 
 ## 2. Backend → Frontend
 
 Sent as a **Socket.io** event named `density_update`, once per received CV reading.
-Includes computed risk fields that the backend owns.
+Includes computed risk fields and normalized breakdown components that the backend owns.
 
 ```json
 {
   "zone_id": "zone_1",
+  "zone_type": "general",
+  "feed_source": "live_webcam",
   "risk_level": "yellow",
   "risk_score": 0.58,
   "density": 2.1,
+  "density_norm": 0.60,
   "trend_slope": 0.12,
+  "trend_norm": 0.06,
   "eta_to_red_min": 6,
   "timestamp": "2026-08-20T10:15:32Z"
 }
@@ -62,11 +68,15 @@ Includes computed risk fields that the backend owns.
 | Field           | Type                                      | Owner   | Notes                                                        |
 |-----------------|-------------------------------------------|---------|--------------------------------------------------------------|
 | `zone_id`       | string                                    | Backend | Passed through from CV payload                               |
-| `risk_level`    | `"green"` \| `"yellow"` \| `"orange"` \| `"red"` | Backend | Derived from `risk_score` via threshold table        |
-| `risk_score`    | float 0–1                                 | Backend | Composite of density + trend + flow signals (Phase 1: density-only stub) |
-| `density`       | float                                     | Backend | Passed through from CV payload                               |
-| `trend_slope`   | float                                     | Backend | Rate of density change (people/sqm per minute); Phase 1 stub: `0.0` |
-| `eta_to_red_min`| integer \| `null`                         | Backend | Linear extrapolation to red threshold; Phase 1 stub: `null`  |
+| `zone_type`     | `"general"` \| `"corridor"`               | Backend | Passed through from CV payload                               |
+| `feed_source`   | `"live_webcam"` \| `"pre_recorded"`       | Backend | Passed through from CV payload                               |
+| `risk_level`    | `"green"` \| `"yellow"` \| `"orange"` \| `"red"` | Backend | Derived from `risk_score` via zone threshold table     |
+| `risk_score`    | float 0–1                                 | Backend | Weighted composite of normalized density, trend, flow terms  |
+| `density`       | float                                     | Backend | Physical people/m² passed through from CV payload            |
+| `density_norm`  | float 0–1                                 | Backend | `min(1.0, density / red_threshold)` normalized term          |
+| `trend_slope`   | float                                     | Backend | Rate of density change (people/sqm per minute)               |
+| `trend_norm`    | float 0–1                                 | Backend | `min(1.0, max(0.0, trend_slope / 2.0))` normalized term      |
+| `eta_to_red_min`| integer \| `null`                         | Backend | Linear extrapolation to red threshold                        |
 | `timestamp`     | ISO 8601 UTC                              | Backend | Passed through from CV payload                               |
 
 ---
