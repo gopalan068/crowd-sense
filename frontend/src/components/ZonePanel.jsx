@@ -201,32 +201,18 @@ export default function ZonePanel({ zoneData, zoneId = 'zone_1' }) {
         className="px-5 py-3 border-b flex items-center justify-between"
         style={{ borderColor: 'var(--color-border)', background: 'var(--color-surface-hover)' }}
       >
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-2.5">
           <span className="text-xs font-mono-num px-2.5 py-1 rounded-lg font-bold uppercase tracking-wider border shadow-xs"
                 style={{ background: 'var(--color-bg)', borderColor: 'var(--color-border)', color: 'var(--color-text)' }}>
             ZONE: {zone_id}
           </span>
 
-          <span className={`text-[11px] px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wide ${
-            isCorridor
-              ? 'bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300 border border-red-300 dark:border-red-800'
-              : 'bg-sky-100 dark:bg-sky-950 text-sky-700 dark:text-sky-300 border border-sky-300 dark:border-sky-800'
-          }`}>
-            {isCorridor ? '⚠️ EMERGENCY CORRIDOR' : 'GENERAL AREA'}
-          </span>
-
-          <span className={`text-[10px] px-2 py-0.5 rounded font-extrabold font-mono-num uppercase tracking-wider ${
+          <span className={`text-[11px] px-2.5 py-1 rounded-lg font-extrabold font-mono-num uppercase tracking-wider ${
             camera_type === 'drone'
               ? 'bg-indigo-600 text-white'
               : 'bg-sky-700 text-white'
           }`}>
             {camera_type === 'drone' ? '🛸 DRONE OVERHEAD' : '📹 CCTV ANGLE'}
-          </span>
-
-          <span className={`text-[10px] px-2 py-0.5 rounded font-extrabold font-mono-num uppercase tracking-wider ${
-            isLive ? 'bg-emerald-600 text-white' : 'bg-amber-600 text-white'
-          }`}>
-            {isLive ? '🔴 LIVE' : '📼 DEMO FEED'}
           </span>
         </div>
 
