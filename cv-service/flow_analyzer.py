@@ -68,6 +68,22 @@ class FlowAnalyzer:
         self._high_turb_thresh = 0.65
         self._sustained_turb_windows = 3       # consecutive windows before confirmation
 
+    def reset(self) -> None:
+        """
+        Reset all stateful counters and the previous frame reference.
+
+        Call this whenever the video source loops or restarts so that
+        optical-flow state from the previous iteration does not bleed
+        into the next one.  Without this, the scene-cut between the
+        last and first frame of a looped clip generates a massive
+        spurious motion spike that inflates all panic/exodus counters.
+        """
+        self.prev_gray = None
+        self.mag_baseline_ema = 0.0
+        self.consecutive_spike_count = 0
+        self.consecutive_exodus_count = 0
+        self.consecutive_high_turb_count = 0
+
     def analyze(
         self,
         frame: np.ndarray,

@@ -19,6 +19,13 @@ const activeTimers = new Map();
 const activeZoneAlerts = new Map();
 const ESCALATION_TIMEOUT_SEC = parseInt(process.env.ESCALATION_TIMEOUT_SEC || '30', 10);
 
+// Auto-expiry for panic alerts.
+// If no panic/exodus signal arrives for this duration, the panic alert is
+// cleared automatically so a video loop (or genuine crowd calm-down) resets
+// the UI back to green instead of staying frozen on 'red'.
+const PANIC_ALERT_TTL_MS = parseInt(process.env.PANIC_ALERT_TTL_MS || '20000', 10); // 20 s default
+const lastPanicSeenMs = new Map(); // zone_id -> timestamp of last panic/exodus reading
+
 function generateAlertId() {
   return `alt_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
 }
@@ -37,6 +44,25 @@ async function processZoneAlerts(riskResult, cvPayload, io) {
   const flow_turbulence = Number(cvPayload.flow_turbulence) || 0;
   const panic_signature = cvPayload.panic_signature === true;
   const exodus_signature = cvPayload.exodus_signature === true;
+  const nowMs = Date.now();
+
+  // Track last time a panic/exodus signal arrived for this zone
+  if (panic_signature || exodus_signature) {
+    lastPanicSeenMs.set(zone_id, nowMs);
+  }
+
+  // Auto-expire stale panic alerts: if no panic signal received for > TTL,
+  // clear the panic alert so the zone can return to green on the next cycle.
+  // This handles video loops and genuine crowd calm-down events.
+  const lastPanic = lastPanicSeenMs.get(zone_id) || 0;
+  const panicStale = (nowMs - lastPanic) > PANIC_ALERT_TTL_MS;
+  if (panicStale && activeZoneAlerts.has(`${zone_id}_panic`)) {
+    const staleAlert = activeZoneAlerts.get(`${zone_id}_panic`);
+    if (!staleAlert.acknowledged_at) {
+      console.log(`[Escalation] Auto-expiring stale panic alert for zone=${zone_id} (no panic signal for ${Math.round((nowMs - lastPanic) / 1000)}s)`);
+      activeZoneAlerts.delete(`${zone_id}_panic`);
+    }
+  }
 
   // False-Positive Proof Panic Condition (Blueprint §6 Rules)
   // Now includes exodus_signature: mass flee / fire evacuation coherent motion

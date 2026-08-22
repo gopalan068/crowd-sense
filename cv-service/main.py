@@ -91,12 +91,15 @@ def zone_loop(
     last_latency = 0.0
     last_count = 0
     demo_step = 0
+    last_frame_pos: int = -1   # tracks video position for loop detection
+    loop_count: int = 0        # how many times the file has looped
 
     print(f"{log_tag} Started worker thread | Mode=[{camera_type.upper()}] | Type=[{zone_type.upper()}] | Area={area_sqm}m² | Interval={analysis_interval_sec}s")
 
     while not stop_event.is_set():
         # 1. Read next video frame
         if cap and cap.isOpened():
+            curr_frame_pos = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
             ret, frame = cap.read()
             if not ret:
                 if isinstance(src, str):  # file ended -> loop back
@@ -105,14 +108,29 @@ def zone_loop(
                 if not ret:
                     time.sleep(0.033)
                     continue
+
+            # Detect video loop: position jumped back to near 0
+            # (curr_frame_pos is checked BEFORE read, so a drop to 0 means loop)
+            is_loop_frame = isinstance(src, str) and (curr_frame_pos < last_frame_pos - 1) and last_frame_pos > 0
+            if is_loop_frame:
+                loop_count += 1
+                print(f"{log_tag} [VIDEO LOOP #{loop_count}] Video restarted — resetting FlowAnalyzer state to prevent false-positive carry-over.")
+                if flow_analyzer:
+                    flow_analyzer.reset()
+                # Reset last displayed panic/exodus state so the UI doesn't freeze on 'red'
+                conv, turb, panic, exodus = 0.0, 0.0, False, False
+            last_frame_pos = curr_frame_pos
         else:
+            is_loop_frame = False
             frame = create_demo_crowd_frame(demo_step)
             demo_step += 1
 
         now = time.monotonic()
 
         # 2. Run AI Analysis when interval elapses
-        if now - last_analysis_time >= analysis_interval_sec:
+        # Skip analysis on the loop frame itself — the scene-cut between last frame
+        # and frame 0 produces a massive optical-flow spike that would falsely trigger alerts.
+        if now - last_analysis_time >= analysis_interval_sec and not is_loop_frame:
             last_count, last_boxes, last_latency = detector.detect(frame)
 
             if flow_analyzer:
