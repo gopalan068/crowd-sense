@@ -127,40 +127,69 @@ def zone_loop(
 
         now = time.monotonic()
 
-        # 2. Run AI Analysis when interval elapses
-        # Skip analysis on the loop frame itself — the scene-cut between last frame
-        # and frame 0 produces a massive optical-flow spike that would falsely trigger alerts.
-        if now - last_analysis_time >= analysis_interval_sec and not is_loop_frame:
-            last_count, last_boxes, last_latency = detector.detect(frame)
+        # 2. Camera Mode-Specific Streaming & Analysis Strategy
+        if camera_type == "drone":
+            # Drone Mode: Only annotate & stream the frame when AI analysis actually runs (Step/Jump Effect)
+            if now - last_analysis_time >= analysis_interval_sec and not is_loop_frame:
+                last_count, last_boxes, last_latency = detector.detect(frame)
 
-            if flow_analyzer:
-                curr_den = last_count / area_sqm
-                conv, turb, panic, exodus = flow_analyzer.analyze(frame, curr_den)
+                if flow_analyzer:
+                    curr_den = last_count / area_sqm
+                    conv, turb, panic, exodus = flow_analyzer.analyze(frame, curr_den)
 
-            # Emit reading to backend
-            payload = emit(
-                [last_count],
-                zone_id=zone_id,
-                zone_type=zone_type,
-                area_sqm=area_sqm,
-                feed_source=feed_source,
-                camera_type=camera_type,
-                flow_convergence=round(conv, 3),
-                flow_turbulence=round(turb, 3),
-                panic_signature=panic,
-                exodus_signature=exodus,
-            )
-            print(
-                f"{log_tag} [AI Analyzed] count={last_count} den={payload['density']} p/m² "
-                f"panic={panic} exodus={exodus} flow_turb={round(turb, 2)} (latency: {last_latency}ms)"
-            )
-            last_analysis_time = now
+                # Emit reading to backend
+                payload = emit(
+                    [last_count],
+                    zone_id=zone_id,
+                    zone_type=zone_type,
+                    area_sqm=area_sqm,
+                    feed_source=feed_source,
+                    camera_type=camera_type,
+                    flow_convergence=round(conv, 3),
+                    flow_turbulence=round(turb, 3),
+                    panic_signature=panic,
+                    exodus_signature=exodus,
+                )
+                print(
+                    f"{log_tag} [AI Analyzed] count={last_count} den={payload['density']} p/m² "
+                    f"panic={panic} exodus={exodus} flow_turb={round(turb, 2)} (latency: {last_latency}ms)"
+                )
+                last_analysis_time = now
 
-        # 3. Annotate and stream frame preview continuously for smooth 30 FPS video playback
-        annotated = detector.annotate(frame, last_boxes)
-        update_zone_frame(zone_id, annotated)
+                # Push ONLY the evaluated frame to the dashboard stream
+                annotated = detector.annotate(frame, last_boxes)
+                update_zone_frame(zone_id, annotated)
+        else:
+            # CCTV Mode: Smooth continuous 30 FPS video playback with periodic AI updates
+            if now - last_analysis_time >= analysis_interval_sec and not is_loop_frame:
+                last_count, last_boxes, last_latency = detector.detect(frame)
 
-        # Smooth ~30 FPS frame pacing for video file / webcam stream
+                if flow_analyzer:
+                    curr_den = last_count / area_sqm
+                    conv, turb, panic, exodus = flow_analyzer.analyze(frame, curr_den)
+
+                payload = emit(
+                    [last_count],
+                    zone_id=zone_id,
+                    zone_type=zone_type,
+                    area_sqm=area_sqm,
+                    feed_source=feed_source,
+                    camera_type=camera_type,
+                    flow_convergence=round(conv, 3),
+                    flow_turbulence=round(turb, 3),
+                    panic_signature=panic,
+                    exodus_signature=exodus,
+                )
+                print(
+                    f"{log_tag} [AI Analyzed] count={last_count} den={payload['density']} p/m² "
+                    f"panic={panic} exodus={exodus} flow_turb={round(turb, 2)} (latency: {last_latency}ms)"
+                )
+                last_analysis_time = now
+
+            annotated = detector.annotate(frame, last_boxes)
+            update_zone_frame(zone_id, annotated)
+
+        # Smooth ~30 FPS loop pacing
         time.sleep(0.033)
 
 

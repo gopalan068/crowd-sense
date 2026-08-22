@@ -35,8 +35,8 @@ CONF_THRESH_CCTV: float = float(os.getenv("CONF_THRESH_CCTV", "0.30"))
 CONF_THRESH_DRONE: float = float(os.getenv("CONF_THRESH_DRONE", "0.06"))
 CONF_THRESH: float = float(os.getenv("CONF_THRESH", "0.30"))
 
-# Analysis Intervals per Camera Mode
-DRONE_ANALYSIS_INTERVAL_SEC: float = float(os.getenv("DRONE_ANALYSIS_INTERVAL_SEC", "4.0"))
+# Analysis Intervals per Camera Mode (Seconds between AI evaluation passes)
+DRONE_ANALYSIS_INTERVAL_SEC: float = float(os.getenv("DRONE_ANALYSIS_INTERVAL_SEC", "3.0"))
 CCTV_ANALYSIS_INTERVAL_SEC: float = float(os.getenv("CCTV_ANALYSIS_INTERVAL_SEC", "1.0"))
 
 # Model Weights Selection: "visdrone" vs "coco"
