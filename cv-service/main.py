@@ -1,8 +1,13 @@
 """
 cv-service/main.py
 Multi-Zone Entry Point: single-threaded round-robin execution across
-Zone 1 and Zone 2 with Adaptive Drone Overhead vs CCTV Camera Modes.
-Smooth High-FPS Motion Playback Engine.
+Zone 1 and Zone 2 with Adaptive Drone Overhead vs CCTV Camera Modes,
+SAHI Sliced Inference, and Per-Frame Latency Monitoring.
+
+Usage:
+  python main.py
+  python main.py --z1 videos/drone.mp4 --type1 drone
+  python main.py --z1 videos/cctv.mp4 --type1 cctv
 """
 from __future__ import annotations
 
@@ -71,6 +76,7 @@ def main() -> None:
 
     print(
         f"\n[CV] Multi-Zone Engine Starting — Model: {config.MODEL_PATH}\n"
+        f"     Model Type: {config.MODEL_TYPE.upper()} | SAHI Enabled: {config.USE_SAHI}\n"
         f"     Optical Flow Enabled: {config.ENABLE_OPTICAL_FLOW}\n"
         f"     Zone 1: 'zone_1' ({config.ZONE_TYPE})  Source: {z1_source_str!r} Mode: [{type_z1.upper()}]\n"
         f"     Zone 2: 'zone_2' (corridor) Source: {z2_source_str!r} Mode: [{type_z2.upper()}]\n"
@@ -78,8 +84,8 @@ def main() -> None:
 
     start_stream_server(port=5001)
 
-    detector_z1 = PersonDetector(config.MODEL_PATH, camera_type=type_z1)
-    detector_z2 = PersonDetector(config.MODEL_PATH, camera_type=type_z2)
+    detector_z1 = PersonDetector(config.MODEL_PATH, camera_type=type_z1, model_type=config.MODEL_TYPE)
+    detector_z2 = PersonDetector(config.MODEL_PATH, camera_type=type_z2, model_type=config.MODEL_TYPE)
 
     flow_z1 = FlowAnalyzer(config.FOCAL_POINTS["zone_1"]) if config.ENABLE_OPTICAL_FLOW else None
     flow_z2 = FlowAnalyzer(config.FOCAL_POINTS["zone_2"]) if config.ENABLE_OPTICAL_FLOW else None
@@ -105,6 +111,9 @@ def main() -> None:
     z1_conv, z1_turb, z1_panic = 0.0, 0.0, False
     z2_conv, z2_turb, z2_panic = 0.0, 0.0, False
 
+    z1_latency = 0.0
+    z2_latency = 0.0
+
     z1_start = time.monotonic()
     z2_start = time.monotonic()
 
@@ -120,13 +129,12 @@ def main() -> None:
                 ret1, frame1 = cap_z1.read()
                 if ret1:
                     if frame_step % config.FRAME_SAMPLE_RATE == 0:
-                        c1, z1_last_boxes = detector_z1.detect(frame1)
+                        c1, z1_last_boxes, z1_latency = detector_z1.detect(frame1)
                         z1_samples.append(c1)
                         if flow_z1:
                             curr_den = (sum(z1_samples) / len(z1_samples)) / config.AREA_SQM if z1_samples else 0.0
                             z1_conv, z1_turb, z1_panic = flow_z1.analyze(frame1, curr_den)
-                    
-                    # Annotate and update stream buffer on every frame for butter-smooth 30 FPS motion
+
                     annotated1 = detector_z1.annotate(frame1, z1_last_boxes)
                     update_zone_frame("zone_1", annotated1)
                 else:
@@ -142,18 +150,18 @@ def main() -> None:
                         ret2, frame2 = cap_z2.read()
                 if ret2:
                     if frame_step % config.FRAME_SAMPLE_RATE == 0:
-                        c2, z2_last_boxes = detector_z2.detect(frame2)
+                        c2, z2_last_boxes, z2_latency = detector_z2.detect(frame2)
                         z2_samples.append(c2)
                         if flow_z2:
                             curr_den = (sum(z2_samples) / len(z2_samples)) / 15.0 if z2_samples else 0.0
                             z2_conv, z2_turb, z2_panic = flow_z2.analyze(frame2, curr_den)
-                    
+
                     annotated2 = detector_z2.annotate(frame2, z2_last_boxes)
                     update_zone_frame("zone_2", annotated2)
             else:
                 if frame_step % config.FRAME_SAMPLE_RATE == 0:
                     demo_frame = create_demo_crowd_frame(frame_step // config.FRAME_SAMPLE_RATE)
-                    c2, z2_last_boxes = detector_z2.detect(demo_frame)
+                    c2, z2_last_boxes, z2_latency = detector_z2.detect(demo_frame)
                     c2 = max(c2, 32 + (frame_step // 5 % 15))
                     z2_samples.append(c2)
                     annotated2 = detector_z2.annotate(demo_frame, z2_last_boxes)
@@ -177,7 +185,7 @@ def main() -> None:
                     flow_turbulence=z1_turb,
                     panic_signature=z1_panic,
                 )
-                print(f"[CV-Z1] {json.dumps(p1, separators=(',', ':'))}")
+                print(f"[CV-Z1] {json.dumps(p1, separators=(',', ':'))} (latency: {z1_latency}ms)")
                 z1_samples = []
                 z1_start = now
 
@@ -193,11 +201,11 @@ def main() -> None:
                     flow_turbulence=z2_turb,
                     panic_signature=z2_panic,
                 )
-                print(f"[CV-Z2] {json.dumps(p2, separators=(',', ':'))}")
+                print(f"[CV-Z2] {json.dumps(p2, separators=(',', ':'))} (latency: {z2_latency}ms)")
                 z2_samples = []
                 z2_start = now
 
-            time.sleep(0.015)  # Paced ~30 FPS smooth video playback loop
+            time.sleep(0.015)
 
     except KeyboardInterrupt:
         print("\n[CV] Stopped by user.")

@@ -1,126 +1,138 @@
 """
 cv-service/detector.py
-Multi-Perspective Crowd & Head Detector supporting Drone Overhead & CCTV Camera Modes.
-Fast & Smooth High-FPS Inference Engine.
+Drone-Domain Overhead Detector wrapping Ultralytics YOLOv8 & SAHI (Slicing Aided Hyper Inference).
+Features explicit cross-tile NMS postprocessing (IOU=0.50) to prevent boundary double-counting,
+VisDrone class taxonomy mapping ([0, 1]), and per-frame latency monitoring.
 """
 from __future__ import annotations
 
 import os
+import time
 import cv2
 import numpy as np
 from ultralytics import YOLO
 
+try:
+    from sahi import AutoDetectionModel
+    from sahi.predict import get_sliced_prediction
+    SAHI_AVAILABLE = True
+except ImportError:
+    SAHI_AVAILABLE = False
+
+
+
 
 class PersonDetector:
     """
-    YOLOv8 Person & Head Detector optimized for smooth high-FPS video playback.
+    YOLOv8 Drone & Ground Detector with optional SAHI (Slicing Aided Hyper Inference)
+    and explicit cross-tile NMS deduplication.
     """
 
-    PERSON_CLASS_ID = 0
-
-    def __init__(self, model_path: str, camera_type: str = "drone") -> None:
-        self.model = YOLO(model_path)
+    def __init__(self, model_path: str, camera_type: str = "drone", model_type: str = "coco") -> None:
+        self.model_path = model_path
         self.camera_type = camera_type.lower()
+        self.model_type = model_type.lower()
 
-        if self.camera_type == "drone":
-            default_conf = "0.14"
-            default_tiling = "true"
+        # Class Taxonomy Mapping:
+        # VisDrone taxonomy: 0 -> pedestrian, 1 -> people (Must count both 0 & 1)
+        # COCO taxonomy: 0 -> person
+        if "visdrone" in model_path.lower() or self.model_type == "visdrone":
+            self.target_classes = [0, 1]
+            self.model_type = "visdrone"
         else:
-            default_conf = "0.35"
-            default_tiling = "false"
+            self.target_classes = [0]
+            self.model_type = "coco"
 
-        self.conf_threshold = float(os.getenv("DETECTOR_CONF", default_conf))
-        self.enable_tiling = os.getenv("ENABLE_DRONE_TILING", default_tiling).lower() in ("true", "1", "yes")
+        # Parameter Tuning
+        self.conf_threshold = float(os.getenv("CONF_THRESH", "0.15" if self.camera_type == "drone" else "0.35"))
+        self.iou_threshold = float(os.getenv("NMS_IOU_THRESH", "0.65"))
+        self.imgsz = int(os.getenv("INFERENCE_IMGSZ", "1280" if self.camera_type == "drone" else "640"))
+
+        # SAHI Tiling Config
+        self.use_sahi = (
+            SAHI_AVAILABLE
+            and os.getenv("USE_SAHI", "true").lower() in ("true", "1", "yes")
+            and self.camera_type == "drone"
+        )
+        self.slice_h = int(os.getenv("SAHI_SLICE_HEIGHT", "640"))
+        self.slice_w = int(os.getenv("SAHI_SLICE_WIDTH", "640"))
+        self.overlap = float(os.getenv("SAHI_OVERLAP_RATIO", "0.20"))
+
+        # Load Ultralytics YOLO model
+        self.model = YOLO(self.model_path)
+
+        # Initialize SAHI AutoDetectionModel if active
+        self.sahi_model = None
+        if self.use_sahi:
+            try:
+                self.sahi_model = AutoDetectionModel.from_pretrained(
+                    model_type="ultralytics",
+                    model_path=self.model_path,
+                    confidence_threshold=self.conf_threshold,
+                    device="cpu",
+                )
+                print(f"[Detector SAHI] Initialized SAHI model: {self.model_path}")
+            except Exception as err:
+                print(f"[Detector SAHI] WARN: SAHI init failed ({err}). Falling back to whole-frame YOLO.")
+                self.use_sahi = False
 
         print(
-            f"[Detector] Mode: {self.camera_type.upper()} | "
-            f"conf={self.conf_threshold} | tiling={self.enable_tiling} | model={model_path}"
+            f"[Detector] Mode={self.camera_type.upper()} | ModelType={self.model_type.upper()} | "
+            f"SAHI={self.use_sahi} | Conf={self.conf_threshold} | IoU={self.iou_threshold} | ImgSz={self.imgsz}"
         )
 
-    def _nms(self, boxes: list[tuple[int, int, int, int, float]], iou_thresh: float = 0.40) -> list[tuple[int, int, int, int, float]]:
-        if not boxes:
-            return []
-
-        boxes_np = np.array([[b[0], b[1], b[2], b[3]] for b in boxes], dtype=float)
-        scores_np = np.array([b[4] for b in boxes], dtype=float)
-
-        x1 = boxes_np[:, 0]
-        y1 = boxes_np[:, 1]
-        x2 = boxes_np[:, 2]
-        y2 = boxes_np[:, 3]
-
-        areas = (x2 - x1 + 1) * (y2 - y1 + 1)
-        order = scores_np.argsort()[::-1]
-
-        keep = []
-        while order.size > 0:
-            i = order[0]
-            keep.append(i)
-
-            xx1 = np.maximum(x1[i], x1[order[1:]])
-            yy1 = np.maximum(y1[i], y1[order[1:]])
-            xx2 = np.minimum(x2[i], x2[order[1:]])
-            yy2 = np.minimum(y2[i], y2[order[1:]])
-
-            w = np.maximum(0.0, xx2 - xx1 + 1)
-            h = np.maximum(0.0, yy2 - yy1 + 1)
-            inter = w * h
-
-            ovr = inter / (areas[i] + areas[order[1:]] - inter)
-            inds = np.where(ovr <= iou_thresh)[0]
-            order = order[inds + 1]
-
-        return [boxes[k] for k in keep]
-
-    def detect(self, frame: np.ndarray) -> tuple[int, list[tuple[int, int, int, int, float]]]:
+    def detect(self, frame: np.ndarray) -> tuple[int, list[tuple[int, int, int, int, float]], float]:
         """
-        Run fast inference and return (count, list_of_bounding_boxes).
-        Optimized to 2 fast passes for Drone mode (Full frame + Center core) for zero lag.
+        Run detection and return (count, bounding_boxes, latency_ms).
         """
-        h, w = frame.shape[:2]
-        all_detected_boxes: list[tuple[int, int, int, int, float]] = []
+        start_time = time.monotonic()
+        boxes: list[tuple[int, int, int, int, float]] = []
 
-        # Tiling list: Full frame + optional Center Core crop
-        tiles = [(0, 0, w, h)]
-
-        if self.enable_tiling and (w >= 800 or h >= 600):
-            half_w, half_h = w // 2, h // 2
-            # Add center plaza core crop (where 90% of drone crowds gather)
-            tiles.append(
-                (max(0, half_w // 2), max(0, half_h // 2), min(w, half_w + half_w // 2), min(h, half_h + half_h // 2))
+        if self.use_sahi and self.sahi_model:
+            # --- SAHI Sliced Prediction Path with explicit cross-tile NMS deduplication ---
+            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            sliced_pred = get_sliced_prediction(
+                rgb_frame,
+                self.sahi_model,
+                slice_height=self.slice_h,
+                slice_width=self.slice_w,
+                overlap_height_ratio=self.overlap,
+                overlap_width_ratio=self.overlap,
+                postprocess_type="NMS",
+                postprocess_match_metric="IOU",
+                postprocess_match_threshold=0.50,  # Explicit cross-tile NMS deduplication
+                verbose=0,
             )
 
-        for (tx1, ty1, tx2, ty2) in tiles:
-            crop = frame[ty1:ty2, tx1:tx2]
-            if crop.size == 0:
-                continue
-
+            for object_prediction in sliced_pred.object_prediction_list:
+                cat_id = object_prediction.category.id
+                if cat_id in self.target_classes:
+                    bbox = object_prediction.bbox
+                    conf = object_prediction.score.value
+                    boxes.append((int(bbox.minx), int(bbox.miny), int(bbox.maxx), int(bbox.maxy), float(conf)))
+        else:
+            # --- Whole-Frame YOLO Path ---
             results = self.model(
-                crop,
-                classes=[self.PERSON_CLASS_ID],
+                frame,
+                classes=self.target_classes,
                 verbose=False,
                 conf=self.conf_threshold,
-                imgsz=960 if self.camera_type == "drone" else 640,
+                iou=self.iou_threshold,
+                imgsz=self.imgsz,
             )
 
             for r in results:
                 for box in r.boxes:
                     bx1, by1, bx2, by2 = map(int, box.xyxy[0])
                     conf = float(box.conf[0])
+                    boxes.append((bx1, by1, bx2, by2, conf))
 
-                    gx1 = tx1 + bx1
-                    gy1 = ty1 + by1
-                    gx2 = tx1 + bx2
-                    gy2 = ty1 + by2
-
-                    all_detected_boxes.append((gx1, gy1, gx2, gy2, conf))
-
-        final_boxes = self._nms(all_detected_boxes, iou_thresh=0.40)
-        return len(final_boxes), final_boxes
+        latency_ms = (time.monotonic() - start_time) * 1000.0
+        return len(boxes), boxes, round(latency_ms, 1)
 
     def annotate(self, frame: np.ndarray, boxes: list[tuple[int, int, int, int, float]]) -> np.ndarray:
         """
-        Draw bounding boxes / dot markers on a frame.
+        Draw clean bounding boxes / head dots on frame.
         """
         annotated = frame.copy()
 
@@ -153,10 +165,10 @@ class PersonDetector:
         return annotated
 
     def detect_and_annotate(self, frame: np.ndarray) -> tuple[int, np.ndarray]:
-        count, boxes = self.detect(frame)
+        count, boxes, latency_ms = self.detect(frame)
         annotated = self.annotate(frame, boxes)
         return count, annotated
 
     def count_persons(self, frame: np.ndarray) -> int:
-        count, _ = self.detect(frame)
+        count, _, _ = self.detect(frame)
         return count
