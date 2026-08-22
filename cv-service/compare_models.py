@@ -4,8 +4,8 @@ Comparison Harness Script for Drone Crowd Detection Evaluation.
 
 Evaluates a target aerial drone video across 3 detection configurations:
   (a) Baseline: COCO weights, Whole-Frame, Conf=0.25, IoU=0.45, imgsz=640
-  (b) Tuned Whole-Frame: VisDrone/COCO weights, Whole-Frame, Conf=0.15, IoU=0.65, imgsz=1280
-  (c) Tuned + SAHI: VisDrone/COCO weights + SAHI Sliced Tiling (640x640, 20% overlap, cross-tile NMS deduplication)
+  (b) Tuned Whole-Frame: VisDrone/COCO weights, Whole-Frame, Conf=0.06, IoU=0.60, imgsz=1280
+  (c) Tuned + SAHI: VisDrone/COCO weights + SAHI Fine-Grained Sliced Tiling (320x320, 20% overlap, Conf=0.06)
 
 Outputs headcount & latency comparison tables and saves annotated comparison image grid `comparison_output.jpg`.
 """
@@ -20,6 +20,8 @@ from glob import glob
 import cv2
 import numpy as np
 from ultralytics import YOLO
+
+import config
 
 try:
     from sahi import AutoDetectionModel
@@ -44,9 +46,9 @@ def run_baseline_coco(frame: np.ndarray, model: YOLO) -> tuple[int, list[tuple[i
 
 
 def run_tuned_wholeframe(frame: np.ndarray, model: YOLO, target_classes: list[int]) -> tuple[int, list[tuple[int, int, int, int, float]], float]:
-    """Config (b): Tuned Whole-Frame, Conf=0.15, IoU=0.65, imgsz=1280"""
+    """Config (b): Tuned Whole-Frame, Conf=0.06, IoU=0.60, imgsz=1280"""
     start = time.monotonic()
-    results = model(frame, classes=target_classes, verbose=False, conf=0.15, iou=0.65, imgsz=1280)
+    results = model(frame, classes=target_classes, verbose=False, conf=config.CONF_THRESH, iou=0.60, imgsz=1280, max_det=1000)
     boxes = []
     for r in results:
         for box in r.boxes:
@@ -58,7 +60,7 @@ def run_tuned_wholeframe(frame: np.ndarray, model: YOLO, target_classes: list[in
 
 
 def run_tuned_sahi(frame: np.ndarray, sahi_model, target_classes: list[int]) -> tuple[int, list[tuple[int, int, int, int, float]], float]:
-    """Config (c): Tuned + SAHI Sliced Tiling (640x640, 20% overlap, cross-tile NMS deduplication)"""
+    """Config (c): Tuned + SAHI Fine-Grained Sliced Tiling (320x320, 20% overlap, cross-tile NMS deduplication)"""
     if not sahi_model:
         return 0, [], 0.0
 
@@ -67,10 +69,10 @@ def run_tuned_sahi(frame: np.ndarray, sahi_model, target_classes: list[int]) -> 
     sliced_pred = get_sliced_prediction(
         rgb,
         sahi_model,
-        slice_height=640,
-        slice_width=640,
-        overlap_height_ratio=0.20,
-        overlap_width_ratio=0.20,
+        slice_height=config.SAHI_SLICE_HEIGHT,
+        slice_width=config.SAHI_SLICE_WIDTH,
+        overlap_height_ratio=config.SAHI_OVERLAP_RATIO,
+        overlap_width_ratio=config.SAHI_OVERLAP_RATIO,
         postprocess_type="NMS",
         postprocess_match_metric="IOU",
         postprocess_match_threshold=0.50,  # Explicit cross-tile NMS deduplication
@@ -146,13 +148,13 @@ def main():
     # Load SAHI Model
     sahi_model = None
     if SAHI_AVAILABLE:
-        print("[Comparison Harness] Initializing SAHI Sliced Inference Engine...")
+        print(f"[Comparison Harness] Initializing SAHI Engine (slice={config.SAHI_SLICE_WIDTH}x{config.SAHI_SLICE_HEIGHT}, conf={config.CONF_THRESH})...")
         active_path = visdrone_path if has_visdrone else "models/yolov8n.pt"
         try:
             sahi_model = AutoDetectionModel.from_pretrained(
                 model_type="ultralytics",
                 model_path=active_path,
-                confidence_threshold=0.15,
+                confidence_threshold=config.CONF_THRESH,
                 device="cpu",
             )
         except Exception as err:
@@ -195,7 +197,7 @@ def main():
         cnt_b, boxes_b, lat_b = run_tuned_wholeframe(frame, drone_model, drone_classes)
         results_b_counts.append(cnt_b)
         results_b_lat.append(lat_b)
-        last_ann_b = annotate_frame(frame, boxes_b, "(b) Tuned Whole-Frame (1280px)")
+        last_ann_b = annotate_frame(frame, boxes_b, f"(b) Tuned Whole-Frame (1280px, Conf={config.CONF_THRESH})")
 
         # Mode (c) Tuned + SAHI Sliced Tiling
         if sahi_model:
@@ -204,7 +206,7 @@ def main():
             cnt_c, boxes_c, lat_c = cnt_b, boxes_b, lat_b
         results_c_counts.append(cnt_c)
         results_c_lat.append(lat_c)
-        last_ann_c = annotate_frame(frame, boxes_c, "(c) Tuned + SAHI (Cross-Tile NMS)")
+        last_ann_c = annotate_frame(frame, boxes_c, f"(c) Tuned + SAHI ({config.SAHI_SLICE_WIDTH}x{config.SAHI_SLICE_HEIGHT})")
 
     avg_cnt_a = round(np.mean(results_a_counts), 1)
     avg_lat_a = round(np.mean(results_a_lat), 1)
@@ -221,8 +223,8 @@ def main():
     print(f" Configuration                             | Avg Headcount | Avg Latency (ms) | Real-Time Safety Margin (<500ms)")
     print("-" * 75)
     print(f" (a) COCO Baseline (Whole-Frame 640px)     | {avg_cnt_a:<13} | {avg_lat_a:<16} | PASS (Fast Baseline)")
-    print(f" (b) Tuned Whole-Frame (1280px, Conf=0.15) | {avg_cnt_b:<13} | {avg_lat_b:<16} | {'PASS' if avg_lat_b < 500 else 'WARN (>500ms)'}")
-    print(f" (c) Tuned + SAHI (640x640 Tile + NMS)     | {avg_cnt_c:<13} | {avg_lat_c:<16} | {'PASS' if avg_lat_c < 500 else 'WARN (>500ms)'}")
+    print(f" (b) Tuned Whole-Frame (1280px, Conf={config.CONF_THRESH}) | {avg_cnt_b:<13} | {avg_lat_b:<16} | {'PASS' if avg_lat_b < 500 else 'WARN (>500ms)'}")
+    print(f" (c) Tuned + SAHI ({config.SAHI_SLICE_WIDTH}x{config.SAHI_SLICE_HEIGHT} Tile)    | {avg_cnt_c:<13} | {avg_lat_c:<16} | {'PASS' if avg_lat_c < 500 else 'WARN (>500ms)'}")
     print("=" * 75)
 
     # Save visual comparison grid image
