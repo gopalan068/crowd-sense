@@ -3,9 +3,9 @@
  * Alert Lifecycle & Escalation Timer Manager.
  *
  * Implements Phase 4 Panic Signature Bypass Wiring:
- *   - Closes loop: when incoming payload has panic_signature: true, triggers immediate panic alert
- *     (assigned_to: "all_officials", alert_type: "immediate_panic_alert"), logs to SQLite audit DB,
- *     and emits mock dispatch simulation event tagged "STAMPEDE DETECTED".
+ *   - Closes loop: when incoming payload has panic_signature: true,
+ *     triggers immediate panic alert (assigned_to: "all_officials", alert_type: "immediate_panic_alert"),
+ *     logs to SQLite audit DB, and emits mock dispatch simulation event tagged "STAMPEDE DETECTED".
  */
 'use strict';
 
@@ -34,10 +34,18 @@ async function processZoneAlerts(riskResult, cvPayload, io) {
   const { zone_id } = cvPayload;
   const { risk_level, density } = riskResult;
   const trend_slope = cvPayload.trend_slope || 0;
+  const flow_turbulence = Number(cvPayload.flow_turbulence) || 0;
   const panic_signature = cvPayload.panic_signature === true;
+  const exodus_signature = cvPayload.exodus_signature === true;
 
-  // Check Panic Condition (Explicit Panic Signature OR extreme density surge >= 4.5)
-  const isPanic = panic_signature || density >= 4.5 || (trend_slope >= 2.0 && density >= 2.0);
+  // False-Positive Proof Panic Condition (Blueprint §6 Rules)
+  // Now includes exodus_signature: mass flee / fire evacuation coherent motion
+  const isPanic =
+    panic_signature ||
+    exodus_signature ||
+    (flow_turbulence >= 0.70 && density >= 1.5) ||
+    density >= 4.5 ||
+    (trend_slope >= 2.0 && density >= 2.0);
 
   if (isPanic) {
     const existingPanic = activeZoneAlerts.get(`${zone_id}_panic`);
@@ -68,18 +76,26 @@ async function processZoneAlerts(riskResult, cvPayload, io) {
 
       console.warn(
         `\n🚨 [PANIC ALERT BYPASS] Immediate panic alert for zone=${zone_id}! ` +
-        `panic_sig=${panic_signature} density=${density} slope=${trend_slope} alert_id=${alertId}\n`
+        `panic_sig=${panic_signature} exodus_sig=${exodus_signature} turb=${flow_turbulence} density=${density} alert_id=${alertId}\n`
       );
 
       if (io) {
         io.emit('alert_triggered', alertEntry);
         io.emit('alert_panic', alertEntry);
 
-        // Auto-trigger mock dispatch simulation toast tagged "STAMPEDE DETECTED" (§3 blueprint)
+        // Determine dispatch message based on trigger type
+        const triggerLabel = exodus_signature
+          ? 'FIRE EVACUATION / MASS EXODUS DETECTED'
+          : 'STAMPEDE DETECTED';
+        const triggerMsg = exodus_signature
+          ? `Mass exodus/fire evacuation signature detected in ${zone_id}. Coherent high-speed crowd movement confirmed.`
+          : `Panic signature triggered in ${zone_id}. Automated dispatch notification simulated.`;
+
+        // Auto-trigger mock dispatch simulation toast tagged (§3 blueprint)
         io.emit('mock_dispatch_toast', {
           zone_id,
-          title: 'STAMPEDE DETECTED',
-          message: `Panic signature triggered in ${zone_id}. Automated dispatch notification simulated.`,
+          title: triggerLabel,
+          message: triggerMsg,
           timestamp,
           is_simulation: true,
         });

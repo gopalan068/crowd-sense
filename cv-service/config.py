@@ -30,6 +30,11 @@ ZONE_TYPE_Z2: str = os.getenv("ZONE_TYPE_Z2", "corridor").lower()
 AREA_SQM_Z1: float = float(os.getenv("AREA_SQM_Z1", os.getenv("AREA_SQM", "30.0" if ZONE_TYPE_Z1 == "corridor" else "250.0")))
 AREA_SQM_Z2: float = float(os.getenv("AREA_SQM_Z2", "15.0"))
 
+# Strict Mode-Specific Confidence Thresholds
+CONF_THRESH_CCTV: float = float(os.getenv("CONF_THRESH_CCTV", "0.30"))
+CONF_THRESH_DRONE: float = float(os.getenv("CONF_THRESH_DRONE", "0.06"))
+CONF_THRESH: float = float(os.getenv("CONF_THRESH", "0.30"))
+
 # Analysis Intervals per Camera Mode
 DRONE_ANALYSIS_INTERVAL_SEC: float = float(os.getenv("DRONE_ANALYSIS_INTERVAL_SEC", "4.0"))
 CCTV_ANALYSIS_INTERVAL_SEC: float = float(os.getenv("CCTV_ANALYSIS_INTERVAL_SEC", "1.0"))
@@ -37,7 +42,7 @@ CCTV_ANALYSIS_INTERVAL_SEC: float = float(os.getenv("CCTV_ANALYSIS_INTERVAL_SEC"
 # Model Weights Selection: "visdrone" vs "coco"
 MODEL_TYPE: str = os.getenv("MODEL_TYPE", "visdrone" if os.path.exists("models/yolov8n-visdrone.pt") else "coco").lower()
 
-# SAHI Slicing Aided Hyper Inference Flags — Tuned for Ultra-Dense Drone Crowds (e.g. crowd_2.mp4)
+# SAHI Slicing Aided Hyper Inference Flags — Tuned for Ultra-Dense Drone Crowds
 USE_SAHI: bool = os.getenv("USE_SAHI", "true").lower() in ("true", "1", "yes")
 SAHI_SLICE_HEIGHT: int = int(os.getenv("SAHI_SLICE_HEIGHT", "320"))
 SAHI_SLICE_WIDTH: int = int(os.getenv("SAHI_SLICE_WIDTH", "320"))
@@ -45,7 +50,6 @@ SAHI_OVERLAP_RATIO: float = float(os.getenv("SAHI_OVERLAP_RATIO", "0.20"))
 
 # Tuned Aerial Inference Parameters
 NMS_IOU_THRESH: float = float(os.getenv("NMS_IOU_THRESH", "0.60"))
-CONF_THRESH: float = float(os.getenv("CONF_THRESH", "0.06"))
 INFERENCE_IMGSZ: int = int(os.getenv("INFERENCE_IMGSZ", "1280"))
 
 BACKEND_URL: str = os.getenv("BACKEND_URL", "http://localhost:4000/api/density")
@@ -56,8 +60,14 @@ MODEL_PATH: str = os.getenv("MODEL_PATH", "models/yolov8n-visdrone.pt" if MODEL_
 
 ENABLE_OPTICAL_FLOW: bool = os.getenv("ENABLE_OPTICAL_FLOW", "true").lower() in ("true", "1", "yes")
 
-# Focal Points for Optical Flow Convergence Direction (X, Y)
+# Focal Points (X, Y) pixel coordinates of the Egress Exit Door / Staircase in each video feed
 FOCAL_POINTS = {
-    "zone_1": (320, 240),  # Center end of hallway egress tunnel
-    "zone_2": (540, 240),  # Exit doorway right
+    "zone_1": (
+        int(os.getenv("FOCAL_POINT_Z1_X", "320")),
+        int(os.getenv("FOCAL_POINT_Z1_Y", "240")),
+    ),
+    "zone_2": (
+        int(os.getenv("FOCAL_POINT_Z2_X", "540")),
+        int(os.getenv("FOCAL_POINT_Z2_Y", "240")),
+    ),
 }

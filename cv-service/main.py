@@ -87,7 +87,7 @@ def zone_loop(
 
     last_analysis_time = 0.0
     last_boxes: list[tuple] = []
-    conv, turb, panic = 0.0, 0.0, False
+    conv, turb, panic, exodus = 0.0, 0.0, False, False
     last_latency = 0.0
     last_count = 0
     demo_step = 0
@@ -117,7 +117,7 @@ def zone_loop(
 
             if flow_analyzer:
                 curr_den = last_count / area_sqm
-                conv, turb, panic = flow_analyzer.analyze(frame, curr_den)
+                conv, turb, panic, exodus = flow_analyzer.analyze(frame, curr_den)
 
             # Emit reading to backend
             payload = emit(
@@ -130,10 +130,11 @@ def zone_loop(
                 flow_convergence=round(conv, 3),
                 flow_turbulence=round(turb, 3),
                 panic_signature=panic,
+                exodus_signature=exodus,
             )
             print(
                 f"{log_tag} [AI Analyzed] count={last_count} den={payload['density']} p/m² "
-                f"flow_turb={round(turb, 2)} (latency: {last_latency}ms)"
+                f"panic={panic} exodus={exodus} flow_turb={round(turb, 2)} (latency: {last_latency}ms)"
             )
             last_analysis_time = now
 
@@ -176,8 +177,8 @@ def main() -> None:
     detector_z1 = PersonDetector(config.MODEL_PATH, camera_type=type_z1, model_type=config.MODEL_TYPE)
     detector_z2 = PersonDetector(config.MODEL_PATH, camera_type=type_z2, model_type=config.MODEL_TYPE)
 
-    flow_z1 = FlowAnalyzer(config.FOCAL_POINTS["zone_1"]) if config.ENABLE_OPTICAL_FLOW else None
-    flow_z2 = FlowAnalyzer(config.FOCAL_POINTS["zone_2"]) if config.ENABLE_OPTICAL_FLOW else None
+    flow_z1 = FlowAnalyzer(config.FOCAL_POINTS["zone_1"], camera_type=type_z1) if config.ENABLE_OPTICAL_FLOW else None
+    flow_z2 = FlowAnalyzer(config.FOCAL_POINTS["zone_2"], camera_type=type_z2) if config.ENABLE_OPTICAL_FLOW else None
 
     # Open Zone 1 Stream
     cap_z1 = cv2.VideoCapture(src_z1) if src_z1 is not None else None

@@ -64,7 +64,9 @@ function computeRiskScore(
   trend_slope = 0.0,
   flow_convergence = 0.0,
   flow_turbulence = 0.0,
-  zone_type = 'general'
+  zone_type = 'general',
+  panic_signature = false,
+  exodus_signature = false
 ) {
   const config = THRESHOLDS[zone_type] || THRESHOLDS.general;
   const redThreshold = config.red_density;
@@ -94,9 +96,9 @@ function computeRiskScore(
     rawScore = (density_norm * 0.70) + (trend_norm * 0.30);
   }
 
-  const risk_score = Math.min(1.0, Math.max(0.0, Math.round(rawScore * 100) / 100));
+  let risk_score = Math.min(1.0, Math.max(0.0, Math.round(rawScore * 100) / 100));
 
-  // Determine risk level
+  // Determine risk level from composite score
   let risk_level = 'green';
   if (risk_score >= config.orange || density >= redThreshold) {
     risk_level = 'red';
@@ -104,6 +106,24 @@ function computeRiskScore(
     risk_level = 'orange';
   } else if (risk_score >= config.green || density >= redThreshold * 0.3) {
     risk_level = 'yellow';
+  }
+
+  // ── Turbulence Fast Path ──────────────────────────────────────────────────
+  // High turbulence alone (even without density) → force at least orange
+  if (turb_norm > 0.75 && risk_level === 'green') {
+    risk_level = 'yellow';
+  } else if (turb_norm > 0.75 && risk_level === 'yellow') {
+    risk_level = 'orange';
+  }
+
+  // ── Behavioral Panic Bypass ───────────────────────────────────────────────
+  // CV service confirmed a behavioral emergency pattern:
+  //   panic_signature  = crowd crush / chaotic stampede
+  //   exodus_signature = mass flee / fire evacuation (coherent fast motion)
+  // Either bypasses the density-based scoring and immediately triggers RED.
+  if (panic_signature || exodus_signature) {
+    risk_score = Math.max(risk_score, 0.90);
+    risk_level = 'red';
   }
 
   // Calculate linear extrapolation ETA to red threshold
@@ -121,6 +141,7 @@ function computeRiskScore(
     risk_level,
     eta_to_red_min,
     red_threshold: redThreshold,
+    behavioral_trigger: panic_signature ? 'panic' : exodus_signature ? 'exodus' : null,
     breakdown: {
       density_raw: density,
       density_norm: Math.round(density_norm * 100) / 100,

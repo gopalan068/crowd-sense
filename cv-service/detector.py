@@ -2,9 +2,9 @@
 cv-service/detector.py
 Drone-Domain Overhead Detector wrapping Ultralytics YOLOv8, SAHI & OpenCV Circular Head Feature Detector.
 
-Features Spatial Centroid Distance NMS Deduplication:
-  - Eliminates 2-3 dots per person by suppressing detections within 20px centroid radius.
-  - Guarantees exactly 1 single head dot per person.
+Enforces strict mode-specific confidence thresholds:
+  - CCTV Mode: STRICT 0.30 (30% minimum confidence floor). ZERO boxes under 0.30 allowed.
+  - Drone Mode: 0.06 (6% sensitive aerial threshold with SAHI & Circular Head extraction).
 """
 from __future__ import annotations
 
@@ -41,39 +41,34 @@ class PersonDetector:
             self.target_classes = [0]
             self.model_type = "coco"
 
-        # Parameter Tuning for Drone Crowds
-        if self.camera_type == "drone":
-            default_conf = "0.08"        # Sensitive threshold for small aerial heads
-            default_slice_h = "400"      # Perspective-adapted 400x400 tiles
-            default_slice_w = "400"
-            default_overlap = "0.25"     # 25% overlap
+        # STRICT Mode-Specific Confidence Thresholding
+        if self.camera_type == "cctv":
+            # Strict 0.30 (30%) confidence floor for CCTV ground cameras
+            self.conf_threshold = float(os.getenv("CONF_THRESH_CCTV", "0.30"))
+            self.slice_h = 640
+            self.slice_w = 640
+            self.overlap = 0.20
+            self.use_sahi = False
+            self.enable_circular_heads = False
         else:
-            default_conf = "0.35"
-            default_slice_h = "640"
-            default_slice_w = "640"
-            default_overlap = "0.20"
+            # Sensitive 0.06 threshold for aerial drone head dots
+            self.conf_threshold = float(os.getenv("CONF_THRESH_DRONE", os.getenv("CONF_THRESH", "0.06")))
+            self.slice_h = int(os.getenv("SAHI_SLICE_HEIGHT", "400"))
+            self.slice_w = int(os.getenv("SAHI_SLICE_WIDTH", "400"))
+            self.overlap = float(os.getenv("SAHI_OVERLAP_RATIO", "0.25"))
+            self.use_sahi = (
+                SAHI_AVAILABLE
+                and os.getenv("USE_SAHI", "true").lower() in ("true", "1", "yes")
+            )
+            self.enable_circular_heads = True
 
-        self.conf_threshold = float(os.getenv("CONF_THRESH", default_conf))
         self.iou_threshold = float(os.getenv("NMS_IOU_THRESH", "0.60"))
         self.imgsz = int(os.getenv("INFERENCE_IMGSZ", "1280" if self.camera_type == "drone" else "640"))
-
-        # SAHI Tiling Config
-        self.use_sahi = (
-            SAHI_AVAILABLE
-            and os.getenv("USE_SAHI", "true").lower() in ("true", "1", "yes")
-            and self.camera_type == "drone"
-        )
-        self.slice_h = int(os.getenv("SAHI_SLICE_HEIGHT", default_slice_h))
-        self.slice_w = int(os.getenv("SAHI_SLICE_WIDTH", default_slice_w))
-        self.overlap = float(os.getenv("SAHI_OVERLAP_RATIO", default_overlap))
-
-        # Enable Circular Head Detector for Drone Overhead Feeds
-        self.enable_circular_heads = self.camera_type == "drone"
 
         # Load Ultralytics YOLO model
         self.model = YOLO(self.model_path)
 
-        # Initialize SAHI AutoDetectionModel if active
+        # Initialize SAHI AutoDetectionModel if active (drone mode only)
         self.sahi_model = None
         if self.use_sahi:
             try:
@@ -90,14 +85,12 @@ class PersonDetector:
 
         print(
             f"[Detector] Mode={self.camera_type.upper()} | ModelType={self.model_type.upper()} | "
-            f"SAHI={self.use_sahi} | CircularHeadDetector={self.enable_circular_heads} | Conf={self.conf_threshold}"
+            f"StrictConfFloor={self.conf_threshold} | IoU={self.iou_threshold} | SAHI={self.use_sahi}"
         )
 
     def detect_circular_heads(self, frame: np.ndarray) -> list[tuple[int, int, int, int, float]]:
         """
-        User-Proposed Feature Extraction:
         Detects invariant round head geometries using CLAHE + OpenCV Hough Circles.
-        Uses minDist=24 to prevent multiple dots on the same person.
         """
         boxes: list[tuple[int, int, int, int, float]] = []
 
@@ -119,7 +112,6 @@ class PersonDetector:
 
             hough_flag = getattr(cv2, "HOUGH_GRADIENT", 3)
 
-            # Detect circular head structures (minDist=24px prevents 2-3 dots per person)
             circles = cv2.HoughCircles(
                 blurred,
                 hough_flag,
@@ -149,12 +141,10 @@ class PersonDetector:
     def _nms_centroids(self, boxes: list[tuple[int, int, int, int, float]], min_dist_px: float = 20.0) -> list[tuple[int, int, int, int, float]]:
         """
         Spatial Centroid Distance NMS Deduplication.
-        Eliminates duplicate 2-3 dots per person by enforcing a minimum spatial distance (20px) between dot centroids.
         """
         if not boxes:
             return []
 
-        # Sort by confidence score descending
         sorted_boxes = sorted(boxes, key=lambda b: b[4], reverse=True)
         keep: list[tuple[int, int, int, int, float]] = []
 
@@ -178,13 +168,12 @@ class PersonDetector:
 
     def detect(self, frame: np.ndarray) -> tuple[int, list[tuple[int, int, int, int, float]], float]:
         """
-        Hybrid Detection Pipeline with Spatial Centroid Distance Deduplication.
-        Ensures exactly 1 single dot per person.
+        Mode-Aware Detection Pipeline with Strict Confidence Filtering.
         """
         start_time = time.monotonic()
         all_boxes: list[tuple[int, int, int, int, float]] = []
 
-        # 1. SAHI Sliced Prediction Pass
+        # 1. SAHI Sliced Prediction Pass (Drone Mode Only)
         if self.use_sahi and self.sahi_model:
             try:
                 rgb_frame = cv2.cvtColor(frame, getattr(cv2, "COLOR_BGR2RGB", 4))
@@ -210,7 +199,7 @@ class PersonDetector:
             except Exception as err:
                 print(f"[Detector SAHI] Sliced pass warning: {err}")
 
-        # 2. Whole-Frame 1280px YOLO Pass
+        # 2. Whole-Frame YOLO Pass
         wf_results = self.model(
             frame,
             classes=self.target_classes,
@@ -227,14 +216,17 @@ class PersonDetector:
                 conf = float(box.conf[0])
                 all_boxes.append((bx1, by1, bx2, by2, conf))
 
-        # 3. Circular Head Structure Detector (Targets round heads directly in bottom/occluded zones)
+        # 3. Circular Head Structure Detector (Drone Mode Only)
         if self.enable_circular_heads:
             circular_head_boxes = self.detect_circular_heads(frame)
             all_boxes.extend(circular_head_boxes)
 
-        # 4. Spatial Centroid Distance NMS Deduplication (Guarantees exactly 1 dot per person)
+        # 4. Spatial Centroid Distance NMS Deduplication
         min_spatial_dist = 20.0 if self.camera_type == "drone" else 15.0
-        final_boxes = self._nms_centroids(all_boxes, min_dist_px=min_spatial_dist)
+        deduped_boxes = self._nms_centroids(all_boxes, min_dist_px=min_spatial_dist)
+
+        # 5. STRICT CONFIDENCE FLOOR FILTER (Strictly rejects any detection under self.conf_threshold)
+        final_boxes = [b for b in deduped_boxes if b[4] >= self.conf_threshold]
 
         latency_ms = (time.monotonic() - start_time) * 1000.0
         return len(final_boxes), final_boxes, round(latency_ms, 1)
@@ -242,8 +234,8 @@ class PersonDetector:
     def annotate(self, frame: np.ndarray, boxes: list[tuple[int, int, int, int, float]]) -> np.ndarray:
         """
         Draw annotations:
-          - Drone Mode: Clean solid dots on each detected person's head/center (zero boxes).
-          - CCTV Mode: Standard ground CCTV bounding boxes with confidence labels.
+          - Drone Mode: Clean solid dots on each detected person's head/center.
+          - CCTV Mode: Standard ground CCTV bounding boxes with confidence labels (conf >= 0.30).
         """
         annotated = frame.copy()
 

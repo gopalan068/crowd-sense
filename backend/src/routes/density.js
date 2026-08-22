@@ -35,7 +35,7 @@ router.post('/density', async (req, res) => {
     });
   }
 
-  const { zone_id, zone_type, density, flow_convergence, flow_turbulence, panic_signature, timestamp, feed_source, camera_type } = payload;
+  const { zone_id, zone_type, density, flow_convergence, flow_turbulence, panic_signature, exodus_signature, timestamp, feed_source, camera_type } = payload;
 
   // 1. Calculate trend slope (people/m² per minute) and fetch rolling history
   const { slope: trend_slope, history: historyArray } = updateAndGetTrendSlope(zone_id, density);
@@ -47,7 +47,9 @@ router.post('/density', async (req, res) => {
     trend_slope,
     flow_convergence,
     flow_turbulence,
-    zone_type
+    zone_type,
+    Boolean(panic_signature),
+    Boolean(exodus_signature)
   );
 
   // 3. Process zone alerts & escalation logic
@@ -69,6 +71,8 @@ router.post('/density', async (req, res) => {
     flow_convergence: Number(flow_convergence) || 0.0,
     flow_turbulence: Number(flow_turbulence) || 0.0,
     panic_signature: Boolean(panic_signature),
+    exodus_signature: Boolean(exodus_signature),
+    behavioral_trigger: riskResult.behavioral_trigger || null,
     eta_to_red_min: riskResult.eta_to_red_min,
     red_threshold: riskResult.red_threshold,
     timestamp,
@@ -81,7 +85,8 @@ router.post('/density', async (req, res) => {
   console.log(
     `[Backend] density_update zone=${zone_id} (${zone_type}) ` +
     `density=${density} risk=${riskResult.risk_level} (${riskResult.risk_score}) ` +
-    `conv=${socketPayload.flow_convergence} turb=${socketPayload.flow_turbulence}`
+    `conv=${socketPayload.flow_convergence} turb=${socketPayload.flow_turbulence}` +
+    (riskResult.behavioral_trigger ? ` 🚨 behavioral_trigger=${riskResult.behavioral_trigger}` : '')
   );
 
   if (io) {

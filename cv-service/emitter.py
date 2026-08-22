@@ -23,6 +23,7 @@ def build_payload(
     flow_convergence: float = 0.0,
     flow_turbulence: float = 0.0,
     panic_signature: bool = False,
+    exodus_signature: bool = False,
 ) -> dict:
     zid = zone_id or config.ZONE_ID
     ztype = zone_type or config.ZONE_TYPE
@@ -44,6 +45,7 @@ def build_payload(
         "flow_convergence": flow_convergence,
         "flow_turbulence": flow_turbulence,
         "panic_signature": panic_signature,
+        "exodus_signature": exodus_signature,
         "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
 
@@ -58,6 +60,7 @@ def emit(
     flow_convergence: float = 0.0,
     flow_turbulence: float = 0.0,
     panic_signature: bool = False,
+    exodus_signature: bool = False,
 ) -> dict:
     payload = build_payload(
         count_samples,
@@ -69,6 +72,7 @@ def emit(
         flow_convergence=flow_convergence,
         flow_turbulence=flow_turbulence,
         panic_signature=panic_signature,
+        exodus_signature=exodus_signature,
     )
 
     try:
