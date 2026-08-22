@@ -1,2 +1,5 @@
 node_modules/
 .env
+
+# Runtime database files are local state and must not be committed.
+data/*.db
