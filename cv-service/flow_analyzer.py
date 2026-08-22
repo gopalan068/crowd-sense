@@ -38,10 +38,20 @@ class FlowAnalyzer:
             self.prev_gray = gray
             return 0.0, 0.0, False
 
+        # Resize for fast optical flow computation
+        h, w = gray.shape[:2]
+        if w > 640:
+            scale_h = int(360 * (h / w))
+            small_gray = cv2.resize(gray, (640, scale_h))
+            small_prev = cv2.resize(self.prev_gray, (640, scale_h))
+        else:
+            small_gray = gray
+            small_prev = self.prev_gray
+
         # Compute Farneback Optical Flow
         flow = cv2.calcOpticalFlowFarneback(
-            self.prev_gray,
-            gray,
+            small_prev,
+            small_gray,
             None,
             pyr_scale=0.5,
             levels=3,
@@ -57,8 +67,8 @@ class FlowAnalyzer:
         fx, fy = flow[..., 0], flow[..., 1]
         magnitude, angle = cv2.cartToPolar(fx, fy)
 
-        # Filter out negligible motion noise
-        motion_mask = magnitude > 0.5
+        # Sensitive motion mask threshold for aerial drone and CCTV feeds
+        motion_mask = magnitude > 0.1
         if not np.any(motion_mask):
             self.consecutive_spike_count = 0
             return 0.0, 0.0, False
@@ -75,13 +85,13 @@ class FlowAnalyzer:
         turbulence = max(0.0, min(1.0, 1.0 - R))
 
         # 2. Compute flow_convergence (alignment toward focal point)
-        h, w = gray.shape
+        h_small, w_small = small_gray.shape
         y_coords, x_coords = np.where(motion_mask)
         fx_pts = active_fx
         fy_pts = active_fy
 
-        dx_focal = self.focal_point[0] - x_coords
-        dy_focal = self.focal_point[1] - y_coords
+        dx_focal = (self.focal_point[0] * (w_small / w)) - x_coords
+        dy_focal = (self.focal_point[1] * (h_small / h)) - y_coords
         dist_focal = np.sqrt(dx_focal**2 + dy_focal**2) + 1e-5
 
         u_x = dx_focal / dist_focal
@@ -94,21 +104,18 @@ class FlowAnalyzer:
         dot_prods = (norm_fx * u_x) + (norm_fy * u_y)
         convergence = max(0.0, min(1.0, float(np.mean(dot_prods))))
 
-        # 3. Compute panic_signature with False-Positive Proof Rules
+        # 3. Compute panic_signature
         mean_mag = float(np.mean(active_mag))
         acceleration = max(0.0, mean_mag - self.prev_magnitude)
         self.prev_magnitude = mean_mag
 
-        # Rule 1: Minimum density floor check (>= 1.50 p/m²)
-        # Rule 2: High turbulence (> 0.65) AND acceleration (> 1.50)
-        is_spike = (turbulence > 0.65) and (acceleration > 1.50)
+        is_spike = (turbulence > 0.60) and (acceleration > 0.80)
 
-        if is_spike and current_density >= 1.50:
+        if is_spike and current_density >= 1.00:
             self.consecutive_spike_count += 1
         else:
             self.consecutive_spike_count = max(0, self.consecutive_spike_count - 1)
 
-        # Requires 2 consecutive 1-second sample windows to fire panic_signature
         panic_signature = self.consecutive_spike_count >= 2
 
         return round(convergence, 3), round(turbulence, 3), panic_signature

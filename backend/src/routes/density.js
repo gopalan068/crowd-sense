@@ -35,7 +35,7 @@ router.post('/density', async (req, res) => {
     });
   }
 
-  const { zone_id, zone_type, density, flow_convergence, flow_turbulence, timestamp, feed_source } = payload;
+  const { zone_id, zone_type, density, flow_convergence, flow_turbulence, panic_signature, timestamp, feed_source, camera_type } = payload;
 
   // 1. Calculate trend slope (people/m² per minute) and fetch rolling history
   const { slope: trend_slope, history: historyArray } = updateAndGetTrendSlope(zone_id, density);
@@ -59,12 +59,16 @@ router.post('/density', async (req, res) => {
     zone_id,
     zone_type,
     feed_source: feed_source || (zone_id === 'zone_1' ? 'live_webcam' : 'pre_recorded'),
+    camera_type: camera_type || (zone_id === 'zone_1' ? 'drone' : 'cctv'),
     risk_level: riskResult.risk_level,
     risk_score: riskResult.risk_score,
     density,
     density_norm: riskResult.breakdown.density_norm,
     trend_slope,
     trend_norm: riskResult.breakdown.trend_norm,
+    flow_convergence: Number(flow_convergence) || 0.0,
+    flow_turbulence: Number(flow_turbulence) || 0.0,
+    panic_signature: Boolean(panic_signature),
     eta_to_red_min: riskResult.eta_to_red_min,
     red_threshold: riskResult.red_threshold,
     timestamp,
@@ -77,7 +81,7 @@ router.post('/density', async (req, res) => {
   console.log(
     `[Backend] density_update zone=${zone_id} (${zone_type}) ` +
     `density=${density} risk=${riskResult.risk_level} (${riskResult.risk_score}) ` +
-    `slope=${trend_slope} eta=${riskResult.eta_to_red_min}m`
+    `conv=${socketPayload.flow_convergence} turb=${socketPayload.flow_turbulence}`
   );
 
   if (io) {
