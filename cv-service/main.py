@@ -29,7 +29,14 @@ from stream_server import start_stream_server, update_zone_frame
 
 
 def parse_source(src: str) -> int | str:
-    return int(src) if src.isdigit() else src
+    if src.isdigit():
+        return int(src)
+    if os.path.exists(src):
+        return src
+    alt_path = os.path.join("videos", os.path.basename(src))
+    if os.path.exists(alt_path):
+        return alt_path
+    return src
 
 
 def create_demo_crowd_frame(step: int) -> np.ndarray:
@@ -75,7 +82,6 @@ def zone_loop(
       - 4.0 seconds for Drone overhead feeds (SAHI + Farneback Flow).
       - 1.0 second for CCTV ground feeds.
     """
-    # Decoupled time interval: 4.0s for drone mode, 1.0s for cctv mode
     analysis_interval_sec = config.DRONE_ANALYSIS_INTERVAL_SEC if camera_type == "drone" else config.CCTV_ANALYSIS_INTERVAL_SEC
 
     last_analysis_time = 0.0
@@ -161,8 +167,8 @@ def main() -> None:
         f"\n[CV] Multi-Zone Engine Starting — Model: {config.MODEL_PATH}\n"
         f"     Model Type: {config.MODEL_TYPE.upper()} | SAHI Enabled: {config.USE_SAHI}\n"
         f"     Drone Analysis Interval: {config.DRONE_ANALYSIS_INTERVAL_SEC}s | CCTV Analysis Interval: {config.CCTV_ANALYSIS_INTERVAL_SEC}s\n"
-        f"     Zone 1: 'zone_1' ({config.ZONE_TYPE})  Source: {z1_source_str!r} Mode: [{type_z1.upper()}]\n"
-        f"     Zone 2: 'zone_2' (corridor) Source: {z2_source_str!r} Mode: [{type_z2.upper()}]\n"
+        f"     Zone 1: 'zone_1' ({config.ZONE_TYPE})  Source: {src_z1!r} Mode: [{type_z1.upper()}]\n"
+        f"     Zone 2: 'zone_2' (corridor) Source: {src_z2!r} Mode: [{type_z2.upper()}]\n"
     )
 
     start_stream_server(port=5001)
@@ -176,16 +182,12 @@ def main() -> None:
     # Open Zone 1 Stream
     cap_z1 = cv2.VideoCapture(src_z1) if src_z1 is not None else None
     if cap_z1 and not cap_z1.isOpened():
-        print(f"[CV] WARN: Cannot open Zone 1 source {z1_source_str!r}")
+        print(f"[CV] WARN: Cannot open Zone 1 source {src_z1!r}")
 
     # Open Zone 2 Stream
-    cap_z2 = None
-    if isinstance(src_z2, str) and os.path.exists(src_z2):
-        cap_z2 = cv2.VideoCapture(src_z2)
-    elif isinstance(src_z2, int):
-        cap_z2 = cv2.VideoCapture(src_z2)
-    else:
-        print(f"[CV] INFO: Zone 2 file {z2_source_str!r} not found — using synthetic generator.")
+    cap_z2 = cv2.VideoCapture(src_z2) if src_z2 is not None else None
+    if cap_z2 and not cap_z2.isOpened():
+        print(f"[CV] INFO: Zone 2 file {src_z2!r} not opened — falling back to synthetic generator.")
 
     stop_event = threading.Event()
 
