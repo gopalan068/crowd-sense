@@ -295,8 +295,9 @@ export default function App() {
 
         {/* Tab 3: Venue Map & Egress Bottlenecks */}
         {activeTab === 'VENUE_MAP' && (
-          <BottleneckExitMap />
+          <BottleneckExitMap zoneMap={zoneMap} />
         )}
+
 
       </main>
 
