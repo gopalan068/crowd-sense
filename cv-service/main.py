@@ -6,6 +6,7 @@ Per-Zone Decoupled Execution:
   - Drone Mode: Analyzes 1 frame every 4.0 seconds (Heavy SAHI/Drone crowd inference, zero lag).
   - CCTV Mode: Analyzes 1 frame every 1.0 second (Ground angle inference).
   - Stream Server: Streams smooth 30 FPS video preview to the dashboard shell continuously.
+  - Per-Zone Physical Area & Type: AREA_SQM_Z1/Z2 and ZONE_TYPE_Z1/Z2 supported independently in .env.
 """
 from __future__ import annotations
 
@@ -91,7 +92,7 @@ def zone_loop(
     last_count = 0
     demo_step = 0
 
-    print(f"{log_tag} Started worker thread | Mode=[{camera_type.upper()}] | Analysis Interval={analysis_interval_sec}s")
+    print(f"{log_tag} Started worker thread | Mode=[{camera_type.upper()}] | Type=[{zone_type.upper()}] | Area={area_sqm}m² | Interval={analysis_interval_sec}s")
 
     while not stop_event.is_set():
         # 1. Read next video frame
@@ -166,9 +167,8 @@ def main() -> None:
     print(
         f"\n[CV] Multi-Zone Engine Starting — Model: {config.MODEL_PATH}\n"
         f"     Model Type: {config.MODEL_TYPE.upper()} | SAHI Enabled: {config.USE_SAHI}\n"
-        f"     Drone Analysis Interval: {config.DRONE_ANALYSIS_INTERVAL_SEC}s | CCTV Analysis Interval: {config.CCTV_ANALYSIS_INTERVAL_SEC}s\n"
-        f"     Zone 1: 'zone_1' ({config.ZONE_TYPE})  Source: {src_z1!r} Mode: [{type_z1.upper()}]\n"
-        f"     Zone 2: 'zone_2' (corridor) Source: {src_z2!r} Mode: [{type_z2.upper()}]\n"
+        f"     Zone 1: 'zone_1' ({config.ZONE_TYPE_Z1}) Area={config.AREA_SQM_Z1}m² Source: {src_z1!r} Mode: [{type_z1.upper()}]\n"
+        f"     Zone 2: 'zone_2' ({config.ZONE_TYPE_Z2}) Area={config.AREA_SQM_Z2}m² Source: {src_z2!r} Mode: [{type_z2.upper()}]\n"
     )
 
     start_stream_server(port=5001)
@@ -199,8 +199,8 @@ def main() -> None:
             detector=detector_z1,
             flow_analyzer=flow_z1,
             zone_id="zone_1",
-            zone_type=config.ZONE_TYPE,
-            area_sqm=config.AREA_SQM,
+            zone_type=config.ZONE_TYPE_Z1,
+            area_sqm=config.AREA_SQM_Z1,
             feed_source=feed_z1,
             camera_type=type_z1,
             stop_event=stop_event,
@@ -218,8 +218,8 @@ def main() -> None:
             detector=detector_z2,
             flow_analyzer=flow_z2,
             zone_id="zone_2",
-            zone_type="corridor",
-            area_sqm=15.0,
+            zone_type=config.ZONE_TYPE_Z2,
+            area_sqm=config.AREA_SQM_Z2,
             feed_source=feed_z2,
             camera_type=type_z2,
             stop_event=stop_event,
