@@ -98,21 +98,25 @@ function computeRiskScore(
 
   let risk_score = Math.min(1.0, Math.max(0.0, Math.round(rawScore * 100) / 100));
 
-  // Determine risk level from composite score
+  // Determine risk level purely from composite score
+  // The score already incorporates density via density_norm (50% weight),
+  // so density-based secondary overrides are NOT used — they caused false
+  // yellows at low occupancy (e.g., 12 people in 20m² corridor = yellow).
   let risk_level = 'green';
-  if (risk_score >= config.orange || density >= redThreshold) {
+  if (risk_score >= config.orange) {
     risk_level = 'red';
-  } else if (risk_score >= config.yellow || density >= redThreshold * 0.6) {
+  } else if (risk_score >= config.yellow) {
     risk_level = 'orange';
-  } else if (risk_score >= config.green || density >= redThreshold * 0.3) {
+  } else if (risk_score >= config.green) {
     risk_level = 'yellow';
   }
 
   // ── Turbulence Fast Path ──────────────────────────────────────────────────
-  // High turbulence alone (even without density) → force at least orange
-  if (turb_norm > 0.75 && risk_level === 'green') {
+  // Only fires on EXTREME chaotic motion (0.88+) — not normal walking.
+  // Raises level by one step, never skips straight to red.
+  if (turb_norm > 0.88 && risk_level === 'green') {
     risk_level = 'yellow';
-  } else if (turb_norm > 0.75 && risk_level === 'yellow') {
+  } else if (turb_norm > 0.88 && risk_level === 'yellow') {
     risk_level = 'orange';
   }
 
