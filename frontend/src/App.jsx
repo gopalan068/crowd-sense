@@ -1,7 +1,3 @@
-/**
- * frontend/src/App.jsx
- * Multi-Zone Operational Control Dashboard Shell — Phase 5 Hardened Edition.
- */
 import React, { useEffect, useState } from 'react'
 import { io } from 'socket.io-client'
 
@@ -15,12 +11,20 @@ import BottleneckExitMap from './components/BottleneckExitMap'
 import MockDispatchControl from './components/MockDispatchControl'
 import KnownLimitationsModal from './components/KnownLimitationsModal'
 import ConnectionStatusBanner from './components/ConnectionStatusBanner'
+import ResponderDashboard from './components/ResponderDashboard'
+import CitizenReportView from './components/CitizenReportView'
+import DualPhoneSimulator from './components/DualPhoneSimulator'
+
+
+
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || `${window.location.protocol}//${window.location.hostname}:4000`
 
 export default function App() {
+  const isPort5174 = window.location.port === '5174'
   const [theme, setTheme] = useState('day')
-  const [activeTab, setActiveTab] = useState('LIVE')
+  const [activeTab, setActiveTab] = useState(isPort5174 ? 'DUAL_SIM' : 'LIVE')
+
   const [connected, setConnected] = useState(false)
   const [reconnectCount, setReconnectCount] = useState(0)
   const [zoneMap, setZoneMap] = useState({
@@ -33,6 +37,9 @@ export default function App() {
   const [mockToasts, setMockToasts] = useState([])
   const [showLimitations, setShowLimitations] = useState(false)
   const [socketInstance, setSocketInstance] = useState(null)
+  // Per-zone panic confirmation build-up state (from 'panic_confirming' socket event)
+  // Shape: { zone_id: { confirmedFrames, requiredFrames, trigger } | null }
+  const [panicConfirming, setPanicConfirming] = useState({})
 
   const toggleTheme = () => {
     const nextTheme = theme === 'day' ? 'night' : 'day'
@@ -99,12 +106,50 @@ export default function App() {
     })
 
     socket.on('alert_acknowledged', (alert) => {
-      setActiveAlerts((prev) => prev.filter((a) => a.alert_id !== alert.alert_id))
+      if (!alert) return
+      setActiveAlerts((prev) =>
+        prev.map((a) => (a.alert_id === alert.alert_id ? { ...a, ...alert } : a))
+      )
       fetchAuditLogs()
     })
 
+    // Responder status update — keeps main dashboard alert panel and audit log
+    // in sync with status changes made from the responder view.
+    // Same data path as alert_acknowledged — no separate backend needed.
+    socket.on('alert_status_updated', (alert) => {
+      if (!alert) return
+      setActiveAlerts((prev) =>
+        prev.map((a) => (a.alert_id === alert.alert_id ? { ...a, ...alert } : a))
+      )
+      fetchAuditLogs()
+    })
+
+
     socket.on('mock_dispatch_toast', (toast) => {
       setMockToasts((prev) => [toast, ...prev.slice(0, 4)])
+    })
+
+    // Panic confirmation build-up: backend has seen isPanic but not yet reached
+    // the PANIC_CONFIRM_FRAMES threshold. Show an intermediate 'CONFIRMING...' state.
+    socket.on('panic_confirming', (data) => {
+      setPanicConfirming((prev) => ({
+        ...prev,
+        [data.zone_id]: {
+          confirmedFrames: data.confirmedFrames,
+          requiredFrames: data.requiredFrames,
+          trigger: data.trigger,
+        },
+      }))
+    })
+
+    // Clear confirming state once a real alert fires or zone calms down
+    socket.on('alert_triggered', (alert) => {
+      setPanicConfirming((prev) => ({ ...prev, [alert.zone_id]: null }))
+      setActiveAlerts((prev) => {
+        const exists = prev.some((a) => a.alert_id === alert.alert_id)
+        return exists ? prev.map((a) => (a.alert_id === alert.alert_id ? alert : a)) : [alert, ...prev]
+      })
+      fetchAuditLogs()
     })
 
     fetchAuditLogs()
@@ -190,6 +235,7 @@ export default function App() {
             { id: 'LIVE', label: '🔴 LIVE OPERATIONS' },
             { id: 'POST_EVENT', label: '📊 POST-EVENT ANALYSIS' },
             { id: 'VENUE_MAP', label: '🗺️ VENUE MAP & EGRESS' },
+            { id: 'DUAL_SIM', label: '📱 DUAL PHONE SIMULATOR' },
           ].map((tab) => (
             <button
               key={tab.id}
@@ -204,6 +250,7 @@ export default function App() {
             </button>
           ))}
         </div>
+
 
         {/* Header Tools */}
         <div className="flex items-center gap-3 text-xs font-mono-num">
@@ -236,19 +283,17 @@ export default function App() {
       {/* Main Operations Shell */}
       <main className="flex-1 p-6 space-y-6 max-w-7xl mx-auto w-full">
 
-        {/* Mock Dispatch Simulation Toasts */}
-        <MockDispatchControl activeToasts={mockToasts} onDismissToast={handleDismissToast} />
 
         {/* Tab 1: Live Operations */}
         {activeTab === 'LIVE' && (
           <div className="space-y-6">
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
               <div className="space-y-3">
-                <ZonePanel zoneData={zoneMap.zone_1} zoneId="zone_1" />
+                <ZonePanel zoneData={zoneMap.zone_1} zoneId="zone_1" panicConfirming={panicConfirming['zone_1'] ?? null} />
                 <FlowMetricsDisplay zoneData={zoneMap.zone_1} />
               </div>
               <div className="space-y-3">
-                <ZonePanel zoneData={zoneMap.zone_2} zoneId="zone_2" />
+                <ZonePanel zoneData={zoneMap.zone_2} zoneId="zone_2" panicConfirming={panicConfirming['zone_2'] ?? null} />
                 <FlowMetricsDisplay zoneData={zoneMap.zone_2} />
               </div>
             </div>
@@ -297,6 +342,20 @@ export default function App() {
         {activeTab === 'VENUE_MAP' && (
           <BottleneckExitMap zoneMap={zoneMap} />
         )}
+
+        {/* Dual Phone Field Mobile Simulator */}
+        {activeTab === 'DUAL_SIM' && (
+          <DualPhoneSimulator
+            socket={socketInstance}
+            backendUrl={BACKEND_URL}
+            connected={connected}
+            reconnectCount={reconnectCount}
+            onRetry={handleManualReconnect}
+            activeAlerts={activeAlerts}
+            onAcknowledge={handleAcknowledgeAlert}
+          />
+        )}
+
 
 
       </main>

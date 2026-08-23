@@ -14,7 +14,11 @@ const { setupSockets } = require('./sockets');
 const densityRouter = require('./routes/density');
 const alertsRouter = require('./routes/alerts');
 const postEventRouter = require('./routes/postEvent');
+const { router: respondersRouter } = require('./routes/responders');
+const citizenReportsRouter = require('./routes/citizenReports');
 const { sendEmergencyNotification } = require('./services/notifications');
+
+
 
 const PORT = process.env.PORT || 4000;
 
@@ -62,6 +66,10 @@ app.post('/api/dispatch/simulate', async (req, res) => {
 app.use('/api', densityRouter);
 app.use('/api', alertsRouter);
 app.use('/api', postEventRouter);
+app.use('/api', respondersRouter);
+app.use('/api', citizenReportsRouter);
+
+
 
 // --- Socket.io ---
 const io = setupSockets(server);
@@ -74,4 +82,9 @@ server.listen(PORT, () => {
   console.log(`[Backend] Density           → POST http://localhost:${PORT}/api/density`);
   console.log(`[Backend] AuditLog          → GET http://localhost:${PORT}/api/audit-log`);
   console.log(`[Backend] PostEventTimeline → GET http://localhost:${PORT}/api/post-event-timeline`);
+  console.log(`[Backend] ResponderCheckin  → POST http://localhost:${PORT}/api/responders/checkin`);
+  console.log(`[Backend] ResponderNearest  → GET http://localhost:${PORT}/api/responders/nearest?zone_id=zone_1`);
+  console.log(`[Backend] CitizenReport     → POST http://localhost:${PORT}/api/citizen-reports`);
+
+
 });

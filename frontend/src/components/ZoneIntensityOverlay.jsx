@@ -46,7 +46,7 @@ const RISK_CONFIGS = {
   },
 }
 
-export default function ZoneIntensityOverlay({ riskLevel = 'green', density = 0, riskScore = 0 }) {
+export default function ZoneIntensityOverlay({ riskLevel = 'green', density = 0, riskScore = 0, panicConfirming = null }) {
   const config = RISK_CONFIGS[riskLevel] || RISK_CONFIGS.green
 
   return (
@@ -59,19 +59,39 @@ export default function ZoneIntensityOverlay({ riskLevel = 'green', density = 0,
     >
       {/* Top Banner */}
       <div className="flex items-center justify-between">
-        <div
-          className="flex items-center gap-2 px-3 py-1.5 rounded-lg border font-bold text-xs shadow-sm"
-          style={{
-            background: config.badgeBg,
-            borderColor: config.borderColor,
-            color: config.textColor,
-          }}
-        >
-          <span className="text-sm">{config.icon}</span>
-          <span className="tracking-wider">{config.label}</span>
-          <span className="ml-1 text-[10px] font-normal opacity-80 font-mono-num">
-            (Score: {riskScore.toFixed(2)})
-          </span>
+        <div className="flex flex-col gap-1">
+          <div
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg border font-bold text-xs shadow-sm"
+            style={{
+              background: config.badgeBg,
+              borderColor: config.borderColor,
+              color: config.textColor,
+            }}
+          >
+            <span className="text-sm">{config.icon}</span>
+            <span className="tracking-wider">{config.label}</span>
+            <span className="ml-1 text-[10px] font-normal opacity-80 font-mono-num">
+              (Score: {riskScore.toFixed(2)})
+            </span>
+          </div>
+
+          {/* Panic confirmation build-up pill — only shown while backend is accumulating frames */}
+          {panicConfirming && (
+            <div
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[10px] font-bold animate-pulse"
+              style={{
+                background: 'rgba(245, 158, 11, 0.15)',
+                borderColor: '#f59e0b',
+                color: '#fbbf24',
+              }}
+            >
+              <span>⚠</span>
+              <span>
+                CONFIRMING {panicConfirming.trigger?.toUpperCase() ?? 'PANIC'}&nbsp;
+                ({panicConfirming.confirmedFrames}/{panicConfirming.requiredFrames} frames)
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Live indicator dot */}

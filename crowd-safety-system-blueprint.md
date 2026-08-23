@@ -242,3 +242,7 @@ Run CV and backend/frontend **in parallel from hour 0** — don't build sequenti
 - Real integration with police/ambulance dispatch systems and district event-permission workflows
 - Tamper-evident (hash-chained) audit log
 - Deployment path: district police / event-permitting offices as primary users, since large gatherings already require permits in most of India — a natural distribution channel
+- **Real-time GPS-based nearest-responder matching** — current implementation uses manual zone check-in (same as citizen zone selection); production version would use device GPS for continuous responder location without manual re-check-in
+- **True dynamic routing and live obstacle-avoidance** — current implementation uses pre-authored zone-to-zone path labels (same scope decision as the bottleneck/exit-route modeling feature); production version would compute optimal paths from real-time corridor density and blocked-route data
+- **OS-level push notifications via service-worker** — current implementation delivers alerts via a persistent in-app WebSocket feed with Web Audio API cue (tab must remain open); production version would use service-worker background sync so alerts reach the device even when the app is in the background
+

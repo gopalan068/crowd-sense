@@ -143,6 +143,15 @@ export default function BottleneckExitMap({ zoneMap = {} }) {
     seg_3c: 0.25,
   })
 
+  // Segment breach manual testing lock state (prevents CV socket stream from instantly overwriting test breaches)
+  const [manualBreaches, setManualBreaches] = useState({
+    seg_1: false,
+    seg_2: false,
+    seg_3a: false,
+    seg_3b: false,
+    seg_3c: false,
+  })
+
   // Breached alerts state
   const [marshalAlerts, setMarshalAlerts] = useState([])
   const [controlRoomLogs, setControlRoomLogs] = useState([])
@@ -153,19 +162,17 @@ export default function BottleneckExitMap({ zoneMap = {} }) {
   const [isSimulating, setIsSimulating] = useState(false)
   const [simProgress, setSimProgress] = useState(0)
 
-  // Sync segment density with socket zoneMap feed
+  // Sync segment density with socket zoneMap feed while preserving manual breach locks
   useEffect(() => {
-    if (zoneMap.zone_2?.density !== undefined) {
-      const baseDensity = parseFloat(zoneMap.zone_2.density) || 0.3
-      setSegmentDensities({
-        seg_1: Math.min(3.0, Math.max(0.05, +(baseDensity * 0.4).toFixed(2))),
-        seg_2: Math.min(3.0, Math.max(0.05, +(baseDensity * 0.95).toFixed(2))),
-        seg_3a: Math.min(3.0, Math.max(0.05, +(baseDensity * 0.6).toFixed(2))),
-        seg_3b: Math.min(3.0, Math.max(0.05, +(baseDensity * 0.3).toFixed(2))),
-        seg_3c: Math.min(3.0, Math.max(0.05, +(baseDensity * 0.5).toFixed(2))),
-      })
-    }
-  }, [zoneMap])
+    const baseDensity = zoneMap.zone_2?.density !== undefined ? parseFloat(zoneMap.zone_2.density) : 0.3
+    setSegmentDensities({
+      seg_1: manualBreaches.seg_1 ? 1.35 : Math.min(3.0, Math.max(0.05, +(baseDensity * 0.4).toFixed(2))),
+      seg_2: manualBreaches.seg_2 ? 1.35 : Math.min(3.0, Math.max(0.05, +(baseDensity * 0.95).toFixed(2))),
+      seg_3a: manualBreaches.seg_3a ? 1.35 : Math.min(3.0, Math.max(0.05, +(baseDensity * 0.6).toFixed(2))),
+      seg_3b: manualBreaches.seg_3b ? 1.35 : Math.min(3.0, Math.max(0.05, +(baseDensity * 0.3).toFixed(2))),
+      seg_3c: manualBreaches.seg_3c ? 1.35 : Math.min(3.0, Math.max(0.05, +(baseDensity * 0.5).toFixed(2))),
+    })
+  }, [zoneMap, manualBreaches])
 
   // Monitor corridor breaches and emit dual alerts
   useEffect(() => {
@@ -184,7 +191,7 @@ export default function BottleneckExitMap({ zoneMap = {} }) {
             density: density,
             timestamp: new Date().toLocaleTimeString(),
           }
-          
+
           setControlRoomLogs((logs) => [
             {
               id: `log_${Date.now()}_${Math.random()}`,
@@ -204,22 +211,58 @@ export default function BottleneckExitMap({ zoneMap = {} }) {
     })
   }, [segmentDensities])
 
-  // Vehicle Dispatch Animation tick
+  // Active Route for selected target branch
+  const activeRouteSegments = [
+    CORRIDOR_SEGMENTS[0], // Seg 1: Arrival Ramp
+    CORRIDOR_SEGMENTS[1], // Seg 2: Transit Bay to Junction
+  ]
+  if (dispatchTarget !== 'seg_2') {
+    const targetSeg = CORRIDOR_SEGMENTS.find((s) => s.id === dispatchTarget)
+    if (targetSeg) activeRouteSegments.push(targetSeg)
+  }
+
+  const routeTotalLength = activeRouteSegments.reduce((sum, s) => sum + s.lengthMeters, 0)
+
+  // Find first breached segment along the active dispatch route
+  let haltedSegment = null
+  let haltProgressRatio = 1.0
+
+  let cumulativeDistBeforeSeg = 0
+  for (let i = 0; i < activeRouteSegments.length; i++) {
+    const seg = activeRouteSegments[i]
+    const density = segmentDensities[seg.id] || 0
+    const isBreached = density >= seg.redThreshold
+
+    if (isBreached) {
+      haltedSegment = seg
+      // Ratio right at the entry point boundary before entering this segment
+      haltProgressRatio = Math.max(0, cumulativeDistBeforeSeg / routeTotalLength)
+      break
+    }
+    cumulativeDistBeforeSeg += seg.lengthMeters
+  }
+
+  // Vehicle Dispatch Animation tick with automatic Breach Halt
   useEffect(() => {
     let timer
     if (isSimulating) {
       timer = setInterval(() => {
         setSimProgress((prev) => {
-          if (prev >= 1) {
+          const next = prev + 0.012
+          if (haltedSegment && next >= haltProgressRatio) {
+            setIsSimulating(false)
+            return haltProgressRatio // Completely STOP animation right at the point before entering breached segment!
+          }
+          if (next >= 1) {
             setIsSimulating(false)
             return 1
           }
-          return prev + 0.012
+          return next
         })
       }, 100)
     }
     return () => clearInterval(timer)
-  }, [isSimulating])
+  }, [isSimulating, haltedSegment, haltProgressRatio])
 
   // Quadratic Bezier Curve calculation
   const getQuadraticBezierXY = (t, p0, p1, p2) => {
@@ -230,17 +273,6 @@ export default function BottleneckExitMap({ zoneMap = {} }) {
     }
   }
 
-  // Active Route for selected target branch
-  const activeRouteSegments = [
-    CORRIDOR_SEGMENTS[0], // Seg 1: Arrival Ramp
-    CORRIDOR_SEGMENTS[1], // Seg 2: Ultra-Narrow Throat to Junction
-  ]
-  if (dispatchTarget !== 'seg_2') {
-    const targetSeg = CORRIDOR_SEGMENTS.find((s) => s.id === dispatchTarget)
-    if (targetSeg) activeRouteSegments.push(targetSeg)
-  }
-
-  const routeTotalLength = activeRouteSegments.reduce((sum, s) => sum + s.lengthMeters, 0)
   const currentDistance = simProgress * routeTotalLength
 
   let accumulatedDist = 0
@@ -265,19 +297,76 @@ export default function BottleneckExitMap({ zoneMap = {} }) {
     activeVehicleSeg.endNode
   )
 
-  const activeSegDensity = segmentDensities[activeVehicleSeg.id] || 0
-  const isVehicleObstructed = activeSegDensity >= activeVehicleSeg.redThreshold
+  const isVehicleHaltedAtBreach = haltedSegment && simProgress >= haltProgressRatio && simProgress < 1
 
   const handleToggleSegmentBreach = (segId) => {
-    setSegmentDensities((prev) => {
-      const current = prev[segId] || 0
-      const next = current >= 1.0 ? 0.25 : 1.25
-      return { ...prev, [segId]: next }
+    setManualBreaches((prev) => ({
+      ...prev,
+      [segId]: !prev[segId],
+    }))
+  }
+
+  const handleClearSegmentBreach = (segId) => {
+    setManualBreaches((prev) => ({ ...prev, [segId]: false }))
+    setSegmentDensities((prev) => ({ ...prev, [segId]: 0.25 }))
+    setMarshalAlerts((prev) => prev.filter((a) => a.segmentId !== segId))
+
+    const seg = CORRIDOR_SEGMENTS.find((s) => s.id === segId)
+    setControlRoomLogs((logs) => [
+      {
+        id: `log_${Date.now()}_${Math.random()}`,
+        text: `[RESOLVED] ${seg?.marshal || 'Official'} cleared crowd barricades for ${seg?.name || segId}. Segment density restored to 0.25 p/m².`,
+        type: 'RESOLVED',
+        timestamp: new Date().toLocaleTimeString(),
+      },
+      ...logs.slice(0, 19),
+    ])
+
+    if (haltedSegment?.id === segId) {
+      setTimeout(() => {
+        setIsSimulating(true)
+      }, 150)
+    }
+  }
+
+  const handleClearAllBreaches = () => {
+    setManualBreaches({
+      seg_1: false,
+      seg_2: false,
+      seg_3a: false,
+      seg_3b: false,
+      seg_3c: false,
     })
+    setSegmentDensities({
+      seg_1: 0.15,
+      seg_2: 0.25,
+      seg_3a: 0.20,
+      seg_3b: 0.10,
+      seg_3c: 0.15,
+    })
+    setMarshalAlerts([])
+    setControlRoomLogs((logs) => [
+      {
+        id: `log_${Date.now()}_${Math.random()}`,
+        text: `[RESOLVED ALL] Operations Control Room cleared all active segment breach alerts. Venue corridors clear.`,
+        type: 'RESOLVED',
+        timestamp: new Date().toLocaleTimeString(),
+      },
+      ...logs.slice(0, 19),
+    ])
+  }
+
+  const handleClearBreachAndResume = (segId) => {
+    handleClearSegmentBreach(segId)
   }
 
   const handleAcknowledgeMarshalAlert = (alertId) => {
-    setMarshalAlerts((prev) => prev.filter((a) => a.id !== alertId))
+    const alert = marshalAlerts.find((a) => a.id === alertId)
+    if (alert?.segmentId) {
+      handleClearSegmentBreach(alert.segmentId)
+    } else {
+      setMarshalAlerts((prev) => prev.filter((a) => a.id !== alertId))
+    }
   }
 
   const z1Density = zoneMap.zone_1?.density ? parseFloat(zoneMap.zone_1.density) : 0.85
@@ -314,7 +403,7 @@ export default function BottleneckExitMap({ zoneMap = {} }) {
       <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-xl border bg-slate-950/80 border-slate-800/80 backdrop-blur-sm text-xs shadow-inner">
         <div className="flex items-center gap-5 flex-wrap">
           <span className="font-extrabold text-slate-400 uppercase tracking-widest text-[10px]">Map Layers:</span>
-          
+
           <label className="flex items-center gap-2 cursor-pointer text-slate-300 hover:text-white transition-colors">
             <input
               type="checkbox"
@@ -356,24 +445,41 @@ export default function BottleneckExitMap({ zoneMap = {} }) {
           </label>
         </div>
 
-        <div className="flex items-center gap-2">
-          <span className="text-[11px] text-slate-400 font-semibold">Corridor Test:</span>
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-[11px] text-slate-400 font-semibold font-mono">⚡ Test Breach Locks:</span>
+          <button
+            onClick={() => handleToggleSegmentBreach('seg_1')}
+            className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-all shadow-sm ${manualBreaches.seg_1
+                ? 'bg-red-600 text-white border-red-400 shadow-red-900/50'
+                : 'bg-slate-900 text-slate-300 border-slate-700 hover:bg-slate-800'
+              }`}
+          >
+            {manualBreaches.seg_1 ? '🔒 Seg 1 BREACHED' : '⚡ Seg 1 (Arrival)'}
+          </button>
           <button
             onClick={() => handleToggleSegmentBreach('seg_2')}
-            className={`px-3 py-1 rounded-lg text-[11px] font-bold border transition-all shadow-sm ${
-              segmentDensities.seg_2 >= 1.0
-                ? 'bg-emerald-600/20 text-emerald-300 border-emerald-500/50 hover:bg-emerald-600/30'
-                : 'bg-red-600/20 text-red-300 border-red-500/50 hover:bg-red-600/30'
-            }`}
+            className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-all shadow-sm ${manualBreaches.seg_2
+                ? 'bg-red-600 text-white border-red-400 shadow-red-900/50'
+                : 'bg-slate-900 text-slate-300 border-slate-700 hover:bg-slate-800'
+              }`}
           >
-            {segmentDensities.seg_2 >= 1.0 ? '✓ Reset Segment 2' : '⚡ Breach Throat Seg 2'}
+            {manualBreaches.seg_2 ? '🔒 Seg 2 BREACHED' : '⚡ Seg 2 (Passage)'}
+          </button>
+          <button
+            onClick={() => handleToggleSegmentBreach('seg_3a')}
+            className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-all shadow-sm ${manualBreaches.seg_3a
+                ? 'bg-red-600 text-white border-red-400 shadow-red-900/50'
+                : 'bg-slate-900 text-slate-300 border-slate-700 hover:bg-slate-800'
+              }`}
+          >
+            {manualBreaches.seg_3a ? '🔒 Seg 3A BREACHED' : '⚡ Seg 3A (Stage)'}
           </button>
         </div>
       </div>
 
       {/* Main SVG Vector Canvas */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-        
+
         <div className="lg:col-span-8 relative bg-slate-950 p-4 rounded-2xl border border-slate-800/80 overflow-hidden shadow-2xl">
           <svg viewBox="0 0 820 480" className="w-full h-[450px] select-none">
             <defs>
@@ -407,7 +513,7 @@ export default function BottleneckExitMap({ zoneMap = {} }) {
             <g id="zone-a-arrival">
               <rect x="40" y="50" width="170" height="380" rx="12" fill="#0f172a" stroke="#0284c7" strokeWidth="1.5" strokeDasharray="4 4" />
               {layers.heatmap && <rect x="40" y="50" width="170" height="380" rx="12" fill="url(#heat-zone-a)" />}
-              
+
               <g transform="translate(50, 65)">
                 <rect width="135" height="42" rx="6" fill="rgba(15, 23, 42, 0.9)" stroke="#0284c7" strokeWidth="1" />
                 <text x="10" y="18" fill="#38bdf8" fontSize="10" fontWeight="bold">ZONE A: STAGING LAWN</text>
@@ -560,18 +666,24 @@ export default function BottleneckExitMap({ zoneMap = {} }) {
               </g>
             )}
 
-            {/* 6. ANIMATED RESPONSE VEHICLE MARKER ALONG SELECTED X-BRANCH */}
-            {isSimulating && (
+            {/* 6. ANIMATED RESPONSE VEHICLE MARKER ALONG SELECTED ROUTE */}
+            {(isSimulating || simProgress > 0) && (
               <g transform={`translate(${vehiclePos.x}, ${vehiclePos.y})`} className="transition-all duration-75">
-                <circle r="16" fill={isVehicleObstructed ? '#ef4444' : '#0284c7'} stroke="#ffffff" strokeWidth="2.5" className={isVehicleObstructed ? 'animate-bounce' : ''} />
+                <circle
+                  r="16"
+                  fill={isVehicleHaltedAtBreach ? '#ef4444' : '#0284c7'}
+                  stroke="#ffffff"
+                  strokeWidth="2.5"
+                  className={isVehicleHaltedAtBreach ? 'animate-bounce' : ''}
+                />
                 <text x="0" y="5" textAnchor="middle" fontSize="13">
                   {dispatchMode === 'AMBULANCE' ? '🚑' : '🚶‍♂️'}
                 </text>
-                {isVehicleObstructed && (
-                  <g transform="translate(-45, -28)">
-                    <rect width="90" height="20" rx="5" fill="#991b1b" stroke="#f87171" strokeWidth="1" />
-                    <text x="45" y="13" fill="#ffffff" fontSize="8" fontWeight="bold" textAnchor="middle">
-                      ⚠️ OBSTRUCTED
+                {isVehicleHaltedAtBreach && (
+                  <g transform="translate(-75, -34)">
+                    <rect width="150" height="22" rx="5" fill="#7f1d1d" stroke="#f87171" strokeWidth="1.5" />
+                    <text x="75" y="14" fill="#fef2f2" fontSize="8" fontWeight="extrabold" textAnchor="middle">
+                      ⛔ HALTED — BREACHED SEGMENT
                     </text>
                   </g>
                 )}
@@ -592,18 +704,67 @@ export default function BottleneckExitMap({ zoneMap = {} }) {
 
         {/* Right Inspector & Dispatch Control Column (4 Cols) */}
         <div className="lg:col-span-4 space-y-4">
-          
+
+          {/* URGENT OFFICIAL ACTION REPORT BANNER (WHEN VEHICLE IS HALTED) */}
+          {isVehicleHaltedAtBreach && (
+            <div className="p-4 rounded-2xl border bg-red-950/90 border-red-700/80 space-y-3 shadow-2xl animate-pulse backdrop-blur-md">
+              <div className="flex items-center justify-between border-b border-red-800/80 pb-2">
+                <span className="text-xs font-black uppercase text-red-200 tracking-wider flex items-center gap-1.5">
+                  🚨 OFFICIAL ACTION REPORT REQUIRED
+                </span>
+                <span className="text-[10px] font-extrabold px-2 py-0.5 rounded bg-red-900 text-red-100 border border-red-700 font-mono">
+                  URGENT ⚡
+                </span>
+              </div>
+
+              <div className="text-xs space-y-2 text-red-100">
+                <p className="text-[11px] leading-relaxed">
+                  Response Unit <strong>{dispatchMode === 'AMBULANCE' ? '🚑 Ambulance' : '🚶‍♂️ QRT Medic'}</strong> HAS BEEN COMPLETELY HALTED at the entry point of <strong>{haltedSegment.name}</strong>.
+                </p>
+
+                <div className="p-2.5 rounded-xl bg-slate-950/90 border border-red-800 text-[11px] space-y-1">
+                  <div className="text-amber-300 font-bold">
+                    👮 Assigned Official: <tspan className="text-white">{haltedSegment.marshal}</tspan>
+                  </div>
+                  <div className="text-slate-300 text-[10px]">
+                    Current Segment Density: <strong className="text-red-400">{segmentDensities[haltedSegment.id]} p/m²</strong> (BREACHED).
+                  </div>
+                  <div className="text-slate-300 text-[10px] italic">
+                    Requesting IMMEDIATE ACTION from {haltedSegment.marshal} to clear crowd barricades before vehicle can enter!
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => handleClearBreachAndResume(haltedSegment.id)}
+                  className="w-full py-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-white font-extrabold text-xs uppercase tracking-wider shadow-lg transition-all border border-red-400 flex items-center justify-center gap-2"
+                >
+                  <span>⚡ Report clearance &amp; Resume Vehicle</span>
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Targeted Marshal Breach Alerts Box */}
           <div className="p-4 rounded-2xl border bg-slate-900/90 border-slate-800 space-y-3 shadow-xl backdrop-blur-sm">
-            <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-200 flex items-center justify-between">
-              <span>🚨 Targeted Marshal Breach Alerts</span>
-              <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-red-950 text-red-300 border border-red-800/80 font-mono-num font-bold">
-                {marshalAlerts.length} ACTIVE
-              </span>
-            </h3>
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-200 flex items-center gap-2">
+                <span>🚨 Targeted Marshal Breach Alerts</span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-950 text-red-300 border border-red-800/80 font-mono-num font-bold">
+                  {marshalAlerts.length} ACTIVE
+                </span>
+              </h3>
+              {marshalAlerts.length > 0 && (
+                <button
+                  onClick={handleClearAllBreaches}
+                  className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 text-[10px] font-bold transition-all"
+                >
+                  🧹 Clear All Breaches
+                </button>
+              )}
+            </div>
 
             {marshalAlerts.length > 0 ? (
-              <div className="space-y-2.5 max-h-48 overflow-y-auto pr-1">
+              <div className="space-y-2.5 max-h-56 overflow-y-auto pr-1">
                 {marshalAlerts.map((alert) => (
                   <div key={alert.id} className="p-3 rounded-xl bg-red-950/70 border border-red-800/80 text-xs space-y-2 animate-fade-in shadow-md">
                     <div className="flex items-center justify-between">
@@ -614,14 +775,16 @@ export default function BottleneckExitMap({ zoneMap = {} }) {
                       Density <strong className="text-red-300">{alert.density} p/m²</strong> exceeds safety threshold!
                     </p>
                     <div className="p-2 rounded-lg bg-slate-950/80 border border-red-900/60 text-[10px] text-amber-300">
-                      👉 <strong>Targeted Dispatch:</strong> Contact <strong>{alert.marshal}</strong> to clear barricades immediately.
+                      👉 <strong>Targeted Official:</strong> <strong>{alert.marshal}</strong>
                     </div>
-                    <button
-                      onClick={() => handleAcknowledgeMarshalAlert(alert.id)}
-                      className="w-full py-1.5 mt-1 rounded-lg bg-red-700 hover:bg-red-600 text-white font-bold text-[10px] uppercase transition-all shadow-sm"
-                    >
-                      ✓ Acknowledge &amp; Dispatch Clearance Team
-                    </button>
+                    <div className="flex items-center gap-2 pt-1">
+                      <button
+                        onClick={() => handleClearSegmentBreach(alert.segmentId)}
+                        className="flex-1 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white font-extrabold text-[10px] uppercase transition-all shadow-md flex items-center justify-center gap-1"
+                      >
+                        <span>⚡ report Breach  cleared</span>
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -645,17 +808,15 @@ export default function BottleneckExitMap({ zoneMap = {} }) {
                 <span className="text-slate-400 text-[11px] w-20 font-semibold">Unit Mode:</span>
                 <button
                   onClick={() => setDispatchMode('AMBULANCE')}
-                  className={`flex-1 py-1.5 px-2 rounded-lg font-bold text-[11px] border transition-all ${
-                    dispatchMode === 'AMBULANCE' ? 'bg-sky-600 text-white border-sky-500 shadow-md' : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-750'
-                  }`}
+                  className={`flex-1 py-1.5 px-2 rounded-lg font-bold text-[11px] border transition-all ${dispatchMode === 'AMBULANCE' ? 'bg-sky-600 text-white border-sky-500 shadow-md' : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-750'
+                    }`}
                 >
                   🚑 Ambulance
                 </button>
                 <button
                   onClick={() => setDispatchMode('FOOT_MEDIC')}
-                  className={`flex-1 py-1.5 px-2 rounded-lg font-bold text-[11px] border transition-all ${
-                    dispatchMode === 'FOOT_MEDIC' ? 'bg-sky-600 text-white border-sky-500 shadow-md' : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-750'
-                  }`}
+                  className={`flex-1 py-1.5 px-2 rounded-lg font-bold text-[11px] border transition-all ${dispatchMode === 'FOOT_MEDIC' ? 'bg-sky-600 text-white border-sky-500 shadow-md' : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-750'
+                    }`}
                 >
                   🚶‍♂️ QRT Medic
                 </button>
@@ -663,7 +824,7 @@ export default function BottleneckExitMap({ zoneMap = {} }) {
 
               {/* Target Destination Selection */}
               <div className="space-y-1">
-                <span className="text-slate-400 text-[11px] font-semibold">Target Field Quadrant:</span>
+                <span className="text-slate-400 text-[11px] font-semibold font-mono">Target Field Quadrant:</span>
                 <select
                   value={dispatchTarget}
                   onChange={(e) => setDispatchTarget(e.target.value)}
@@ -680,22 +841,22 @@ export default function BottleneckExitMap({ zoneMap = {} }) {
               <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 space-y-1.5">
                 <div className="flex justify-between text-[11px]">
                   <span className="text-slate-400">Transit Status:</span>
-                  <span className={`font-extrabold ${isVehicleObstructed ? 'text-red-400' : isSimulating ? 'text-emerald-400' : 'text-slate-400'}`}>
-                    {isVehicleObstructed
-                      ? '⚠️ DELAYED — OBSTRUCTED'
+                  <span className={`font-extrabold ${isVehicleHaltedAtBreach ? 'text-red-400' : isSimulating ? 'text-emerald-400' : 'text-slate-400'}`}>
+                    {isVehicleHaltedAtBreach
+                      ? `⛔ HALTED AT ${haltedSegment.id.toUpperCase()} ENTRY`
                       : isSimulating
-                      ? '🔴 EN ROUTE (X-HIGHWAY)'
-                      : 'STANDBY AT GATE A'}
+                        ? '🔴 EN ROUTE (X-HIGHWAY)'
+                        : 'STANDBY AT GATE A'}
                   </span>
                 </div>
                 <div className="flex justify-between text-[11px]">
                   <span className="text-slate-400">Estimated Transit ETA:</span>
                   <span className="font-extrabold text-white">
-                    {isVehicleObstructed
-                      ? 'DELAYED (+4.5 mins)'
+                    {isVehicleHaltedAtBreach
+                      ? `HALTED — AWAITING ${haltedSegment.marshal.split(' ')[1].toUpperCase()} ACTION`
                       : isSimulating
-                      ? `${Math.max(1, Math.round((1 - simProgress) * 55))} seconds`
-                      : '55 seconds'}
+                        ? `${Math.max(1, Math.round((1 - simProgress) * 55))} seconds`
+                        : '55 seconds'}
                   </span>
                 </div>
               </div>

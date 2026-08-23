@@ -46,7 +46,7 @@ Start-Process cmd -ArgumentList "/k", "pushd `"$backend`" && node src/index.js" 
 Wait-Backend
 
 # ── 3. Frontend ───────────────────────────────────────────────────────────────
-Write-Host "[CrowdSense] Starting frontend (Vite/React)..."
+Write-Host "[CrowdSense] Starting frontend (Vite/React - Command Center Port 5173)..."
 if (-not (Test-Path (Join-Path $frontend "node_modules"))) {
     Write-Host "[Frontend] node_modules not found - running npm install..."
     Push-Location $frontend
@@ -54,6 +54,10 @@ if (-not (Test-Path (Join-Path $frontend "node_modules"))) {
     Pop-Location
 }
 Start-Process cmd -ArgumentList "/k", "pushd `"$frontend`" && npm run dev" `
+    -WindowStyle Normal
+
+Write-Host "[CrowdSense] Starting Field Mobile Dual-Phone Simulator (Port 5174)..."
+Start-Process cmd -ArgumentList "/k", "pushd `"$frontend`" && npm run dev:field" `
     -WindowStyle Normal
 
 # ── 4. CV Service ─────────────────────────────────────────────────────────────
@@ -91,9 +95,10 @@ if (-not (Test-Path $modelPath)) {
 Write-Host ""
 Write-Host "================================================================"
 Write-Host " CrowdSense running:"
-Write-Host "   Backend  ->  http://localhost:4000   (separate window)"
-Write-Host "   Frontend ->  http://localhost:5173   (separate window)"
-Write-Host "   CV       ->  this window  (Ctrl+C to stop)"
+Write-Host "   Backend            ->  http://localhost:4000   (separate window)"
+Write-Host "   Ops Dashboard      ->  http://localhost:5173   (separate window)"
+Write-Host "   Dual-Phone Sim     ->  http://localhost:5174   (separate window)"
+Write-Host "   CV                 ->  this window  (Ctrl+C to stop)"
 Write-Host "================================================================"
 Write-Host ""
 

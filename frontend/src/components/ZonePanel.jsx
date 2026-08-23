@@ -8,7 +8,7 @@ import ZoneIntensityOverlay from './ZoneIntensityOverlay'
 
 const STREAM_BASE_URL = 'http://localhost:5001/stream'
 
-export default function ZonePanel({ zoneData, zoneId = 'zone_1' }) {
+export default function ZonePanel({ zoneData, zoneId = 'zone_1', panicConfirming = null }) {
   const videoRef = useRef(null)
   const canvasRef = useRef(null)
   const z1CanvasRef = useRef(null)
@@ -277,7 +277,7 @@ export default function ZonePanel({ zoneData, zoneId = 'zone_1' }) {
           )}
 
           {/* Integrated Zone Intensity Overlay */}
-          <ZoneIntensityOverlay riskLevel={risk_level} density={density} riskScore={risk_score} />
+          <ZoneIntensityOverlay riskLevel={risk_level} density={density} riskScore={risk_score} panicConfirming={panicConfirming} />
         </div>
 
         {/* Metrics Column (5 Cols) */}

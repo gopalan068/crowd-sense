@@ -72,6 +72,8 @@ export default function AuditLogView({ logs = [], onRefresh }) {
               <th className="py-2.5 px-4">Ack At</th>
               <th className="py-2.5 px-4">Ack By</th>
               <th className="py-2.5 px-4">Escalated To</th>
+              <th className="py-2.5 px-4">Responder Status</th>
+
             </tr>
           </thead>
           <tbody className="divide-y" style={{ borderColor: 'var(--color-border)' }}>
@@ -121,6 +123,25 @@ export default function AuditLogView({ logs = [], onRefresh }) {
                       '-'
                     )}
                   </td>
+                  <td className="py-2.5 px-4">
+                    {log.responder_status ? (
+                      <span
+                        className="px-2 py-0.5 rounded font-extrabold text-[10px] text-white"
+                        style={{
+                          background:
+                            log.responder_status === 'resolved' ? 'var(--risk-green)' :
+                            log.responder_status === 'need_backup' ? 'var(--risk-red)' :
+                            log.responder_status === 'on_scene' ? 'var(--risk-orange)' :
+                            'var(--color-accent)',
+                        }}
+                      >
+                        {log.responder_status.replace('_', ' ').toUpperCase()}
+                      </span>
+                    ) : (
+                      <span className="text-slate-400">—</span>
+                    )}
+                  </td>
+
                 </tr>
               ))
             )}

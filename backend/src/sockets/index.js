@@ -5,7 +5,8 @@
 'use strict';
 
 const { Server } = require('socket.io');
-const { acknowledgeAlert } = require('../services/escalationManager');
+const { acknowledgeAlert, updateAlertStatus } = require('../services/escalationManager');
+
 
 /**
  * Attaches Socket.io to the existing http.Server and returns the io instance.
@@ -30,6 +31,16 @@ function setupSockets(server) {
         await acknowledgeAlert(alert_id, acknowledged_by || 'official_1', io);
       }
     });
+
+    // Responder updates operational status over WebSocket
+    // Same as POST /api/alerts/:id/status but via WebSocket for lower latency.
+    socket.on('update_alert_status', async (data) => {
+      const { alert_id, status, responder_id } = data || {};
+      if (alert_id && status) {
+        await updateAlertStatus(alert_id, status, responder_id || 'unknown_responder', io);
+      }
+    });
+
 
     socket.on('disconnect', (reason) => {
       console.log(`[Socket.io] Client disconnected: ${socket.id} (${reason})`);

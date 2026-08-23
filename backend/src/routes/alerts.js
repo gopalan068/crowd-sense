@@ -7,7 +7,8 @@
 const express = require('express');
 const router = express.Router();
 const { getAuditLogs } = require('../db/database');
-const { acknowledgeAlert, getActiveAlerts } = require('../services/escalationManager');
+const { acknowledgeAlert, updateAlertStatus, getActiveAlerts } = require('../services/escalationManager');
+
 
 /**
  * GET /api/audit-log
@@ -51,6 +52,39 @@ router.post('/alerts/:id/acknowledge', async (req, res) => {
   } catch (err) {
     console.error(`[Route] POST /api/alerts/${alertId}/acknowledge error:`, err);
     return res.status(500).json({ error: 'Failed to acknowledge alert' });
+  }
+});
+
+/**
+ * POST /api/alerts/:id/status
+ * Responder operational status update.
+ * Body: { status: 'en_route'|'on_scene'|'resolved'|'need_backup', responder_id?: string }
+ *
+ * Writes to the SAME audit log used by the main dashboard (responder_status column).
+ * Emits alert_status_updated over the existing Socket.io connection.
+ */
+const VALID_RESPONDER_STATUSES = ['en_route', 'on_scene', 'resolved', 'need_backup'];
+
+router.post('/alerts/:id/status', async (req, res) => {
+  const alertId = req.params.id;
+  const { status, responder_id } = req.body || {};
+  const io = req.app.get('io');
+
+  if (!status || !VALID_RESPONDER_STATUSES.includes(status)) {
+    return res.status(400).json({
+      error: `Invalid or missing status. Must be one of: ${VALID_RESPONDER_STATUSES.join(', ')}`,
+    });
+  }
+
+  try {
+    const updated = await updateAlertStatus(alertId, status, responder_id || 'unknown_responder', io);
+    if (!updated) {
+      return res.status(404).json({ error: 'Alert not found' });
+    }
+    return res.status(200).json({ success: true, alert: updated });
+  } catch (err) {
+    console.error(`[Route] POST /api/alerts/${alertId}/status error:`, err);
+    return res.status(500).json({ error: 'Failed to update responder status' });
   }
 });
 

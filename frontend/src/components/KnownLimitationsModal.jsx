@@ -30,7 +30,23 @@ const LIMITATIONS = [
     desc: 'Anonymous headcount & density metrics only. Zero facial recognition, biometric identity storage, or individual tracking is performed.',
     category: 'PRIVACY & ETHICS',
   },
+  {
+    title: 'Responder Check-In (Manual Zone)',
+    desc: 'Nearest-team assignment uses manual zone check-in, not live GPS tracking. Responders select their current zone at check-in; "nearest team" means the closest checked-in zone to the alert zone — a simple lookup, not coordinate math. No location data is collected or stored.',
+    category: 'RESPONDER ROLE',
+  },
+  {
+    title: 'Pre-Authored Response Routes',
+    desc: 'Recommended response paths shown to field responders are pre-defined, hand-authored zone-to-zone connections in the system configuration — not computed at runtime. No pathfinding algorithm, graph traversal, or live obstacle-avoidance routing is used.',
+    category: 'RESPONDER ROLE',
+  },
+  {
+    title: 'In-App Alert Notifications (No Push)',
+    desc: 'Field responder alerts are delivered via a persistent live in-app WebSocket feed with audio cue (Web Audio API). No OS-level push notifications or background service workers are used. The responder tab must remain open to receive alerts.',
+    category: 'RESPONDER ROLE',
+  },
 ]
+
 
 export default function KnownLimitationsModal({ isOpen, onClose }) {
   if (!isOpen) return null

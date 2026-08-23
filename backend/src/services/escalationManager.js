@@ -13,7 +13,9 @@ const {
   insertAlert,
   acknowledgeAlertInDb,
   escalateAlertInDb,
+  updateResponderStatus,
 } = require('../db/database');
+
 
 const activeTimers = new Map();
 const activeZoneAlerts = new Map();
@@ -25,6 +27,14 @@ const ESCALATION_TIMEOUT_SEC = parseInt(process.env.ESCALATION_TIMEOUT_SEC || '3
 // the UI back to green instead of staying frozen on 'red'.
 const PANIC_ALERT_TTL_MS = parseInt(process.env.PANIC_ALERT_TTL_MS || '20000', 10); // 20 s default
 const lastPanicSeenMs = new Map(); // zone_id -> timestamp of last panic/exodus reading
+
+// Consecutive-frame confirmation buffer.
+// A panic alert only fires once isPanic has been true for this many consecutive
+// backend-received analysis frames.  Default: 2 frames (matching the CV-side
+// flow_analyzer consecutive_spike_count >= 2 gate).
+// Configurable via PANIC_CONFIRM_FRAMES env var for tuning per deployment.
+const PANIC_CONFIRM_FRAMES = parseInt(process.env.PANIC_CONFIRM_FRAMES || '2', 10);
+const panicConsecutiveCount = new Map(); // zone_id -> current consecutive isPanic count
 
 function generateAlertId() {
   return `alt_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
@@ -73,7 +83,38 @@ async function processZoneAlerts(riskResult, cvPayload, io) {
     density >= 4.5 ||
     (trend_slope >= 2.0 && density >= 2.0);
 
+  // ── Consecutive-Frame Confirmation Buffer ────────────────────────────────
+  // Increment or reset the per-zone consecutive panic counter.
+  // The alert only fires once the count reaches PANIC_CONFIRM_FRAMES.
+  // This prevents single transient spikes (e.g. lighting flash, CCTV noise)
+  // from creating false-positive alerts.
   if (isPanic) {
+    panicConsecutiveCount.set(zone_id, (panicConsecutiveCount.get(zone_id) || 0) + 1);
+  } else {
+    panicConsecutiveCount.set(zone_id, 0);
+  }
+
+  const confirmedFrames = panicConsecutiveCount.get(zone_id) || 0;
+  const panicConfirmed = confirmedFrames >= PANIC_CONFIRM_FRAMES;
+
+  // While building up toward confirmation, emit a softer warning event
+  // so the frontend can show an intermediate "Confirming panic..." state.
+  if (isPanic && !panicConfirmed && io) {
+    io.emit('panic_confirming', {
+      zone_id,
+      confirmedFrames,
+      requiredFrames: PANIC_CONFIRM_FRAMES,
+      trigger: panic_signature ? 'panic' : exodus_signature ? 'exodus' : 'threshold',
+      timestamp: new Date().toISOString(),
+    });
+    console.log(
+      `[Escalation] Panic building for zone=${zone_id}: ` +
+      `frame ${confirmedFrames}/${PANIC_CONFIRM_FRAMES} ` +
+      `(trigger: ${panic_signature ? 'panic_sig' : exodus_signature ? 'exodus_sig' : 'threshold'}) — awaiting confirmation.`
+    );
+  }
+
+  if (panicConfirmed) {
     const existingPanic = activeZoneAlerts.get(`${zone_id}_panic`);
     if (!existingPanic) {
       const alertId = generateAlertId();
@@ -237,6 +278,64 @@ async function acknowledgeAlert(alertId, acknowledgedBy = 'official_1', io) {
   return null;
 }
 
+/**
+ * Register a custom alert (e.g. citizen emergency report or panic override)
+ * into activeZoneAlerts, persist to SQLite DB, and emit socket event.
+ *
+ * @param {Object} alertEntry
+ * @param {import('socket.io').Server} io
+ * @returns {Promise<Object>}
+ */
+async function registerCustomAlert(alertEntry, io) {
+  const key = `custom_${alertEntry.alert_id}`;
+  activeZoneAlerts.set(key, alertEntry);
+  try {
+    await insertAlert(alertEntry);
+  } catch (err) {
+    console.error('[Escalation] Custom alert DB insert error:', err);
+  }
+  if (io) {
+    io.emit('alert_triggered', alertEntry);
+  }
+  return alertEntry;
+}
+
+/**
+ * Update responder operational status for an acknowledged alert.
+
+ * Writes to the same audit log used by the main dashboard.
+ *
+ * @param {string} alertId
+ * @param {string} status  'en_route' | 'on_scene' | 'resolved' | 'need_backup'
+ * @param {string} responderId  Responder name/team ID as entered at check-in.
+ * @param {import('socket.io').Server} io
+ * @returns {Promise<Object|null>}
+ */
+async function updateAlertStatus(alertId, status, responderId, io) {
+  try {
+    const updatedAlert = await updateResponderStatus(alertId, status, responderId);
+    if (updatedAlert) {
+      // Keep in-memory activeZoneAlerts in sync so getActiveAlerts() reflects status.
+      for (const [key, alert] of activeZoneAlerts.entries()) {
+        if (alert.alert_id === alertId) {
+          activeZoneAlerts.set(key, updatedAlert);
+        }
+      }
+      if (io) {
+        io.emit('alert_status_updated', updatedAlert);
+      }
+      console.log(
+        `[Escalation] Responder status update: alert=${alertId} ` +
+        `status=${status} responder=${responderId}`
+      );
+    }
+    return updatedAlert;
+  } catch (err) {
+    console.error('[Escalation] Error updating responder status:', err);
+    return null;
+  }
+}
+
 function getActiveAlerts() {
   return Array.from(activeZoneAlerts.values());
 }
@@ -244,5 +343,7 @@ function getActiveAlerts() {
 module.exports = {
   processZoneAlerts,
   acknowledgeAlert,
+  updateAlertStatus,
+  registerCustomAlert,
   getActiveAlerts,
 };

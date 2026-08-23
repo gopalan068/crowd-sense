@@ -42,6 +42,11 @@ db.serialize(() => {
       escalated_to TEXT
     )
   `);
+
+  // Migrations for responder_status, category, description
+  db.run(`ALTER TABLE audit_log ADD COLUMN responder_status TEXT`, () => {});
+  db.run(`ALTER TABLE audit_log ADD COLUMN category TEXT`, () => {});
+  db.run(`ALTER TABLE audit_log ADD COLUMN description TEXT`, () => {});
 });
 
 /**
@@ -54,8 +59,9 @@ function insertAlert(alert) {
     const sql = `
       INSERT INTO audit_log (
         alert_id, zone_id, severity, alert_type, triggered_at, assigned_to,
-        acknowledged_at, acknowledged_by, escalated_at, escalated_to
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        acknowledged_at, acknowledged_by, escalated_at, escalated_to,
+        category, description
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
     const params = [
       alert.alert_id,
@@ -68,6 +74,8 @@ function insertAlert(alert) {
       alert.acknowledged_by || null,
       alert.escalated_at || null,
       alert.escalated_to || null,
+      alert.category || null,
+      alert.description || null,
     ];
 
     db.run(sql, params, function (err) {
@@ -163,6 +171,39 @@ function getAuditLogs(limit = 50) {
   });
 }
 
+/**
+ * Update the responder status for an acknowledged alert.
+ * Valid values: 'en_route' | 'on_scene' | 'resolved' | 'need_backup'
+ *
+ * @param {string} alertId
+ * @param {string} status  One of the four valid enum values above.
+ * @param {string} responderId  Responder identity string (name/team ID).
+ * @returns {Promise<Object|null>} Updated alert record, or null if not found.
+ */
+function updateResponderStatus(alertId, status, responderId) {
+  return new Promise((resolve, reject) => {
+    const VALID_STATUSES = ['en_route', 'on_scene', 'resolved', 'need_backup'];
+    if (!VALID_STATUSES.includes(status)) {
+      return reject(new Error(`Invalid responder_status value: ${status}`));
+    }
+    const sql = `
+      UPDATE audit_log
+      SET responder_status = ?, acknowledged_by = COALESCE(?, acknowledged_by)
+      WHERE alert_id = ?
+    `;
+    db.run(sql, [status, responderId || null, alertId], function (err) {
+      if (err) {
+        console.error('[DB] Error updating responder status:', err);
+        return reject(err);
+      }
+      if (this.changes === 0) {
+        return resolve(null);
+      }
+      getAlertById(alertId).then(resolve).catch(reject);
+    });
+  });
+}
+
 module.exports = {
   db,
   insertAlert,
@@ -170,4 +211,5 @@ module.exports = {
   escalateAlertInDb,
   getAlertById,
   getAuditLogs,
+  updateResponderStatus,
 };
