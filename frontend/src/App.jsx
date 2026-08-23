@@ -14,9 +14,7 @@ import ConnectionStatusBanner from './components/ConnectionStatusBanner'
 import ResponderDashboard from './components/ResponderDashboard'
 import CitizenReportView from './components/CitizenReportView'
 import DualPhoneSimulator from './components/DualPhoneSimulator'
-
-
-
+import WeatherControlPanel from './components/WeatherControlPanel'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || `${window.location.protocol}//${window.location.hostname}:4000`
 
@@ -37,6 +35,7 @@ export default function App() {
   const [mockToasts, setMockToasts] = useState([])
   const [showLimitations, setShowLimitations] = useState(false)
   const [socketInstance, setSocketInstance] = useState(null)
+  const [weatherState, setWeatherState] = useState(null)
   // Per-zone panic confirmation build-up state (from 'panic_confirming' socket event)
   // Shape: { zone_id: { confirmedFrames, requiredFrames, trigger } | null }
   const [panicConfirming, setPanicConfirming] = useState({})
@@ -59,6 +58,18 @@ export default function App() {
     }
   }
 
+  const fetchWeatherState = async () => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/conditions/current`)
+      if (res.ok) {
+        const data = await res.json()
+        setWeatherState(data)
+      }
+    } catch (err) {
+      console.error('[Frontend] Error fetching weather conditions:', err)
+    }
+  }
+
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', 'day')
 
@@ -74,6 +85,7 @@ export default function App() {
       setConnected(true)
       setReconnectCount(0)
       fetchAuditLogs()
+      fetchWeatherState()
     })
 
     socket.on('disconnect', () => {
@@ -83,6 +95,11 @@ export default function App() {
 
     socket.io.on('reconnect_attempt', (attempt) => {
       setReconnectCount(attempt)
+    })
+
+    socket.on('conditions_updated', (updatedWeather) => {
+      console.log('[Socket.io] Received weather conditions_updated:', updatedWeather)
+      setWeatherState(updatedWeather)
     })
 
     socket.on('density_update', (payload) => {
@@ -283,6 +300,8 @@ export default function App() {
       {/* Main Operations Shell */}
       <main className="flex-1 p-6 space-y-6 max-w-7xl mx-auto w-full">
 
+        {/* Environmental Conditions & Presenter Control Strip */}
+        <WeatherControlPanel weatherState={weatherState} backendUrl={BACKEND_URL} />
 
         {/* Tab 1: Live Operations */}
         {activeTab === 'LIVE' && (

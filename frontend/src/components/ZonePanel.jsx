@@ -181,10 +181,15 @@ export default function ZonePanel({ zoneData, zoneId = 'zone_1', panicConfirming
     trend_slope = 0,
     eta_to_red_min = null,
     red_threshold = zone_type === 'corridor' ? 2.0 : 3.5,
+    base_red_threshold = zone_type === 'corridor' ? 2.0 : 3.5,
+    weather_modifier = null,
+    cv_confidence = 96,
     timestamp = new Date().toISOString(),
   } = zoneData
 
   const streamUrl = `${STREAM_BASE_URL}/${zone_id}`
+  const isHeatActive = weather_modifier?.density_factor < 1.0
+  const isRainActive = weather_modifier?.flow_factor > 1.0
 
   return (
     <div
@@ -214,10 +219,26 @@ export default function ZonePanel({ zoneData, zoneId = 'zone_1', panicConfirming
           }`}>
             {camera_type === 'drone' ? '🛸 DRONE OVERHEAD' : '📹 CCTV ANGLE'}
           </span>
+
+          {/* Environmental Modifier Badge */}
+          {weather_modifier && weather_modifier.condition !== 'clear' && (
+            <span className="text-[10px] px-2 py-0.5 rounded font-mono-num font-bold bg-amber-500/20 text-amber-600 dark:text-amber-300 border border-amber-500/30">
+              ⚡ MODIFIED: {weather_modifier.label}
+            </span>
+          )}
         </div>
 
-        <div className="text-xs font-mono-num" style={{ color: 'var(--color-muted)' }}>
-          {new Date(timestamp).toLocaleTimeString()}
+        <div className="text-xs font-mono-num flex items-center gap-3" style={{ color: 'var(--color-muted)' }}>
+          {/* Part C: CV Confidence Indicator */}
+          <span className={`text-[11px] font-mono-num font-bold px-2 py-0.5 rounded ${
+            cv_confidence < 80
+              ? 'bg-amber-500/20 text-amber-600 dark:text-amber-300 border border-amber-500/40'
+              : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+          }`}>
+            👁️ CV CONFIDENCE: {cv_confidence}% {cv_confidence < 80 ? '(RAIN DEGRADATION)' : ''}
+          </span>
+
+          <span>{new Date(timestamp).toLocaleTimeString()}</span>
         </div>
       </div>
 
@@ -334,8 +355,8 @@ export default function ZonePanel({ zoneData, zoneId = 'zone_1', panicConfirming
           <div className="p-2.5 rounded-lg border text-[11px] flex justify-between items-center font-mono-num"
                style={{ background: 'var(--color-bg)', borderColor: 'var(--color-border)', color: 'var(--color-muted)' }}>
             <span>Red Threshold Limit:</span>
-            <span className="font-bold" style={{ color: isCorridor ? 'var(--risk-red)' : 'var(--color-text)' }}>
-              {red_threshold} p/m² ({isCorridor ? 'STRICT EGRESS' : 'STANDARD'})
+            <span className="font-bold" style={{ color: isHeatActive || isCorridor ? 'var(--risk-red)' : 'var(--color-text)' }}>
+              {red_threshold} p/m² {isHeatActive ? `(HEAT TIGHTENED FROM ${base_red_threshold})` : isCorridor ? '(STRICT EGRESS)' : '(STANDARD)'}
             </span>
           </div>
         </div>

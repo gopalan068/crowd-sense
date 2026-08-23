@@ -45,6 +45,11 @@ const LIMITATIONS = [
     desc: 'Field responder alerts are delivered via a persistent live in-app WebSocket feed with audio cue (Web Audio API). No OS-level push notifications or background service workers are used. The responder tab must remain open to receive alerts.',
     category: 'RESPONDER ROLE',
   },
+  {
+    title: 'Simulated Weather Conditions & Demo Controls',
+    desc: 'Weather conditions are simulated and manually set via presenter demo controls, not pulled from a live weather service. Preset environmental conditions (including a combined Hot + Heavy Rain preset) are mutually exclusive menu selections for this demo. Production deployment would integrate a live API (e.g. OpenWeatherMap) for continuous real-time conditions at the venue.',
+    category: 'ENVIRONMENTAL',
+  },
 ]
 
 

@@ -22,6 +22,8 @@ const REQUIRED_FIELDS = [
   'timestamp',
 ];
 
+const { getWeatherState } = require('../services/weatherService');
+
 router.post('/density', async (req, res) => {
   const payload = req.body;
 
@@ -41,7 +43,8 @@ router.post('/density', async (req, res) => {
   const { slope: trend_slope, history: historyArray } = updateAndGetTrendSlope(zone_id, density);
   payload.trend_slope = trend_slope;
 
-  // 2. Compute composite risk score matching Blueprint Section 5 formula
+  // 2. Fetch active environmental state & compute composite risk score
+  const weatherState = getWeatherState();
   const riskResult = computeRiskScore(
     density,
     trend_slope,
@@ -49,7 +52,8 @@ router.post('/density', async (req, res) => {
     flow_turbulence,
     zone_type,
     Boolean(panic_signature),
-    Boolean(exodus_signature)
+    Boolean(exodus_signature),
+    weatherState
   );
 
   // 3. Process zone alerts & escalation logic
@@ -75,9 +79,12 @@ router.post('/density', async (req, res) => {
     behavioral_trigger: riskResult.behavioral_trigger || null,
     eta_to_red_min: riskResult.eta_to_red_min,
     red_threshold: riskResult.red_threshold,
+    base_red_threshold: riskResult.base_red_threshold,
     timestamp,
     people_count: payload.people_count,
     area_sqm: payload.area_sqm,
+    weather_modifier: riskResult.breakdown.weather_modifier,
+    cv_confidence: riskResult.breakdown.weather_modifier.cv_confidence,
     breakdown: riskResult.breakdown,
     history: historyArray,
   };

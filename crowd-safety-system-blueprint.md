@@ -245,4 +245,6 @@ Run CV and backend/frontend **in parallel from hour 0** — don't build sequenti
 - **Real-time GPS-based nearest-responder matching** — current implementation uses manual zone check-in (same as citizen zone selection); production version would use device GPS for continuous responder location without manual re-check-in
 - **True dynamic routing and live obstacle-avoidance** — current implementation uses pre-authored zone-to-zone path labels (same scope decision as the bottleneck/exit-route modeling feature); production version would compute optimal paths from real-time corridor density and blocked-route data
 - **OS-level push notifications via service-worker** — current implementation delivers alerts via a persistent in-app WebSocket feed with Web Audio API cue (tab must remain open); production version would use service-worker background sync so alerts reach the device even when the app is in the background
+- **Live weather API integration (e.g. OpenWeatherMap)** — current implementation uses simulated presenter demo controls and presets; production version would ingest real-time environmental API streams to scale risk thresholds dynamically based on venue weather
+
 

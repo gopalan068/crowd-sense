@@ -59,6 +59,8 @@ function updateAndGetTrendSlope(zoneId, density, nowMs = Date.now()) {
   };
 }
 
+const { getWeatherState } = require('./weatherService');
+
 function computeRiskScore(
   density,
   trend_slope = 0.0,
@@ -66,22 +68,32 @@ function computeRiskScore(
   flow_turbulence = 0.0,
   zone_type = 'general',
   panic_signature = false,
-  exodus_signature = false
+  exodus_signature = false,
+  weatherState = null
 ) {
+  const activeWeather = weatherState || getWeatherState();
   const config = THRESHOLDS[zone_type] || THRESHOLDS.general;
-  const redThreshold = config.red_density;
+  const baseRedThreshold = config.red_density;
+
+  // Weather modifiers:
+  // Extreme heat tightens red density threshold (e.g. 0.75x factor = 25% stricter threshold)
+  const densityFactor = activeWeather.density_factor || 1.0;
+  const effectiveRedThreshold = baseRedThreshold * densityFactor;
+
+  // Heavy rain scales optical flow convergence/turbulence sensitivity (e.g. 1.5x factor)
+  const flowFactor = activeWeather.flow_factor || 1.0;
 
   const enableOpticalFlow = (process.env.ENABLE_OPTICAL_FLOW || 'true').toLowerCase() !== 'false';
 
-  // 1. Normalized density term (0.0 to 1.0)
-  const density_norm = Math.min(1.0, Math.max(0.0, density / redThreshold));
+  // 1. Normalized density term (0.0 to 1.0) using effective tightened threshold under heat
+  const density_norm = Math.min(1.0, Math.max(0.0, density / effectiveRedThreshold));
 
   // 2. Normalized trend slope term (0.0 to 1.0)
   const trend_norm = Math.min(1.0, Math.max(0.0, trend_slope / 2.0));
 
-  // 3. Flow terms (0.0 to 1.0)
-  const conv_norm = Math.min(1.0, Math.max(0.0, flow_convergence));
-  const turb_norm = Math.min(1.0, Math.max(0.0, flow_turbulence));
+  // 3. Flow terms (0.0 to 1.0) with rain sensitivity multiplier
+  const conv_norm = Math.min(1.0, Math.max(0.0, flow_convergence * flowFactor));
+  const turb_norm = Math.min(1.0, Math.max(0.0, flow_turbulence * flowFactor));
 
   let rawScore = 0.0;
   if (enableOpticalFlow) {
@@ -99,9 +111,6 @@ function computeRiskScore(
   let risk_score = Math.min(1.0, Math.max(0.0, Math.round(rawScore * 100) / 100));
 
   // Determine risk level purely from composite score
-  // The score already incorporates density via density_norm (50% weight),
-  // so density-based secondary overrides are NOT used — they caused false
-  // yellows at low occupancy (e.g., 12 people in 20m² corridor = yellow).
   let risk_level = 'green';
   if (risk_score >= config.orange) {
     risk_level = 'red';
@@ -112,7 +121,7 @@ function computeRiskScore(
   }
 
   // ── Turbulence Fast Path ──────────────────────────────────────────────────
-  // Only fires on EXTREME chaotic motion (0.88+) — not normal walking.
+  // Only fires on EXTREME chaotic motion (0.88+) — not normal walking or routine rain movement.
   // Raises level by one step, never skips straight to red.
   if (turb_norm > 0.88 && risk_level === 'green') {
     risk_level = 'yellow';
@@ -124,18 +133,18 @@ function computeRiskScore(
   // CV service confirmed a behavioral emergency pattern:
   //   panic_signature  = crowd crush / chaotic stampede
   //   exodus_signature = mass flee / fire evacuation (coherent fast motion)
-  // Either bypasses the density-based scoring and immediately triggers RED.
+  // Weather sensitivity does NOT corrupt or force this boolean bypass.
   if (panic_signature || exodus_signature) {
     risk_score = Math.max(risk_score, 0.90);
     risk_level = 'red';
   }
 
-  // Calculate linear extrapolation ETA to red threshold
+  // Calculate linear extrapolation ETA to effective red threshold
   let eta_to_red_min = null;
-  if (density >= redThreshold) {
+  if (density >= effectiveRedThreshold) {
     eta_to_red_min = 0;
   } else if (trend_slope > 0) {
-    const remaining = redThreshold - density;
+    const remaining = effectiveRedThreshold - density;
     const mins = remaining / trend_slope;
     eta_to_red_min = Math.max(1, Math.ceil(mins));
   }
@@ -144,7 +153,8 @@ function computeRiskScore(
     risk_score,
     risk_level,
     eta_to_red_min,
-    red_threshold: redThreshold,
+    red_threshold: Math.round(effectiveRedThreshold * 100) / 100,
+    base_red_threshold: baseRedThreshold,
     behavioral_trigger: panic_signature ? 'panic' : exodus_signature ? 'exodus' : null,
     breakdown: {
       density_raw: density,
@@ -162,6 +172,16 @@ function computeRiskScore(
       flow_turbulence_raw: flow_turbulence,
       flow_turbulence_norm: Math.round(turb_norm * 100) / 100,
       flow_turbulence_weight: enableOpticalFlow ? 0.10 : 0.00,
+
+      weather_modifier: {
+        condition: activeWeather.condition,
+        label: activeWeather.label,
+        density_factor: densityFactor,
+        flow_factor: flowFactor,
+        cv_confidence: activeWeather.cv_confidence,
+        effective_red_threshold: Math.round(effectiveRedThreshold * 100) / 100,
+        is_simulated: true,
+      },
     },
   };
 }

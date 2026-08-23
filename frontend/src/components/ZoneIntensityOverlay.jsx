@@ -75,11 +75,12 @@ export default function ZoneIntensityOverlay({ riskLevel = 'green', density = 0,
             </span>
           </div>
 
-          {/* Panic confirmation build-up pill — only shown while backend is accumulating frames */}
+          {/* Panic confirmation build-up pill — hidden per UI request */}
           {panicConfirming && (
             <div
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[10px] font-bold animate-pulse"
+              className="hidden items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[10px] font-bold animate-pulse"
               style={{
+                display: 'none',
                 background: 'rgba(245, 158, 11, 0.15)',
                 borderColor: '#f59e0b',
                 color: '#fbbf24',
