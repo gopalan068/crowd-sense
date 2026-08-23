@@ -6,19 +6,27 @@
 
 const express = require('express');
 const router = express.Router();
-const { getAuditLogs } = require('../db/database');
+const { getAuditLogs, getAlertById, getAllPlaybookStepLogsInDb } = require('../db/database');
 const { acknowledgeAlert, updateAlertStatus, getActiveAlerts } = require('../services/escalationManager');
-
+const {
+  getPlaybookForAlert,
+  evaluateResourceShortfall,
+  recordPlaybookStep,
+  getCompletedSteps,
+} = require('../services/playbookService');
+const { generateContextualNarrative } = require('../services/groqPlaybookService');
+const { getWeatherState } = require('../services/weatherService');
 
 /**
  * GET /api/audit-log
- * Returns timestamped audit log records in docs/api-contract.md §3 shape.
+ * Returns timestamped audit log records and completed playbook steps.
  */
 router.get('/audit-log', async (req, res) => {
   try {
     const limit = parseInt(req.query.limit || '50', 10);
     const logs = await getAuditLogs(limit);
-    return res.status(200).json({ logs });
+    const playbookSteps = await getAllPlaybookStepLogsInDb(limit);
+    return res.status(200).json({ logs, playbook_steps: playbookSteps });
   } catch (err) {
     console.error('[Route] GET /api/audit-log error:', err);
     return res.status(500).json({ error: 'Failed to fetch audit logs' });
@@ -32,6 +40,99 @@ router.get('/audit-log', async (req, res) => {
 router.get('/alerts/active', (_req, res) => {
   const active = getActiveAlerts();
   return res.status(200).json({ alerts: active });
+});
+
+/**
+ * GET /api/alerts/:id/playbook
+ * Returns the static protocol, live resource shortfall calculation,
+ * checklist completion state, and Groq contextual narrative note for an alert.
+ */
+router.get('/alerts/:id/playbook', async (req, res) => {
+  const alertId = req.params.id;
+  try {
+    // 1. Find alert from in-memory active alerts or SQLite DB
+    const activeList = getActiveAlerts();
+    let alert = activeList.find((a) => a.alert_id === alertId);
+    if (!alert) {
+      alert = await getAlertById(alertId);
+    }
+
+    if (!alert) {
+      // Create fallback alert envelope for testing/mock purposes if needed
+      alert = {
+        alert_id: alertId,
+        zone_id: 'zone_1',
+        severity: 'yellow',
+        alert_type: 'graduated_escalation',
+      };
+    }
+
+    // 2. Deterministically match static playbook
+    const playbook = getPlaybookForAlert(alert);
+
+    // 3. Compute live resource shortfall against checked-in responders
+    const shortfall = evaluateResourceShortfall(playbook, alert.zone_id);
+
+    // 4. Fetch already-completed checklist steps
+    const completedSteps = await getCompletedSteps(alertId);
+
+    // 5. Get current weather context
+    const weatherState = getWeatherState();
+
+    // 6. Generate contextual narrative wrapper (Groq LLM or deterministic fallback)
+    const narrativeResult = await generateContextualNarrative({
+      playbook,
+      shortfall,
+      weatherState,
+      alert,
+    });
+
+    return res.status(200).json({
+      success: true,
+      alert_id: alertId,
+      zone_id: alert.zone_id,
+      playbook,
+      shortfall,
+      completed_steps: completedSteps,
+      narrative_wrapper: {
+        text: narrativeResult.narrative,
+        source: narrativeResult.source,
+        model: narrativeResult.model,
+      },
+    });
+  } catch (err) {
+    console.error(`[Route] GET /api/alerts/${alertId}/playbook error:`, err);
+    return res.status(500).json({ error: 'Failed to retrieve playbook for alert' });
+  }
+});
+
+/**
+ * POST /api/alerts/:id/playbook-step
+ * Records a checked action step in SQLite audit log and emits live socket update.
+ * Body: { step_index: number, step_text: string, completed_by?: string }
+ */
+router.post('/alerts/:id/playbook-step', async (req, res) => {
+  const alertId = req.params.id;
+  const { step_index, step_text, completed_by } = req.body || {};
+  const io = req.app.get('io');
+
+  if (step_index === undefined || !step_text) {
+    return res.status(400).json({ error: 'step_index and step_text are required' });
+  }
+
+  try {
+    const record = await recordPlaybookStep(
+      alertId,
+      Number(step_index),
+      String(step_text),
+      completed_by || 'official_1',
+      io
+    );
+    return res.status(200).json({ success: true, step: record });
+  } catch (err) {
+    console.error(`[Route] POST /api/alerts/${alertId}/playbook-step error:`, err);
+    return res.status(500).json({ error: 'Failed to record playbook step' });
+  }
 });
 
 /**

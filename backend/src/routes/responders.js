@@ -160,4 +160,35 @@ router.get('/responders/nearest', (req, res) => {
   return res.status(200).json(result);
 });
 
-module.exports = { router, findNearestTeam, RESPONSE_ROUTES };
+/**
+ * Get total checked-in responders count for a specific zone.
+ * @param {string} zoneId
+ * @returns {number}
+ */
+function getCheckedInCountByZone(zoneId) {
+  if (!zoneId) return 0;
+  let count = 0;
+  for (const r of responderCheckIns.values()) {
+    if (r.zone_id === zoneId) {
+      count++;
+    }
+  }
+  return count;
+}
+
+/**
+ * Get all current responder check-in records.
+ * @returns {Array<Object>}
+ */
+function getCheckedInResponders() {
+  return Array.from(responderCheckIns.values());
+}
+
+module.exports = {
+  router,
+  findNearestTeam,
+  RESPONSE_ROUTES,
+  getCheckedInCountByZone,
+  getCheckedInResponders,
+  responderCheckIns,
+};

@@ -14,6 +14,7 @@ import React, { useEffect, useState, useRef, useCallback } from 'react'
 import ResponderCheckin from './ResponderCheckin'
 import ResponderAlertCard from './ResponderAlertCard'
 import ConnectionStatusBanner from './ConnectionStatusBanner'
+import ActiveIncidentResponseModal from './ActiveIncidentResponseModal'
 
 // ── Web Audio cue ─────────────────────────────────────────────────────────────
 // No file dependency — uses AudioContext oscillator, works offline.
@@ -81,7 +82,18 @@ export default function ResponderDashboard({
   const [showChangeZone, setShowChangeZone] = useState(false)
   const [nearestTeams, setNearestTeams] = useState({})      // zone_id -> nearest result
   const [muted, setMuted] = useState(false)
+  const [activeTacticalAlert, setActiveTacticalAlert] = useState(null)
   const prevAlertIds = useRef(new Set())
+
+  // Keep activeTacticalAlert synced with updated props if present
+  useEffect(() => {
+    if (activeTacticalAlert) {
+      const updated = activeAlerts.find((a) => a.alert_id === activeTacticalAlert.alert_id)
+      if (updated) {
+        setActiveTacticalAlert(updated)
+      }
+    }
+  }, [activeAlerts, activeTacticalAlert])
 
   // Fetch nearest team for each unique alert zone
   const fetchNearestTeams = useCallback(async (alerts) => {
@@ -136,7 +148,7 @@ export default function ResponderDashboard({
   const sortedAlerts = sortAlerts(activeAlerts)
 
   return (
-    <div className="w-full h-full flex flex-col min-h-0 overflow-hidden" style={{ background: 'var(--color-bg)' }}>
+    <div className="w-full h-full flex flex-col min-h-0 overflow-hidden relative" style={{ background: 'var(--color-bg)' }}>
 
       {/* Connection banner — reuse existing component */}
       <ConnectionStatusBanner
@@ -147,7 +159,7 @@ export default function ResponderDashboard({
 
       {/* Responder Header Bar */}
       <div
-        className="px-4 py-3 border-b flex items-center justify-between gap-3 flex-wrap"
+        className="px-4 py-3 border-b flex items-center justify-between gap-3 flex-wrap flex-shrink-0"
         style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
       >
         <div className="flex items-center gap-3">
@@ -219,7 +231,7 @@ export default function ResponderDashboard({
 
       {/* Alert count sub-header */}
       <div
-        className="px-4 py-2 border-b flex items-center gap-2 font-mono-num text-xs"
+        className="px-4 py-2 border-b flex items-center gap-2 font-mono-num text-xs flex-shrink-0"
         style={{ background: 'var(--color-surface-hover)', borderColor: 'var(--color-border)' }}
       >
         <span
@@ -283,10 +295,24 @@ export default function ResponderDashboard({
               socket={socket}
               backendUrl={backendUrl}
               muted={muted}
+              onOpenTacticalView={(a) => setActiveTacticalAlert(a)}
             />
           ))
         )}
       </div>
+
+      {/* Active Incident Tactical View — Rendered within mobile phone frame */}
+      {activeTacticalAlert && (
+        <ActiveIncidentResponseModal
+          alert={activeTacticalAlert}
+          nearestTeam={nearestTeams[activeTacticalAlert.zone_id] || null}
+          currentActor={responder?.name || 'field_patrol'}
+          backendUrl={backendUrl}
+          socket={socket}
+          onClose={() => setActiveTacticalAlert(null)}
+          isMobile={true}
+        />
+      )}
     </div>
   )
 }

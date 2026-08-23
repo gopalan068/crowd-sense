@@ -1,10 +1,12 @@
-/**
- * frontend/src/components/AlertPanel.jsx
- * Operational Alert Monitoring & Escalation Control Panel.
- */
 import React from 'react'
+import PlaybookPanel from './PlaybookPanel'
 
-export default function AlertPanel({ alerts = [], onAcknowledgeAlert }) {
+export default function AlertPanel({
+  alerts = [],
+  onAcknowledgeAlert,
+  socket,
+  backendUrl,
+}) {
   const activeUnacknowledged = alerts.filter((a) => !a.acknowledged_at)
 
   return (
@@ -129,6 +131,16 @@ export default function AlertPanel({ alerts = [], onAcknowledgeAlert }) {
                     <span>✓</span> ACKNOWLEDGE ALERT
                   </button>
                 </div>
+
+                {/* Response Playbook Section */}
+                <PlaybookPanel
+                  alert={alert}
+                  backendUrl={backendUrl || `${window.location.protocol}//${window.location.hostname}:4000`}
+                  socket={socket}
+                  currentActor="official_1"
+                  defaultExpanded={false}
+                  isMobile={false}
+                />
               </div>
             )
           })

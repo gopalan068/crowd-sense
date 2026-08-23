@@ -6,7 +6,7 @@
 
 const { Server } = require('socket.io');
 const { acknowledgeAlert, updateAlertStatus } = require('../services/escalationManager');
-
+const { recordPlaybookStep } = require('../services/playbookService');
 
 /**
  * Attaches Socket.io to the existing http.Server and returns the io instance.
@@ -41,6 +41,19 @@ function setupSockets(server) {
       }
     });
 
+    // Complete a playbook checklist action step over WebSocket
+    socket.on('complete_playbook_step', async (data) => {
+      const { alert_id, step_index, step_text, completed_by } = data || {};
+      if (alert_id && step_index !== undefined && step_text) {
+        await recordPlaybookStep(
+          alert_id,
+          Number(step_index),
+          String(step_text),
+          completed_by || 'official_1',
+          io
+        );
+      }
+    });
 
     socket.on('disconnect', (reason) => {
       console.log(`[Socket.io] Client disconnected: ${socket.id} (${reason})`);

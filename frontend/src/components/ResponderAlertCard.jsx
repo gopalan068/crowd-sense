@@ -13,6 +13,8 @@
  *    in the UI until that feature is built. Acceptance test exercises CV alerts only.
  */
 import React, { useState, useEffect, useRef } from 'react'
+import PlaybookPanel from './PlaybookPanel'
+import ActiveIncidentResponseModal from './ActiveIncidentResponseModal'
 
 // ── SVG Alert-Type Icons ──────────────────────────────────────────────────────
 // Inline SVGs — no emoji, no image files. Consistent across all OS/browser combos.
@@ -136,6 +138,7 @@ export default function ResponderAlertCard({
   socket,
   backendUrl,
   muted,
+  onOpenTacticalView,
 }) {
   if (!alert) return null
 
@@ -179,6 +182,10 @@ export default function ResponderAlertCard({
       alert_id,
       acknowledged_by: responder?.name || 'responder',
     })
+    // Immediately open active incident response view inside phone frame
+    if (onOpenTacticalView) {
+      onOpenTacticalView(alert)
+    }
   }
 
   const handleStatusUpdate = async (status) => {
@@ -298,7 +305,7 @@ export default function ResponderAlertCard({
           </div>
         </div>
 
-        {/* Row 3: ACKNOWLEDGE button (pre-ack) or status buttons (post-ack) */}
+        {/* Row 3: ACKNOWLEDGE button (pre-ack) or status buttons & full-screen button (post-ack) */}
         {!isAcknowledged ? (
           <button
             id={`ack-btn-${alert_id}`}
@@ -309,42 +316,62 @@ export default function ResponderAlertCard({
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="w-5 h-5">
               <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
             </svg>
-            ACKNOWLEDGE
+            ACKNOWLEDGE &amp; OPEN RESPONSE VIEW
           </button>
         ) : (
-          <div className="space-y-2">
-            <div
-              className="text-[10px] font-mono-num font-bold uppercase text-center"
-              style={{ color: 'var(--color-muted)' }}
+          <div className="space-y-3">
+            {/* Direct button to open active incident response screen inside phone */}
+            <button
+              onClick={() => onOpenTacticalView && onOpenTacticalView(alert)}
+              className="w-full py-3 px-4 rounded-xl font-extrabold text-xs bg-sky-600 hover:bg-sky-500 text-white flex items-center justify-center gap-2 shadow-md transition-all active:scale-95 border border-sky-400 font-mono-num"
             >
-              Update Status
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              {STATUS_BUTTONS.map((btn) => {
-                const isActive = activeStatus === btn.value
-                const sc = STATUS_COLORS[btn.value]
-                return (
-                  <button
-                    key={btn.value}
-                    id={`status-btn-${alert_id}-${btn.value}`}
-                    onClick={() => handleStatusUpdate(btn.value)}
-                    disabled={statusPending}
-                    className="touch-target rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 border-2 transition-all active:scale-95 disabled:opacity-60"
-                    style={{
-                      background: isActive ? sc.bg : 'var(--color-bg)',
-                      color: isActive ? sc.text : 'var(--color-text)',
-                      borderColor: isActive ? sc.bg : 'var(--color-border)',
-                      minHeight: '48px',
-                    }}
-                  >
-                    <span>{btn.icon}</span>
-                    {btn.label}
-                  </button>
-                )
-              })}
+              <span>🎯</span> OPEN ACTIVE INCIDENT SCREEN
+            </button>
+
+            <div className="space-y-2">
+              <div
+                className="text-[10px] font-mono-num font-bold uppercase text-center"
+                style={{ color: 'var(--color-muted)' }}
+              >
+                Quick Status Update
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {STATUS_BUTTONS.map((btn) => {
+                  const isActive = activeStatus === btn.value
+                  const sc = STATUS_COLORS[btn.value]
+                  return (
+                    <button
+                      key={btn.value}
+                      id={`status-btn-${alert_id}-${btn.value}`}
+                      onClick={() => handleStatusUpdate(btn.value)}
+                      disabled={statusPending}
+                      className="touch-target rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 border-2 transition-all active:scale-95 disabled:opacity-60"
+                      style={{
+                        background: isActive ? sc.bg : 'var(--color-bg)',
+                        color: isActive ? sc.text : 'var(--color-text)',
+                        borderColor: isActive ? sc.bg : 'var(--color-border)',
+                        minHeight: '48px',
+                      }}
+                    >
+                      <span>{btn.icon}</span>
+                      {btn.label}
+                    </button>
+                  )
+                })}
+              </div>
             </div>
           </div>
         )}
+
+        {/* Tactical Response Playbook (NDMA & Standard Protocols) */}
+        <PlaybookPanel
+          alert={alert}
+          backendUrl={backendUrl}
+          socket={socket}
+          currentActor={responder?.name || 'field_patrol'}
+          defaultExpanded={false}
+          isMobile={true}
+        />
       </div>
     </div>
   )

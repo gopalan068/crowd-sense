@@ -32,6 +32,7 @@ export default function App() {
   const [selectedTrendZone, setSelectedTrendZone] = useState('zone_1')
   const [activeAlerts, setActiveAlerts] = useState([])
   const [auditLogs, setAuditLogs] = useState([])
+  const [playbookSteps, setPlaybookSteps] = useState([])
   const [mockToasts, setMockToasts] = useState([])
   const [showLimitations, setShowLimitations] = useState(false)
   const [socketInstance, setSocketInstance] = useState(null)
@@ -52,6 +53,7 @@ export default function App() {
       if (res.ok) {
         const data = await res.json()
         setAuditLogs(data.logs || [])
+        setPlaybookSteps(data.playbook_steps || [])
       }
     } catch (err) {
       console.error('[Frontend] Error fetching audit logs:', err)
@@ -141,6 +143,9 @@ export default function App() {
       fetchAuditLogs()
     })
 
+    socket.on('playbook_step_completed', () => {
+      fetchAuditLogs()
+    })
 
     socket.on('mock_dispatch_toast', (toast) => {
       setMockToasts((prev) => [toast, ...prev.slice(0, 4)])
@@ -250,7 +255,8 @@ export default function App() {
         <div className="flex items-center gap-1.5 font-mono-num text-xs">
           {[
             { id: 'LIVE', label: '🔴 LIVE OPERATIONS' },
-            { id: 'POST_EVENT', label: '📊 POST-EVENT ANALYSIS' },
+            { id: 'REPORT', label: '📑 POST-EVENT REPORT' },
+            { id: 'POST_EVENT', label: '📊 TIMELINE & AUDIT' },
             { id: 'VENUE_MAP', label: '🗺️ VENUE MAP & EGRESS' },
             { id: 'DUAL_SIM', label: '📱 DUAL PHONE SIMULATOR' },
           ].map((tab) => (
@@ -319,7 +325,12 @@ export default function App() {
 
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
               <div className="lg:col-span-4">
-                <AlertPanel alerts={activeAlerts} onAcknowledgeAlert={handleAcknowledgeAlert} />
+                <AlertPanel
+                  alerts={activeAlerts}
+                  onAcknowledgeAlert={handleAcknowledgeAlert}
+                  socket={socketInstance}
+                  backendUrl={BACKEND_URL}
+                />
               </div>
 
               <div className="lg:col-span-8 flex flex-col space-y-3">
@@ -348,13 +359,22 @@ export default function App() {
               </div>
             </div>
 
-            <AuditLogView logs={auditLogs} onRefresh={fetchAuditLogs} />
+            <AuditLogView
+              logs={auditLogs}
+              playbookSteps={playbookSteps}
+              onRefresh={fetchAuditLogs}
+            />
           </div>
         )}
 
-        {/* Tab 2: Post-Event Analysis */}
+        {/* Tab: Post-Event Report (Groq LLM) */}
+        {activeTab === 'REPORT' && (
+          <PostEventAnalysisView auditLogs={auditLogs} initialSubTab="REPORT" />
+        )}
+
+        {/* Tab: Post-Event Timeline & Audit Logs */}
         {activeTab === 'POST_EVENT' && (
-          <PostEventAnalysisView auditLogs={auditLogs} />
+          <PostEventAnalysisView auditLogs={auditLogs} initialSubTab="TIMELINE" />
         )}
 
         {/* Tab 3: Venue Map & Egress Bottlenecks */}

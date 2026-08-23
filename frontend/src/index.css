@@ -117,3 +117,47 @@ body {
   min-width: 56px;
 }
 
+/* ── Print Styles for Clean Official PDF Export ──────────────────────── */
+@media print {
+  body {
+    background-color: #FFFFFF !important;
+    color: #000000 !important;
+    font-size: 11pt !important;
+  }
+
+  header, footer, nav, button, .print\:hidden {
+    display: none !important;
+  }
+
+  main {
+    max-width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  #printable-report-document {
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: transparent !important;
+    color: #000000 !important;
+  }
+
+  .report-markdown-body table {
+    page-break-inside: avoid;
+    break-inside: avoid;
+    font-size: 9pt !important;
+  }
+
+  .report-markdown-body h1,
+  .report-markdown-body h2 {
+    page-break-after: avoid;
+    break-after: avoid;
+  }
+
+  @page {
+    margin: 1.5cm;
+    size: auto;
+  }
+}

@@ -246,5 +246,6 @@ Run CV and backend/frontend **in parallel from hour 0** — don't build sequenti
 - **True dynamic routing and live obstacle-avoidance** — current implementation uses pre-authored zone-to-zone path labels (same scope decision as the bottleneck/exit-route modeling feature); production version would compute optimal paths from real-time corridor density and blocked-route data
 - **OS-level push notifications via service-worker** — current implementation delivers alerts via a persistent in-app WebSocket feed with Web Audio API cue (tab must remain open); production version would use service-worker background sync so alerts reach the device even when the app is in the background
 - **Live weather API integration (e.g. OpenWeatherMap)** — current implementation uses simulated presenter demo controls and presets; production version would ingest real-time environmental API streams to scale risk thresholds dynamically based on venue weather
+- **Playbook content reviewed/certified by actual disaster management or event-safety authorities; per-venue customizable protocols** — current implementation grounds key protocols in published NDMA crowd safety guidance and illustrative defaults with LLM narrative prioritization, but has not been formally certified by any authority and shouldn't be presented as officially sanctioned.
 
 

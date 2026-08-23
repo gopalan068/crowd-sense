@@ -2,7 +2,7 @@
  * backend/src/routes/density.js
  * POST /api/density — receives density readings from CV service,
  * computes composite risk & trend, evaluates thresholds & escalation timers,
- * logs to audit DB, and emits Backend→Frontend shape over Socket.io.
+ * logs to audit DB & density history, and emits Backend→Frontend shape over Socket.io.
  */
 'use strict';
 
@@ -10,6 +10,8 @@ const express = require('express');
 const router = express.Router();
 const { updateAndGetTrendSlope, computeRiskScore } = require('../services/riskEngine');
 const { processZoneAlerts } = require('../services/escalationManager');
+const { recordDensitySnapshot } = require('../services/densityHistoryService');
+const { getWeatherState } = require('../services/weatherService');
 
 const REQUIRED_FIELDS = [
   'zone_id',
@@ -21,8 +23,6 @@ const REQUIRED_FIELDS = [
   'flow_turbulence',
   'timestamp',
 ];
-
-const { getWeatherState } = require('../services/weatherService');
 
 router.post('/density', async (req, res) => {
   const payload = req.body;
@@ -56,11 +56,23 @@ router.post('/density', async (req, res) => {
     weatherState
   );
 
-  // 3. Process zone alerts & escalation logic
+  // 3. Record snapshot to density history store for post-event aggregation
+  await recordDensitySnapshot({
+    zone_id,
+    density,
+    people_count: payload.people_count,
+    area_sqm: payload.area_sqm,
+    flow_convergence,
+    flow_turbulence,
+    trend_slope,
+    timestamp,
+  });
+
+  // 4. Process zone alerts & escalation logic
   const io = req.app.get('io');
   await processZoneAlerts(riskResult, payload, io);
 
-  // 4. Construct Backend → Frontend Socket.io payload (docs/api-contract.md §2)
+  // 5. Construct Backend → Frontend Socket.io payload (docs/api-contract.md §2)
   const socketPayload = {
     zone_id,
     zone_type,

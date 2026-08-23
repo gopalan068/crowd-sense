@@ -17,6 +17,7 @@ const postEventRouter = require('./routes/postEvent');
 const { router: respondersRouter } = require('./routes/responders');
 const citizenReportsRouter = require('./routes/citizenReports');
 const conditionsRouter = require('./routes/conditions');
+const reportsRouter = require('./routes/reports');
 const { sendEmergencyNotification } = require('./services/notifications');
 
 const PORT = process.env.PORT || 4000;
@@ -34,6 +35,7 @@ app.get('/health', (_req, res) => {
     status: 'ok',
     service: 'crowd-safety-backend',
     optical_flow_enabled: (process.env.ENABLE_OPTICAL_FLOW || 'true').toLowerCase() !== 'false',
+    groq_configured: Boolean(process.env.GROQ_API_KEY),
     timestamp: new Date().toISOString(),
   });
 });
@@ -68,6 +70,7 @@ app.use('/api', postEventRouter);
 app.use('/api', respondersRouter);
 app.use('/api', citizenReportsRouter);
 app.use('/api', conditionsRouter);
+app.use('/api', reportsRouter);
 
 // --- Socket.io ---
 const io = setupSockets(server);
@@ -84,4 +87,6 @@ server.listen(PORT, () => {
   console.log(`[Backend] ResponderNearest  → GET http://localhost:${PORT}/api/responders/nearest?zone_id=zone_1`);
   console.log(`[Backend] CitizenReport     → POST http://localhost:${PORT}/api/citizen-reports`);
   console.log(`[Backend] WeatherConditions → GET http://localhost:${PORT}/api/conditions/current | POST http://localhost:${PORT}/api/conditions/set`);
+  console.log(`[Backend] ReportsGenerate   → POST http://localhost:${PORT}/api/reports/generate`);
+  console.log(`[Backend] ReportsLatest     → GET http://localhost:${PORT}/api/reports/latest`);
 });

@@ -1,7 +1,8 @@
 /**
  * backend/src/services/weatherService.js
  * In-memory weather and environmental condition state service.
- * Supports simulated presenter control presets for demo execution.
+ * Supports simulated presenter control presets for demo execution
+ * and maintains a timestamped history of environmental changes for post-event analysis.
  */
 'use strict';
 
@@ -48,11 +49,21 @@ const PRESETS = {
   },
 };
 
+const initialTimestamp = new Date().toISOString();
+
 let currentState = {
   ...PRESETS.clear,
   is_simulated: true,
-  updated_at: new Date().toISOString(),
+  updated_at: initialTimestamp,
 };
+
+const weatherHistory = [
+  {
+    ...currentState,
+    transition_type: 'initial_state',
+    timestamp: initialTimestamp,
+  },
+];
 
 /**
  * Get current weather state object
@@ -68,20 +79,36 @@ function getWeatherState() {
  */
 function setWeatherState(condition, customParams = {}) {
   const preset = PRESETS[condition] || PRESETS.clear;
+  const timestamp = new Date().toISOString();
 
   currentState = {
     ...preset,
     temperature_c: customParams.temperature_c ?? preset.temperature_c,
     precipitation_mm: customParams.precipitation_mm ?? preset.precipitation_mm,
     is_simulated: true,
-    updated_at: new Date().toISOString(),
+    updated_at: timestamp,
   };
 
+  weatherHistory.push({
+    ...currentState,
+    transition_type: 'condition_shift',
+    timestamp,
+  });
+
   return getWeatherState();
+}
+
+/**
+ * Get full history of weather state transitions during the session
+ * @returns {Array<Object>}
+ */
+function getWeatherHistory() {
+  return [...weatherHistory];
 }
 
 module.exports = {
   PRESETS,
   getWeatherState,
   setWeatherState,
+  getWeatherHistory,
 };

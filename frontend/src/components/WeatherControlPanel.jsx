@@ -30,14 +30,6 @@ const PRESET_OPTIONS = [
     bgColor: 'bg-sky-500/10 border-sky-500/40 text-sky-600 dark:text-sky-400',
     activeBg: 'bg-sky-600 text-white shadow-md shadow-sky-600/30',
   },
-  {
-    id: 'hot_and_rainy',
-    icon: '⛈️',
-    label: 'HEAT + RAIN',
-    desc: 'Combined Tightening & Flow (1.5x)',
-    bgColor: 'bg-purple-500/10 border-purple-500/40 text-purple-600 dark:text-purple-400',
-    activeBg: 'bg-purple-600 text-white shadow-md shadow-purple-600/30',
-  },
 ]
 
 export default function WeatherControlPanel({ weatherState, backendUrl }) {
@@ -104,7 +96,7 @@ export default function WeatherControlPanel({ weatherState, backendUrl }) {
           PRESENTER CONTROLS (LIVE DEMO PRESETS):
         </span>
 
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 w-full sm:w-auto">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 w-full sm:w-auto">
           {PRESET_OPTIONS.map((opt) => {
             const isActive = currentCondition === opt.id
             const isLoading = loadingPreset === opt.id
