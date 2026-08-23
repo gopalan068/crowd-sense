@@ -74,12 +74,18 @@ export default function AlertPanel({ alerts = [], onAcknowledgeAlert }) {
                           borderColor: 'transparent',
                         }}
                       >
-                        {isPanic ? '🛑 IMMEDIATE PANIC ALERT' : '⚠️ RED ALERT'}
+                        {isPanic ? '🛑 IMMEDIATE PANIC ALERT' : alert.alert_type === 'citizen_report' ? '📱 CITIZEN EMERGENCY REPORT' : '⚠️ RED ALERT'}
                       </span>
                       <span className="text-xs font-bold font-mono-num uppercase" style={{ color: 'var(--color-text)' }}>
                         ZONE: {alert.zone_id}
                       </span>
                     </div>
+
+                    {alert.category && (
+                      <div className="mt-1 font-mono-num text-[11px] font-extrabold px-2 py-0.5 rounded bg-white dark:bg-slate-900 text-rose-600 dark:text-rose-400 border border-rose-500/40 shadow-xs w-fit">
+                        🚨 REPORTED ISSUE: {(alert.category || '').replace(/_/g, ' ')}
+                      </div>
+                    )}
 
                     <p className="text-xs mt-1" style={{ color: 'var(--color-muted)' }}>
                       Triggered at:{' '}
@@ -105,7 +111,9 @@ export default function AlertPanel({ alerts = [], onAcknowledgeAlert }) {
                 {/* Description & Action Button Row */}
                 <div className="pt-2 border-t flex items-center justify-between gap-4" style={{ borderColor: 'var(--color-border)' }}>
                   <p className="text-xs" style={{ color: 'var(--color-muted)' }}>
-                    {isPanic
+                    {alert.description
+                      ? `"${alert.description}"`
+                      : isPanic
                       ? 'Panic signature detected! Dispatched to all field officials.'
                       : 'Unacknowledged alert auto-escalates if unresponded.'}
                   </p>

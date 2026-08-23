@@ -14,7 +14,16 @@ const express = require('express');
 const router = express.Router();
 const { registerCustomAlert } = require('../services/escalationManager');
 
-const VALID_CATEGORIES = ['STAMPEDE_RISK', 'MEDICAL_EMERGENCY', 'BLOCKED_EXIT', 'GENERAL_PANIC'];
+const VALID_CATEGORIES = [
+  'MEDICAL_ASSISTANCE',
+  'SUSPICIOUS_ACTIVITY',
+  'REPORT_THEFT',
+  'BLOCKED_EXITS',
+  'STAMPEDE_RISK',
+  'MEDICAL_EMERGENCY',
+  'BLOCKED_EXIT',
+  'GENERAL_PANIC',
+];
 
 /**
  * POST /api/citizen-reports

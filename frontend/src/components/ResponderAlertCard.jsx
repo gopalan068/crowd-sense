@@ -62,16 +62,16 @@ const SEVERITY_COLORS = {
 }
 
 const STATUS_BUTTONS = [
-  { value: 'en_route',    label: 'EN ROUTE',    icon: '▶' },
-  { value: 'on_scene',    label: 'ON SCENE',    icon: '📍' },
-  { value: 'resolved',    label: 'RESOLVED',    icon: '✓' },
+  { value: 'en_route', label: 'EN ROUTE', icon: '▶' },
+  { value: 'on_scene', label: 'ON SCENE', icon: '📍' },
+  { value: 'resolved', label: 'RESOLVED', icon: '✓' },
   { value: 'need_backup', label: 'NEED BACKUP', icon: '!' },
 ]
 
 const STATUS_COLORS = {
-  en_route:    { bg: 'var(--color-accent)', text: '#fff' },
-  on_scene:    { bg: 'var(--risk-orange)', text: '#fff' },
-  resolved:    { bg: 'var(--risk-green)', text: '#fff' },
+  en_route: { bg: 'var(--color-accent)', text: '#fff' },
+  on_scene: { bg: 'var(--risk-orange)', text: '#fff' },
+  resolved: { bg: 'var(--risk-green)', text: '#fff' },
   need_backup: { bg: 'var(--risk-red)', text: '#fff' },
 }
 
@@ -147,6 +147,8 @@ export default function ResponderAlertCard({
     triggered_at,
     acknowledged_at,
     responder_status,
+    category,
+    description,
   } = alert
 
   const [stalenessDisplay, setStalenessDisplay] = useState(() => getStaleness(triggered_at || new Date().toISOString()))
@@ -234,6 +236,12 @@ export default function ResponderAlertCard({
               <div className="font-bold text-base" style={{ color: 'var(--color-text)' }}>
                 {zone_id === 'zone_1' ? 'Zone 1 — Arrival Staging' : 'Zone 2 — Main Field'}
               </div>
+              {category && (
+                <div className="mt-1 flex items-center gap-1.5 font-mono-num text-xs font-extrabold px-2.5 py-1 rounded-md bg-white text-rose-600 dark:text-rose-400 border border-rose-500/40 shadow-xs w-fit">
+                  <span>ISSUE:</span>
+                  <span className="uppercase">{category.replace(/_/g, ' ')}</span>
+                </div>
+              )}
             </div>
           </div>
 

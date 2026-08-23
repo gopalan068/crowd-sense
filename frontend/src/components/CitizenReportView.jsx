@@ -13,46 +13,47 @@ import React, { useState, useEffect } from 'react'
 
 const CATEGORIES = [
   {
-    id: 'STAMPEDE_RISK',
-    label: 'Crowd Surge / Stampede Risk',
-    sublabel: 'Dangerous crowding, pushing, or turbulence',
+    id: 'MEDICAL_ASSISTANCE',
+    label: 'Medical Assistance',
     severity: 'red',
+    bgColor: 'bg-rose-100 dark:bg-rose-900/40 text-rose-600 dark:text-rose-400',
     icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-6 h-6 text-red-500">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
-      </svg>
-    ),
-  },
-  {
-    id: 'MEDICAL_EMERGENCY',
-    label: 'Medical Emergency / Collapse',
-    sublabel: 'Person injured, fainted, or needing immediate medical aid',
-    severity: 'orange',
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-6 h-6 text-amber-500">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-5 h-5">
         <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
       </svg>
     ),
   },
   {
-    id: 'BLOCKED_EXIT',
-    label: 'Blocked Exit / Egress Bottleneck',
-    sublabel: 'Barricade, gate closure, or exit path obstruction',
+    id: 'SUSPICIOUS_ACTIVITY',
+    label: 'Suspicious Activity',
     severity: 'orange',
+    bgColor: 'bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400',
     icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-6 h-6 text-orange-500">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75" />
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-5 h-5">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12c.074-.154 1.038-2.01 2.92-3.834C6.883 6.34 9.387 5.25 12 5.25c2.613 0 5.117 1.09 7.044 2.916 1.882 1.824 2.846 3.68 2.92 3.834a.75.75 0 010 .666c-.074.154-1.038 2.01-2.92 3.834C17.117 18.41 14.613 19.5 12 19.5c-2.613 0-5.117-1.09-7.044-2.916-1.882-1.824-2.846-3.68-2.92-3.834a.75.75 0 010-.666z" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 15a3 3 0 100-6 3 3 0 000 6z" />
       </svg>
     ),
   },
   {
-    id: 'GENERAL_PANIC',
-    label: 'General Emergency / SOS',
-    sublabel: 'Immediate assistance needed in my immediate area',
-    severity: 'red',
+    id: 'REPORT_THEFT',
+    label: 'Report Theft',
+    severity: 'orange',
+    bgColor: 'bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400',
     icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-6 h-6 text-rose-500">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m0-10.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.75c0 5.592 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.57-.598-3.75h-.002A11.959 11.959 0 0112 2.714z" />
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-5 h-5">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+      </svg>
+    ),
+  },
+  {
+    id: 'BLOCKED_EXITS',
+    label: 'Blocked Exits',
+    severity: 'orange',
+    bgColor: 'bg-orange-100 dark:bg-orange-900/40 text-orange-600 dark:text-orange-400',
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-5 h-5">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75" />
       </svg>
     ),
   },
@@ -64,7 +65,7 @@ const ZONES = [
 ]
 
 export default function CitizenReportView({ socket, backendUrl }) {
-  const [selectedCategory, setSelectedCategory] = useState('STAMPEDE_RISK')
+  const [selectedCategory, setSelectedCategory] = useState('MEDICAL_ASSISTANCE')
   const [selectedZone, setSelectedZone] = useState('zone_1')
   const [reporterName, setReporterName] = useState('')
   const [description, setDescription] = useState('')
@@ -243,13 +244,13 @@ export default function CitizenReportView({ socket, backendUrl }) {
           ) : (
             /* Emergency Report Form */
             <form onSubmit={handleSubmit} className="space-y-4">
-              {/* Category Picker */}
+              {/* Category Picker — 2x2 Equal-Sized Square Grid */}
               <div className="space-y-2">
                 <label className="block text-xs font-bold uppercase tracking-wider font-mono-num" style={{ color: 'var(--color-muted)' }}>
-                  1. Select Emergency Type
+                  Select Incident Category
                 </label>
 
-                <div className="space-y-2">
+                <div className="grid grid-cols-2 gap-2.5">
                   {CATEGORIES.map((cat) => {
                     const isSelected = selectedCategory === cat.id
                     return (
@@ -257,22 +258,24 @@ export default function CitizenReportView({ socket, backendUrl }) {
                         key={cat.id}
                         type="button"
                         onClick={() => setSelectedCategory(cat.id)}
-                        className={`w-full p-3 rounded-xl border-2 text-left flex items-start gap-3 transition-all ${
-                          isSelected ? 'ring-2 ring-rose-500 border-rose-500' : ''
+                        className={`p-2.5 rounded-xl border-2 flex flex-col items-center justify-center text-center transition-all cursor-pointer active:scale-95 relative h-24 ${
+                          isSelected
+                            ? 'ring-2 ring-rose-500/40 border-rose-600 bg-white dark:bg-slate-900 shadow-md'
+                            : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 bg-white dark:bg-slate-900 shadow-xs'
                         }`}
-                        style={{
-                          background: isSelected ? 'var(--risk-red-bg)' : 'var(--color-bg)',
-                          borderColor: isSelected ? 'var(--risk-red)' : 'var(--color-border)',
-                        }}
                       >
-                        <div className="mt-0.5 flex-shrink-0">{cat.icon}</div>
-                        <div>
-                          <div className="font-bold text-xs" style={{ color: 'var(--color-text)' }}>
-                            {cat.label}
-                          </div>
-                          <div className="text-[11px] font-mono-num" style={{ color: 'var(--color-muted)' }}>
-                            {cat.sublabel}
-                          </div>
+                        {isSelected && (
+                          <span className="absolute top-1.5 right-1.5 w-4 h-4 rounded-full bg-rose-600 text-white flex items-center justify-center text-[9px] font-extrabold shadow-xs">
+                            ✓
+                          </span>
+                        )}
+
+                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center mb-1.5 shadow-xs ${cat.bgColor}`}>
+                          {cat.icon}
+                        </div>
+
+                        <div className={`text-[11px] font-extrabold leading-tight text-center ${isSelected ? 'text-rose-600 dark:text-rose-400' : 'text-slate-800 dark:text-slate-200'}`}>
+                          {cat.label}
                         </div>
                       </button>
                     )
