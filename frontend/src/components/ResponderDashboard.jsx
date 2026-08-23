@@ -52,20 +52,13 @@ function playAlertTone(isPanic, muted) {
 }
 
 // ── Alert sort order ─────────────────────────────────────────────────────────
-// Panic first, then unacknowledged red, then everything else.
-function sortAlerts(alerts) {
+// Sorted strictly by time received (most recent timestamp first)
+function sortAlertsByTimeReceived(alerts) {
   if (!Array.isArray(alerts)) return []
   return [...alerts].filter(Boolean).sort((a, b) => {
-    const scoreA =
-      a.alert_type === 'immediate_panic_alert' ? 0 :
-      !a.acknowledged_at ? 1 : 2
-    const scoreB =
-      b.alert_type === 'immediate_panic_alert' ? 0 :
-      !b.acknowledged_at ? 1 : 2
-    if (scoreA !== scoreB) return scoreA - scoreB
     const tA = a.triggered_at ? new Date(a.triggered_at).getTime() : 0
     const tB = b.triggered_at ? new Date(b.triggered_at).getTime() : 0
-    return tB - tA
+    return tB - tA // Most recent timestamp first
   })
 }
 
@@ -82,6 +75,7 @@ export default function ResponderDashboard({
   const [showChangeZone, setShowChangeZone] = useState(false)
   const [nearestTeams, setNearestTeams] = useState({})      // zone_id -> nearest result
   const [muted, setMuted] = useState(false)
+  const [severityFilter, setSeverityFilter] = useState('ALL') // 'ALL' | 'HIGH' | 'MEDIUM'
   const [activeTacticalAlert, setActiveTacticalAlert] = useState(null)
   const prevAlertIds = useRef(new Set())
 
@@ -145,7 +139,19 @@ export default function ResponderDashboard({
     )
   }
 
-  const sortedAlerts = sortAlerts(activeAlerts)
+  // 1. Sort all active alerts strictly by timestamp (most recent first)
+  const sortedAlerts = sortAlertsByTimeReceived(activeAlerts)
+
+  // 2. Filter by severity if ALL, HIGH, or MEDIUM selected
+  const filteredSortedAlerts = sortedAlerts.filter((alert) => {
+    if (severityFilter === 'HIGH') {
+      return alert.severity === 'red' || alert.alert_type === 'immediate_panic_alert'
+    }
+    if (severityFilter === 'MEDIUM') {
+      return alert.severity === 'orange' || alert.severity === 'medium' || (alert.severity !== 'red' && alert.alert_type !== 'immediate_panic_alert')
+    }
+    return true // 'ALL'
+  })
 
   return (
     <div className="w-full h-full flex flex-col min-h-0 overflow-hidden relative" style={{ background: 'var(--color-bg)' }}>
@@ -237,17 +243,17 @@ export default function ResponderDashboard({
         <span
           className="font-extrabold px-2 py-0.5 rounded-full"
           style={{
-            background: sortedAlerts.filter((a) => !a.acknowledged_at).length > 0
+            background: filteredSortedAlerts.filter((a) => !a.acknowledged_at).length > 0
               ? 'var(--risk-red)' : 'var(--risk-green)',
             color: '#fff',
           }}
         >
-          {sortedAlerts.filter((a) => !a.acknowledged_at).length}
+          {filteredSortedAlerts.filter((a) => !a.acknowledged_at).length}
         </span>
         <span style={{ color: 'var(--color-muted)' }}>
-          ACTIVE UNACKNOWLEDGED
-          {sortedAlerts.filter((a) => a.acknowledged_at).length > 0 && (
-            <> · {sortedAlerts.filter((a) => a.acknowledged_at).length} acknowledged</>
+          UNACKNOWLEDGED
+          {filteredSortedAlerts.filter((a) => a.acknowledged_at).length > 0 && (
+            <> · {filteredSortedAlerts.filter((a) => a.acknowledged_at).length} acked</>
           )}
         </span>
         <span
@@ -262,9 +268,40 @@ export default function ResponderDashboard({
         </span>
       </div>
 
+      {/* Severity Filter Strip (ALL, HIGH, MEDIUM) */}
+      <div
+        className="px-4 py-1.5 border-b flex items-center justify-between gap-2 font-mono-num text-xs flex-shrink-0"
+        style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
+      >
+        <span className="font-extrabold uppercase text-[10px]" style={{ color: 'var(--color-muted)' }}>
+          FILTER:
+        </span>
+        <div className="flex items-center gap-1.5">
+          {[
+            { id: 'ALL', label: 'ALL' },
+            { id: 'HIGH', label: 'HIGH' },
+            { id: 'MEDIUM', label: 'MEDIUM' },
+          ].map((f) => (
+            <button
+              key={f.id}
+              onClick={() => setSeverityFilter(f.id)}
+              className={`px-2.5 py-1 rounded-lg font-bold text-xs transition-all ${severityFilter === f.id
+                  ? 'bg-sky-600 text-white shadow-xs'
+                  : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300'
+                }`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+        <span className="text-[10px] text-slate-400 font-bold ml-auto">
+          SORT: MOST RECENT
+        </span>
+      </div>
+
       {/* Alert Feed */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {sortedAlerts.length === 0 ? (
+        {filteredSortedAlerts.length === 0 ? (
           /* All-clear state */
           <div
             className="flex flex-col items-center justify-center py-20 text-center rounded-2xl border"

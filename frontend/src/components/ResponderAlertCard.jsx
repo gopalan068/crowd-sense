@@ -360,18 +360,17 @@ export default function ResponderAlertCard({
                 })}
               </div>
             </div>
+            {/* Tactical Response Playbook (NDMA & Standard Protocols) — Only shown after acknowledgment */}
+            <PlaybookPanel
+              alert={alert}
+              backendUrl={backendUrl}
+              socket={socket}
+              currentActor={responder?.name || 'field_patrol'}
+              defaultExpanded={false}
+              isMobile={true}
+            />
           </div>
         )}
-
-        {/* Tactical Response Playbook (NDMA & Standard Protocols) */}
-        <PlaybookPanel
-          alert={alert}
-          backendUrl={backendUrl}
-          socket={socket}
-          currentActor={responder?.name || 'field_patrol'}
-          defaultExpanded={false}
-          isMobile={true}
-        />
       </div>
     </div>
   )

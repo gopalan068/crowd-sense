@@ -131,16 +131,6 @@ export default function AlertPanel({
                     <span>✓</span> ACKNOWLEDGE ALERT
                   </button>
                 </div>
-
-                {/* Response Playbook Section */}
-                <PlaybookPanel
-                  alert={alert}
-                  backendUrl={backendUrl || `${window.location.protocol}//${window.location.hostname}:4000`}
-                  socket={socket}
-                  currentActor="official_1"
-                  defaultExpanded={false}
-                  isMobile={false}
-                />
               </div>
             )
           })
