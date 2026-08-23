@@ -39,9 +39,9 @@ export default function PlaybookPanel({
         const data = await res.json()
         setPlaybookData(data)
         const stepMap = {}
-        ;(data.completed_steps || []).forEach((s) => {
-          stepMap[s.step_index] = s
-        })
+          ; (data.completed_steps || []).forEach((s) => {
+            stepMap[s.step_index] = s
+          })
         setCompletedStepsMap(stepMap)
       }
     } catch (err) {
@@ -152,11 +152,10 @@ export default function PlaybookPanel({
             </span>
             {playbook && (
               <span
-                className={`px-2 py-0.5 rounded text-[10px] font-extrabold uppercase border ${
-                  isNdma
+                className={`px-2 py-0.5 rounded text-[10px] font-extrabold uppercase border ${isNdma
                     ? 'bg-emerald-100 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800'
                     : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-700'
-                }`}
+                  }`}
               >
                 {isNdma ? '🏛️ NDMA Guideline' : '📋 Standard Default'}
               </span>
@@ -185,13 +184,6 @@ export default function PlaybookPanel({
             </div>
           ) : playbookData ? (
             <>
-              {/* 1. Mandatory Decision-Support Framing Banner */}
-              <div className="p-2.5 rounded-lg border bg-amber-500/10 border-amber-500/30 text-amber-800 dark:text-amber-300 text-[11px] leading-relaxed flex items-start gap-2">
-                <span className="text-sm flex-shrink-0">⚖️</span>
-                <div>
-                  <strong className="font-extrabold uppercase">Decision Support Only:</strong> This system surfaces NDMA protocols and real-time resource availability fast. Final operational decisions and tactical judgment rest with on-ground command.
-                </div>
-              </div>
 
               {/* 2. Protocol Header & Authority Source Tag */}
               <div className="p-3 rounded-lg border bg-slate-50 dark:bg-slate-900/60 border-slate-200 dark:border-slate-800 space-y-1.5">
@@ -200,18 +192,14 @@ export default function PlaybookPanel({
                     {playbook?.title}
                   </span>
                   <span
-                    className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase border ${
-                      isNdma
+                    className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase border ${isNdma
                         ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 border-emerald-500/40'
                         : 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 border-amber-500/40'
-                    }`}
+                      }`}
                   >
                     {isNdma ? '✓ NDMA Guideline Grounded' : 'ℹ️ Illustrative Operational Default'}
                   </span>
                 </div>
-                <p className="text-[11px] text-slate-600 dark:text-slate-400 italic">
-                  {playbook?.reference_note}
-                </p>
               </div>
 
               {/* 3. Resource Assessment & Live Shortfall Indicator */}
@@ -256,15 +244,17 @@ export default function PlaybookPanel({
                 </div>
               </div>
 
-              {/* 4. Contextual Narrative Wrapper (Groq LLM or Deterministic Fallback) */}
+              {/* 4. Contextual Narrative Wrapper (Gemini LLM or Deterministic Fallback) */}
               {narrative?.text && (
                 <div className="p-3 rounded-lg border bg-sky-500/10 border-sky-500/30 text-sky-900 dark:text-sky-200 space-y-1">
                   <div className="flex items-center justify-between text-[10px] font-extrabold uppercase tracking-wider text-sky-700 dark:text-sky-300">
                     <span className="flex items-center gap-1">
-                      <span>💡</span> AI Contextual Prioritization Framing (Groq Decision Support)
+                      <span>💡</span> AI Contextual Prioritization Framing (Gemini Decision Support)
                     </span>
                     <span className="opacity-75">
-                      {narrative.source === 'groq_llm' ? 'Model: Llama 3.3 70B' : 'Source: Deterministic Fallback'}
+                      {narrative.source === 'gemini_llm' || narrative.source === 'groq_llm'
+                        ? `Model: ${narrative.model || 'Gemini 2.5 Flash'}`
+                        : 'Source: Deterministic Fallback'}
                     </span>
                   </div>
                   <p className="text-xs leading-relaxed font-sans font-medium text-slate-800 dark:text-slate-200">
@@ -295,11 +285,10 @@ export default function PlaybookPanel({
                     return (
                       <label
                         key={idx}
-                        className={`p-2.5 rounded-lg border flex items-start gap-3 transition-all cursor-pointer select-none ${
-                          isDone
+                        className={`p-2.5 rounded-lg border flex items-start gap-3 transition-all cursor-pointer select-none ${isDone
                             ? 'bg-emerald-500/10 border-emerald-500/40 text-slate-700 dark:text-slate-300'
                             : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-sky-500/50'
-                        } ${isMobile ? 'min-h-[48px]' : ''}`}
+                          } ${isMobile ? 'min-h-[48px]' : ''}`}
                       >
                         <input
                           type="checkbox"

@@ -88,7 +88,7 @@ export default function PostEventAnalysisView({ auditLogs = [], initialSubTab = 
       }, 600)
 
       setTimeout(() => {
-        setGenerationStep('Querying Google Gemini API (gemini-2.5-flash) for comprehensive post-incident synthesis...')
+        setGenerationStep('Querying Google Gemini API (gemini-3.6-flash) for comprehensive post-incident synthesis...')
       }, 1200)
 
       const response = await fetch(`${BACKEND_URL}/api/reports/generate`, {
@@ -100,8 +100,8 @@ export default function PostEventAnalysisView({ auditLogs = [], initialSubTab = 
           venue_name: selectedZone === 'all'
             ? 'City Central Gathering Ground & Corridor Complex'
             : selectedZone === 'zone_1'
-            ? 'Zone 1 — Arrival & General Waiting Staging'
-            : 'Zone 2 — Emergency Corridor & Gate Throat',
+              ? 'Zone 1 — Arrival & General Waiting Staging'
+              : 'Zone 2 — Emergency Corridor & Gate Throat',
         }),
       })
 
@@ -160,22 +160,20 @@ export default function PostEventAnalysisView({ auditLogs = [], initialSubTab = 
           <div className="flex items-center gap-2">
             <button
               onClick={() => setActiveSubTab('REPORT')}
-              className={`px-4 py-2 rounded-xl font-bold text-xs transition-all flex items-center gap-1.5 ${
-                activeSubTab === 'REPORT'
+              className={`px-4 py-2 rounded-xl font-bold text-xs transition-all flex items-center gap-1.5 ${activeSubTab === 'REPORT'
                   ? 'bg-sky-600 text-white shadow-md'
                   : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300'
-              }`}
+                }`}
             >
               <span>📄 FORMAL SAFETY REPORT</span>
             </button>
 
             <button
               onClick={() => setActiveSubTab('TIMELINE')}
-              className={`px-4 py-2 rounded-xl font-bold text-xs transition-all flex items-center gap-1.5 ${
-                activeSubTab === 'TIMELINE'
+              className={`px-4 py-2 rounded-xl font-bold text-xs transition-all flex items-center gap-1.5 ${activeSubTab === 'TIMELINE'
                   ? 'bg-sky-600 text-white shadow-md'
                   : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300'
-              }`}
+                }`}
             >
               <span>📈 TIMELINE &amp; AUDIT LOGS</span>
             </button>
@@ -192,11 +190,10 @@ export default function PostEventAnalysisView({ auditLogs = [], initialSubTab = 
                 <button
                   key={zId}
                   onClick={() => setSelectedZone(zId)}
-                  className={`px-3 py-1.5 rounded-lg font-bold text-xs transition-all ${
-                    selectedZone === zId
+                  className={`px-3 py-1.5 rounded-lg font-bold text-xs transition-all ${selectedZone === zId
                       ? 'bg-sky-600 text-white shadow-xs'
                       : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
-                  }`}
+                    }`}
                 >
                   {zId === 'all' ? 'ALL ZONES' : zId.toUpperCase()}
                 </button>

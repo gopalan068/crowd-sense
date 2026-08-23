@@ -26,12 +26,28 @@ const CANDIDATE_MODELS = [
  * @param {string} text
  * @returns {string}
  */
-function stripThinkingTags(text) {
+/**
+ * Clean LLM response by stripping reasoning tags, drafting metadata headers, and markdown artifacts.
+ * @param {string} text
+ * @returns {string}
+ */
+function cleanNarrativeOutput(text) {
   if (!text) return '';
+  // 1. Strip <think> reasoning tags
   let cleaned = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
   if (cleaned.includes('<think>')) {
     cleaned = cleaned.replace(/<think>[\s\S]*/gi, '').trim();
   }
+
+  // 2. Only strip leading meta-prefixes at the VERY START of the string (NO global /g flag)
+  // Prevents stripping valid words ("context", "step", "note") or zone names in the body text.
+  cleaned = cleaned.replace(/^(\*|\s)*drafting\s+[^\n:]+:\*?\s*/i, '');
+  cleaned = cleaned.replace(/^(\*|\s)*(sentence|step|note|advisory)\s*\d*(\s*\([^)]*\))?:?\*?\s*/i, '');
+  cleaned = cleaned.replace(/^(\*|\#|\>|\-\s)+/, '');
+
+  // 3. Strip surrounding quotation marks if double wrapped
+  cleaned = cleaned.trim().replace(/^["']|["']$/g, '').trim();
+
   return cleaned || text.trim();
 }
 
@@ -86,7 +102,7 @@ HARD BOUNDARIES & GROUNDING RULES:
 3. NEVER alter or contradict the static protocol.
 4. Focus on WHICH existing step to prioritize given the live density, weather condition, and responder shortfall.
 5. Emphasize that final operational calls rest with on-scene personnel.
-6. Keep output to EXACTLY 2 to 3 sentences. No headings, no bullet points, and NO <think> tags.`;
+6. Keep output to EXACTLY 2 to 3 sentences. Direct response ONLY. NO sentence labels, NO drafting notes, NO headings, NO bullet points, and NO <think> tags.`;
 
   const userContent = JSON.stringify({
     protocol_title: playbook?.title,
@@ -121,13 +137,13 @@ HARD BOUNDARIES & GROUNDING RULES:
             {
               role: 'user',
               parts: [
-                { text: `${systemPrompt}\n\nHere is the static playbook and current live context:\n\n${userContent}\n\nProvide ONLY the clean 2-3 sentence prioritization advisory now:` },
+                { text: `${systemPrompt}\n\nHere is the static playbook and current live context:\n\n${userContent}\n\nProvide ONLY the direct 2-3 sentence prioritization text now (no labels, no drafting notes):` },
               ],
             },
           ],
           generationConfig: {
             temperature: 0.2,
-            maxOutputTokens: 500,
+            maxOutputTokens: 1000,
           },
         }),
         signal: controller.signal,
@@ -144,7 +160,7 @@ HARD BOUNDARIES & GROUNDING RULES:
 
       const data = await response.json();
       const rawContent = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-      const cleanContent = stripThinkingTags(rawContent);
+      const cleanContent = cleanNarrativeOutput(rawContent);
 
       if (!cleanContent) {
         console.warn(`[GeminiPlaybook] Model ${model} returned empty completion.`);
@@ -174,5 +190,6 @@ HARD BOUNDARIES & GROUNDING RULES:
 module.exports = {
   generateContextualNarrative,
   generateDeterministicFallbackNarrative,
-  stripThinkingTags,
+  cleanNarrativeOutput,
+  stripThinkingTags: cleanNarrativeOutput,
 };

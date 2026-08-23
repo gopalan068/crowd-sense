@@ -312,7 +312,7 @@ export default function PostEventReportDocument({ report, onRegenerate }) {
           <div className="flex items-center justify-between border-b border-slate-800 pb-2">
             <div>
               <span className="font-bold text-sky-400 uppercase">Input Payload Audit Trail</span>
-              <p className="text-[11px] text-slate-400">Exact structured JSON aggregated from SQLite and sent to Groq / local synthesis.</p>
+              <p className="text-[11px] text-slate-400">Exact structured JSON aggregated from SQLite and sent to Gemini / local synthesis.</p>
             </div>
             <button
               onClick={() => setShowJsonDrawer(false)}
