@@ -255,8 +255,7 @@ export default function App() {
         <div className="flex items-center gap-1.5 font-mono-num text-xs">
           {[
             { id: 'LIVE', label: '🔴 LIVE OPERATIONS' },
-            { id: 'REPORT', label: '📑 POST-EVENT REPORT' },
-            { id: 'POST_EVENT', label: '📊 TIMELINE & AUDIT' },
+            { id: 'EVENT_ANALYSIS', label: '📊 EVENT ANALYSIS' },
             { id: 'VENUE_MAP', label: '🗺️ VENUE MAP & EGRESS' },
             { id: 'DUAL_SIM', label: '📱 DUAL PHONE SIMULATOR' },
           ].map((tab) => (
@@ -264,7 +263,7 @@ export default function App() {
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               className={`px-3 py-1.5 rounded-lg font-bold transition-all ${
-                activeTab === tab.id
+                activeTab === tab.id || (tab.id === 'EVENT_ANALYSIS' && (activeTab === 'REPORT' || activeTab === 'POST_EVENT'))
                   ? 'bg-sky-600 text-white shadow-xs'
                   : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300'
               }`}
@@ -367,14 +366,9 @@ export default function App() {
           </div>
         )}
 
-        {/* Tab: Post-Event Report (Groq LLM) */}
-        {activeTab === 'REPORT' && (
-          <PostEventAnalysisView auditLogs={auditLogs} initialSubTab="REPORT" />
-        )}
-
-        {/* Tab: Post-Event Timeline & Audit Logs */}
-        {activeTab === 'POST_EVENT' && (
-          <PostEventAnalysisView auditLogs={auditLogs} initialSubTab="TIMELINE" />
+        {/* Combined Post-Event Analysis Tab (Report + Timeline & Audit) */}
+        {(activeTab === 'EVENT_ANALYSIS' || activeTab === 'REPORT' || activeTab === 'POST_EVENT') && (
+          <PostEventAnalysisView auditLogs={auditLogs} />
         )}
 
         {/* Tab 3: Venue Map & Egress Bottlenecks */}

@@ -18,10 +18,9 @@ const DEFAULT_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 // Candidate models in preference order
 const CANDIDATE_MODELS = [
   DEFAULT_MODEL,
-  'gemini-2.5-flash',
-  'gemini-2.0-flash',
-  'gemini-1.5-flash',
-  'gemini-2.0-flash-lite',
+  'gemini-3.6-flash',
+  'gemini-3.5-flash',
+  'gemini-3.1-flash',
 ];
 
 /**
@@ -179,11 +178,11 @@ function generateLocalDeterministicReport(data) {
 
   const incidentRows = incidents.length > 0
     ? incidents.map((inc) => {
-        const ackDisplay = inc.acknowledged_at
-          ? `Ack by ${inc.acknowledged_by || 'Official'} (${inc.time_to_acknowledge_sec}s)`
-          : inc.was_auto_escalated ? `⚠️ AUTO-ESCALATED (${inc.escalated_to})` : 'UNACKNOWLEDGED';
-        return `| \`${inc.alert_id}\` | ${inc.zone_id.toUpperCase()} | **${inc.severity.toUpperCase()}** | ${new Date(inc.triggered_at).toLocaleTimeString()} | ${inc.alert_type.replace(/_/g, ' ')} | ${ackDisplay} | ${inc.responder_status || 'unassigned'} |`;
-      }).join('\n')
+      const ackDisplay = inc.acknowledged_at
+        ? `Ack by ${inc.acknowledged_by || 'Official'} (${inc.time_to_acknowledge_sec}s)`
+        : inc.was_auto_escalated ? `⚠️ AUTO-ESCALATED (${inc.escalated_to})` : 'UNACKNOWLEDGED';
+      return `| \`${inc.alert_id}\` | ${inc.zone_id.toUpperCase()} | **${inc.severity.toUpperCase()}** | ${new Date(inc.triggered_at).toLocaleTimeString()} | ${inc.alert_type.replace(/_/g, ' ')} | ${ackDisplay} | ${inc.responder_status || 'unassigned'} |`;
+    }).join('\n')
     : '| *No incident alerts recorded during this session* | — | — | — | — | — | — |';
 
   const weatherDescriptions = weather.map((w) => {
