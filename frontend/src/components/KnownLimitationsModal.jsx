@@ -52,7 +52,7 @@ const LIMITATIONS = [
   },
   {
     title: 'Post-Incident Reports (Groq LLM API & Local Fallback)',
-    desc: 'Post-incident reports are generated using Groq\'s LLM API (llama-3.3-70b-versatile) from real system-collected data (density history, audit logs, responder updates); any supplementary reference figures are clearly marked as simulated. Report generation requires internet connectivity; if Groq is unavailable, an honest local deterministic fallback clearly marked with "[GENERATION SOURCE: LOCAL DETERMINISTIC ENGINE]" is used, alongside SQLite report caching for demo reliability.',
+    desc: 'Post-incident reports are generated using Groq\'s LLM API (openai/gpt-oss-120b / qwen/qwen3.6-27b) from real system-collected data (density history, audit logs, responder updates); any supplementary reference figures are clearly marked as simulated. Report generation requires internet connectivity; if Groq is unavailable, an honest local deterministic fallback clearly marked with "[GENERATION SOURCE: LOCAL DETERMINISTIC ENGINE]" is used, alongside SQLite report caching for demo reliability.',
     category: 'CAPSTONE REPORT',
   },
   {

@@ -12,7 +12,28 @@
 'use strict';
 
 const GROQ_API_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
-const DEFAULT_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+const DEFAULT_MODEL = process.env.GROQ_MODEL || 'openai/gpt-oss-120b';
+
+const CANDIDATE_MODELS = [
+  DEFAULT_MODEL,
+  'openai/gpt-oss-120b',
+  'qwen/qwen3.6-27b',
+  'openai/gpt-oss-20b',
+];
+
+/**
+ * Strip any <think>...</think> reasoning tags emitted by reasoning models.
+ * @param {string} text
+ * @returns {string}
+ */
+function stripThinkingTags(text) {
+  if (!text) return '';
+  let cleaned = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+  if (cleaned.includes('<think>')) {
+    cleaned = cleaned.replace(/<think>[\s\S]*/gi, '').trim();
+  }
+  return cleaned || text.trim();
+}
 
 /**
  * Generate local deterministic framing fallback when Groq is unavailable.
@@ -48,7 +69,7 @@ function generateDeterministicFallbackNarrative(playbook, shortfall, weatherStat
 async function generateContextualNarrative({ playbook, shortfall, weatherState, alert }) {
   const apiKey = process.env.GROQ_API_KEY;
 
-  if (!apiKey || apiKey.trim() === '') {
+  if (!apiKey || apiKey.trim() === '' || apiKey.includes('your_actual_groq_api_key')) {
     return {
       narrative: generateDeterministicFallbackNarrative(playbook, shortfall, weatherState),
       source: 'deterministic_fallback',
@@ -65,7 +86,7 @@ HARD BOUNDARIES & GROUNDING RULES:
 3. NEVER alter or contradict the static protocol.
 4. Focus on WHICH existing step to prioritize given the live density, weather condition, and responder shortfall.
 5. Emphasize that final operational calls rest with on-scene personnel.
-6. Keep output to EXACTLY 2 to 3 sentences. No headings, no bullet points.`;
+6. Keep output to EXACTLY 2 to 3 sentences. No headings, no bullet points, and NO <think> tags.`;
 
   const userContent = JSON.stringify({
     protocol_title: playbook?.title,
@@ -80,58 +101,72 @@ HARD BOUNDARIES & GROUNDING RULES:
     temperature_c: weatherState?.current_condition?.temperature_c || 28,
   }, null, 2);
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 8000); // 8s timeout for snappy UI response
+  const modelsToTry = [...new Set(CANDIDATE_MODELS)];
+  let lastError = null;
 
-  try {
-    const response = await fetch(GROQ_API_ENDPOINT, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey.trim()}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: DEFAULT_MODEL,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: `Here is the static playbook and current live context:\n\n${userContent}\n\nGenerate the 2-3 sentence prioritization advisory now:` },
-        ],
-        temperature: 0.2,
-        max_tokens: 250,
-      }),
-      signal: controller.signal,
-    });
+  for (const model of modelsToTry) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 18000); // 18s timeout
 
-    clearTimeout(timeoutId);
+    try {
+      const response = await fetch(GROQ_API_ENDPOINT, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey.trim()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: model,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: `Here is the static playbook and current live context:\n\n${userContent}\n\nProvide ONLY the clean 2-3 sentence prioritization advisory now:` },
+          ],
+          temperature: 0.2,
+          max_tokens: 1024,
+        }),
+        signal: controller.signal,
+      });
 
-    if (!response.ok) {
-      throw new Error(`Groq API returned HTTP ${response.status}`);
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const errText = await response.text();
+        console.warn(`[GroqPlaybook] Model ${model} HTTP ${response.status}: ${errText}`);
+        lastError = new Error(`Groq API (${model}) HTTP ${response.status}`);
+        continue;
+      }
+
+      const data = await response.json();
+      const rawContent = data.choices?.[0]?.message?.content || data.choices?.[0]?.text || '';
+      const cleanContent = stripThinkingTags(rawContent);
+
+      if (!cleanContent) {
+        console.warn(`[GroqPlaybook] Model ${model} returned empty completion after stripping.`);
+        lastError = new Error('Empty completion from Groq API');
+        continue;
+      }
+
+      return {
+        narrative: cleanContent,
+        source: 'groq_llm',
+        model: data.model || model,
+      };
+    } catch (err) {
+      clearTimeout(timeoutId);
+      lastError = err;
     }
-
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content?.trim();
-
-    if (!content) {
-      throw new Error('Empty completion from Groq API');
-    }
-
-    return {
-      narrative: content,
-      source: 'groq_llm',
-      model: data.model || DEFAULT_MODEL,
-    };
-  } catch (err) {
-    clearTimeout(timeoutId);
-    console.warn(`[GroqPlaybook] LLM narrative generation unavailable (${err.message}). Using deterministic fallback.`);
-    return {
-      narrative: generateDeterministicFallbackNarrative(playbook, shortfall, weatherState),
-      source: 'deterministic_fallback',
-      model: 'local-rules-engine',
-    };
   }
+
+  console.warn(`[GroqPlaybook] LLM narrative generation unavailable (${lastError?.message}). Using deterministic fallback.`);
+  return {
+    narrative: generateDeterministicFallbackNarrative(playbook, shortfall, weatherState),
+    source: 'deterministic_fallback',
+    model: 'local-rules-engine',
+  };
 }
 
 module.exports = {
   generateContextualNarrative,
   generateDeterministicFallbackNarrative,
+  stripThinkingTags,
 };

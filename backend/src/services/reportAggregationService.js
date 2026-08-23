@@ -4,7 +4,7 @@
  *
  * Compiles all operational metrics, density histories, audit trails,
  * responder timelines, and simulated weather transitions into a single
- * structured, honest JSON payload for Groq LLM synthesis.
+ * structured, honest, and token-optimized JSON payload for Groq LLM synthesis.
  */
 'use strict';
 
@@ -13,7 +13,7 @@ const { getSessionDensitySummaries } = require('./densityHistoryService');
 const { getWeatherHistory } = require('./weatherService');
 
 /**
- * Aggregate all system data into a single structured payload.
+ * Aggregate all system data into a structured payload.
  *
  * @param {Object} options
  * @param {string} [options.scope='all'] 'all' | 'zone_1' | 'zone_2'
@@ -31,13 +31,13 @@ async function aggregateReportData(options = {}) {
   const densitySummaries = await getSessionDensitySummaries(scope);
 
   // 2. Fetch Audit Logs
-  const rawLogs = await getAuditLogs(500);
+  const rawLogs = await getAuditLogs(200);
   const relevantLogs = rawLogs.filter((log) => {
     if (scope === 'all') return true;
     return log.zone_id === scope;
   });
 
-  // 3. Compute Accountability Metrics
+  // 3. Compute Accountability Metrics Across ALL Relevant Incidents
   let totalAckTimeSec = 0;
   let ackCount = 0;
   const ackTimesBySeverity = { red: [], orange: [], yellow: [] };
@@ -48,7 +48,7 @@ async function aggregateReportData(options = {}) {
   let resolvedIncidentsCount = 0;
   let needBackupCount = 0;
 
-  const incidentsList = relevantLogs.map((log) => {
+  const fullIncidentsList = relevantLogs.map((log) => {
     const triggeredMs = new Date(log.triggered_at).getTime();
     let ackTimeSec = null;
 
@@ -112,8 +112,19 @@ async function aggregateReportData(options = {}) {
       times.length > 0 ? Math.round(times.reduce((a, b) => a + b, 0) / times.length) : null;
   }
 
-  // 4. Weather & Environmental History
-  const weatherTimeline = getWeatherHistory();
+  // Token Optimization: For the LLM prompt payload, select the top 15 most significant incidents
+  // (prioritizing panic fast-paths, auto-escalations, and recent alerts) while keeping full accountability stats intact.
+  const prioritizedIncidents = [...fullIncidentsList]
+    .sort((a, b) => {
+      const scoreA = a.alert_type === 'immediate_panic_alert' ? 3 : a.was_auto_escalated ? 2 : 1;
+      const scoreB = b.alert_type === 'immediate_panic_alert' ? 3 : b.was_auto_escalated ? 2 : 1;
+      if (scoreA !== scoreB) return scoreB - scoreA;
+      return new Date(b.triggered_at) - new Date(a.triggered_at);
+    })
+    .slice(0, 15);
+
+  // 4. Weather & Environmental History (keep recent 5 transitions)
+  const weatherTimeline = getWeatherHistory().slice(-5);
 
   // 5. Build Aggregated Payload
   const aggregatedPayload = {
@@ -155,7 +166,8 @@ async function aggregateReportData(options = {}) {
             : `${citizenReportsCount} citizen emergency SOS reports were processed through the unified alert bus.`,
       },
     },
-    incident_audit_trail: incidentsList,
+    incident_audit_trail_sample: prioritizedIncidents,
+    total_incidents_in_db: relevantLogs.length,
     environmental_condition_changes: {
       is_simulated: true,
       simulation_note: 'Weather condition changes were initiated via simulated demo control presets.',

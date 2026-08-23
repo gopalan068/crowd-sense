@@ -3,8 +3,9 @@
  * Groq LLM Integration & Deterministic Local Fallback Engine.
  *
  * Implements Capstone Part B:
- * - Calls Groq OpenAI-compatible Chat Completions API with llama-3.3-70b-versatile
+ * - Calls Groq OpenAI-compatible Chat Completions API with active models (openai/gpt-oss-120b, qwen/qwen3.6-27b, groq/compound, openai/gpt-oss-20b)
  * - Enforces strict prompt grounding, 6-section structure, and peak occupancy honesty
+ * - Token-optimized to stay well within Groq TPM limits
  * - Provides a fully honest local deterministic synthesis fallback with unmistakable labeling
  * - Persists reports to SQLite database for audit reproducibility
  */
@@ -13,7 +14,17 @@
 const { insertReport } = require('../db/database');
 
 const GROQ_API_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
-const DEFAULT_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+const DEFAULT_MODEL = process.env.GROQ_MODEL || 'openai/gpt-oss-120b';
+
+// Candidate models in preference order (confirmed available in Groq catalog)
+const CANDIDATE_MODELS = [
+  DEFAULT_MODEL,
+  'openai/gpt-oss-120b',
+  'qwen/qwen3.6-27b',
+  'groq/compound',
+  'groq/compound-mini',
+  'openai/gpt-oss-20b',
+];
 
 /**
  * Construct system instructions for Groq LLM
@@ -22,7 +33,7 @@ function buildSystemPrompt() {
   return `You are the Official Lead Safety Analyst generating a formal Post-Incident Crowd Safety & Accountability Report for an administrative review committee.
 
 CRITICAL INSTRUCTIONS & GROUNDING RULES:
-1. FACTUAL GROUNDING: Rely EXCLUSIVELY on the provided structured JSON input. Do not invent, hallucinate, or extrapolate facts, incidents, personnel names, or attendance counts not present in the payload.
+1. FACTUAL GROUNDING: Rely EXCLUSIVELY on the provided structured JSON input. Do not invent or extrapolate incidents or attendance counts not present in the payload.
 2. HONESTY ON OCCUPANCY: Always refer to crowd capacity numbers strictly as "Estimated Peak Concurrent Occupancy". Density-based camera measurements cannot deduplicate individuals who moved between zones or arrived/departed over time. NEVER describe these figures as "total unique attendees" or "total footfall". State this caveat plainly in Section 2.
 3. DISTINGUISH SIMULATED DATA: If the payload contains any field tagged "data_source": "simulated_reference" (e.g. expected ticketed attendance or weather simulation notes), explicitly label them in the text as "[SIMULATED REFERENCE DATA]". Never present simulated planning figures as measured live data.
 4. STANDOUT ACCOUNTABILITY METRICS: The core purpose of this report is demonstrating accountability by design. Feature the standout accountability numbers prominently in Section 5:
@@ -30,7 +41,7 @@ CRITICAL INSTRUCTIONS & GROUNDING RULES:
    - Count of Auto-Escalations (alerts where officials failed to acknowledge in time)
    - Count of Panic-Signature Fast-Path alerts (where graduated timers were bypassed for immediate response)
    - Citizen Emergency SOS handling status
-5. FORMAL ADMINISTRATIVE TONE: Use an authoritative, objective, administrative tone suitable for an official public safety record. Avoid promotional or marketing copy.
+5. FORMAL ADMINISTRATIVE TONE: Use an authoritative, objective, administrative tone suitable for an official public safety record. Avoid promotional or marketing copy. Do not output <think> tags.
 
 MANDATORY REPORT STRUCTURE (Follow these 6 sections in order):
 # 1. Executive Summary
@@ -43,7 +54,7 @@ Venue scope, zones analyzed, and Estimated Peak Concurrent Occupancy per zone. E
 Narrative walkthrough of how crowd density, flow convergence, and turbulence evolved over time. Incorporate simulated weather condition shifts (e.g. extreme heat, heavy rain) and explain their impact on crowd behavior and vision confidence.
 
 # 4. Incidents & Alerts Log
-A structured markdown table detailing all logged incidents: Alert ID, Zone, Severity, Trigger Time, Handling / Assigned Role, Acknowledgment Status, Response Time (seconds), and Responder Action.
+A structured markdown table detailing key logged incidents from the audit trail: Alert ID, Zone, Severity, Trigger Time, Handling / Assigned Role, Acknowledgment Status, Response Time (seconds), and Responder Action.
 
 # 5. Accountability & Response Performance
 Prominently display the key accountability metrics:
@@ -58,66 +69,88 @@ Specific, data-grounded administrative and physical layout recommendations (e.g.
 }
 
 /**
- * Generate report using Groq LLM API
+ * Generate report using Groq LLM API with automatic model candidate fallback
  *
  * @param {Object} aggregatedData JSON payload from reportAggregationService
  * @returns {Promise<{ markdown: string, model: string, source: string }>}
  */
 async function callGroqApi(aggregatedData) {
   const apiKey = process.env.GROQ_API_KEY;
-  if (!apiKey || apiKey.trim() === '') {
-    throw new Error('GROQ_API_KEY is not set in environment.');
+  if (!apiKey || apiKey.trim() === '' || apiKey.includes('your_actual_groq_api_key')) {
+    throw new Error('GROQ_API_KEY is not set or contains placeholder.');
   }
 
-  const model = DEFAULT_MODEL;
   const systemPrompt = buildSystemPrompt();
-  const userMessage = `Here is the verified system-collected data for this gathering:\n\n\`\`\`json\n${JSON.stringify(aggregatedData, null, 2)}\n\`\`\`\n\nPlease generate the official 6-section Post-Incident Crowd Safety & Accountability Report now.`;
+  const userMessage = `Here is the verified system-collected data for this gathering:\n\n\`\`\`json\n${JSON.stringify(aggregatedData, null, 2)}\n\`\`\`\n\nPlease generate the official 6-section Post-Incident Crowd Safety & Accountability Report now:`;
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
+  // Deduplicate candidate model list
+  const modelsToTry = [...new Set(CANDIDATE_MODELS)];
+  let lastError = null;
 
-  try {
-    const response = await fetch(GROQ_API_ENDPOINT, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey.trim()}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: model,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userMessage },
-        ],
-        temperature: 0.2,
-        max_tokens: 4096,
-      }),
-      signal: controller.signal,
-    });
+  for (const model of modelsToTry) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 35000); // 35s timeout
 
-    clearTimeout(timeoutId);
+    try {
+      console.log(`[GroqReport] Attempting completion with model: ${model}...`);
+      const response = await fetch(GROQ_API_ENDPOINT, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey.trim()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: model,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userMessage },
+          ],
+          temperature: 0.2,
+          max_tokens: 1800,
+        }),
+        signal: controller.signal,
+      });
 
-    if (!response.ok) {
-      const errText = await response.text();
-      throw new Error(`Groq API responded with HTTP ${response.status}: ${errText}`);
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const errText = await response.text();
+        console.warn(`[GroqReport] Model ${model} failed (HTTP ${response.status}): ${errText}`);
+        lastError = new Error(`Groq API (${model}) HTTP ${response.status}: ${errText}`);
+        continue; // Try next model candidate
+      }
+
+      const data = await response.json();
+      const rawMarkdown = data.choices?.[0]?.message?.content || data.choices?.[0]?.text || '';
+      let markdown = rawMarkdown.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+      if (markdown.includes('<think>')) {
+        markdown = markdown.replace(/<think>[\s\S]*/gi, '').trim();
+      }
+
+      if (!markdown || markdown.trim() === '') {
+        markdown = rawMarkdown.trim();
+      }
+
+      if (!markdown) {
+        console.warn(`[GroqReport] Model ${model} returned empty completion.`);
+        lastError = new Error(`Model ${model} returned empty completion.`);
+        continue;
+      }
+
+      console.log(`[GroqReport] ✓ Successfully generated report via ${model}`);
+      return {
+        markdown,
+        model: data.model || model,
+        source: 'groq_llm',
+      };
+    } catch (err) {
+      clearTimeout(timeoutId);
+      console.warn(`[GroqReport] Error calling model ${model}:`, err.message);
+      lastError = err;
     }
-
-    const data = await response.json();
-    const markdown = data.choices?.[0]?.message?.content;
-
-    if (!markdown) {
-      throw new Error('Empty completion content received from Groq.');
-    }
-
-    return {
-      markdown,
-      model: data.model || model,
-      source: 'groq_llm',
-    };
-  } catch (err) {
-    clearTimeout(timeoutId);
-    throw err;
   }
+
+  throw lastError || new Error('All Groq model candidates failed.');
 }
 
 /**
@@ -131,7 +164,7 @@ function generateLocalDeterministicReport(data) {
   const occ = data.occupancy_and_density || {};
   const acct = data.accountability_and_response_metrics?.headline_standout_stats || {};
   const citizen = data.accountability_and_response_metrics?.citizen_emergency_reports || {};
-  const incidents = data.incident_audit_trail || [];
+  const incidents = data.incident_audit_trail_sample || data.incident_audit_trail || [];
   const weather = data.environmental_condition_changes?.timeline || [];
   const simRef = data.supplementary_reference_data || null;
 
@@ -170,7 +203,7 @@ function generateLocalDeterministicReport(data) {
 
 This formal post-incident report documents the operational safety evaluation for **${meta.venue_name || 'Demo Venue'}** during the observation period ending **${new Date(meta.generated_at).toLocaleString()}**. 
 
-Across the monitored zones, the system recorded **${incidents.length} total incident alerts**, with an **Average Time-to-Acknowledge of ${avgAckTime}**. The system registered **${acct.auto_escalations_due_to_timeout || 0} auto-escalation(s)** resulting from unacknowledged thresholds and **${acct.immediate_panic_fast_path_bypasses || 0} panic-signature fast-path bypass(es)**. The combined **Estimated Peak Concurrent Occupancy** across active zones reached **${totalEstPeakOccupancy} persons**.
+Across the monitored zones, the system recorded **${acct.total_incidents_logged || incidents.length} total incident alerts**, with an **Average Time-to-Acknowledge of ${avgAckTime}**. The system registered **${acct.auto_escalations_due_to_timeout || 0} auto-escalation(s)** resulting from unacknowledged thresholds and **${acct.immediate_panic_fast_path_bypasses || 0} panic-signature fast-path bypass(es)**. The combined **Estimated Peak Concurrent Occupancy** across active zones reached **${totalEstPeakOccupancy} persons**.
 
 ---
 
@@ -199,7 +232,7 @@ ${weatherDescriptions || '- Environmental conditions remained stable at baseline
 
 # 4. Incidents & Alerts Log
 
-The following immutable audit log details every alert generated by automated computer vision detection or citizen emergency reports during the session:
+The following audit log details key alerts generated by automated computer vision detection or citizen emergency reports during the session:
 
 | Alert ID | Zone | Severity | Triggered Time | Alert Classification | Acknowledgment / Escalation Status | Field Responder Action |
 |---|---|---|---|---|---|---|
