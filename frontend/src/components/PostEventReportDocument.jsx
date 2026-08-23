@@ -361,7 +361,7 @@ export default function PostEventReportDocument({ report, onRegenerate }) {
                 </div>
               ) : (
                 <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-700 font-bold text-[11px]">
-                  <span>🤖 AI SYNTHESIZED via Groq LLM ({model_name})</span>
+                  <span>🤖 AI SYNTHESIZED via Gemini LLM ({model_name})</span>
                 </div>
               )}
               <span className="text-[11px] text-slate-500">Filing ID: {report_id}</span>

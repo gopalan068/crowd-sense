@@ -1,10 +1,10 @@
 /**
  * backend/src/services/reportAggregationService.js
- * Capstone Post-Event Data Aggregation Engine.
+ * Capstone Post-Event Data Aggregation Engine (Full Comprehensive Scope).
  *
- * Compiles all operational metrics, density histories, audit trails,
- * responder timelines, and simulated weather transitions into a single
- * structured, honest, and token-optimized JSON payload for Groq LLM synthesis.
+ * Compiles all operational metrics, full density histories, complete audit trails,
+ * responder timelines, and simulated weather transitions into a structured,
+ * honest JSON payload for Gemini LLM synthesis.
  */
 'use strict';
 
@@ -13,12 +13,12 @@ const { getSessionDensitySummaries } = require('./densityHistoryService');
 const { getWeatherHistory } = require('./weatherService');
 
 /**
- * Aggregate all system data into a structured payload.
+ * Aggregate all system data into a comprehensive structured payload.
  *
  * @param {Object} options
  * @param {string} [options.scope='all'] 'all' | 'zone_1' | 'zone_2'
  * @param {boolean} [options.includeSimulatedReference=false]
- * @param {string} [options.venueName='City Central Gathering Ground / Corridor 2']
+ * @param {string} [options.venueName='City Central Gathering Ground & Corridor Complex']
  * @returns {Promise<Object>}
  */
 async function aggregateReportData(options = {}) {
@@ -30,14 +30,14 @@ async function aggregateReportData(options = {}) {
   // 1. Fetch Session Density Summaries
   const densitySummaries = await getSessionDensitySummaries(scope);
 
-  // 2. Fetch Audit Logs
-  const rawLogs = await getAuditLogs(200);
+  // 2. Fetch Full Audit Logs
+  const rawLogs = await getAuditLogs(500);
   const relevantLogs = rawLogs.filter((log) => {
     if (scope === 'all') return true;
     return log.zone_id === scope;
   });
 
-  // 3. Compute Accountability Metrics Across ALL Relevant Incidents
+  // 3. Compute Accountability Metrics Across ALL Logged Incidents
   let totalAckTimeSec = 0;
   let ackCount = 0;
   const ackTimesBySeverity = { red: [], orange: [], yellow: [] };
@@ -112,21 +112,10 @@ async function aggregateReportData(options = {}) {
       times.length > 0 ? Math.round(times.reduce((a, b) => a + b, 0) / times.length) : null;
   }
 
-  // Token Optimization: For the LLM prompt payload, select the top 15 most significant incidents
-  // (prioritizing panic fast-paths, auto-escalations, and recent alerts) while keeping full accountability stats intact.
-  const prioritizedIncidents = [...fullIncidentsList]
-    .sort((a, b) => {
-      const scoreA = a.alert_type === 'immediate_panic_alert' ? 3 : a.was_auto_escalated ? 2 : 1;
-      const scoreB = b.alert_type === 'immediate_panic_alert' ? 3 : b.was_auto_escalated ? 2 : 1;
-      if (scoreA !== scoreB) return scoreB - scoreA;
-      return new Date(b.triggered_at) - new Date(a.triggered_at);
-    })
-    .slice(0, 15);
+  // 4. Weather & Environmental History (Full session history)
+  const weatherTimeline = getWeatherHistory();
 
-  // 4. Weather & Environmental History (keep recent 5 transitions)
-  const weatherTimeline = getWeatherHistory().slice(-5);
-
-  // 5. Build Aggregated Payload
+  // 5. Build Comprehensive Aggregated Payload
   const aggregatedPayload = {
     report_metadata: {
       generated_at: reportGeneratedAt,
@@ -166,7 +155,7 @@ async function aggregateReportData(options = {}) {
             : `${citizenReportsCount} citizen emergency SOS reports were processed through the unified alert bus.`,
       },
     },
-    incident_audit_trail_sample: prioritizedIncidents,
+    incident_audit_trail: fullIncidentsList,
     total_incidents_in_db: relevantLogs.length,
     environmental_condition_changes: {
       is_simulated: true,

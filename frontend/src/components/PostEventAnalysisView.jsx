@@ -88,7 +88,7 @@ export default function PostEventAnalysisView({ auditLogs = [], initialSubTab = 
       }, 600)
 
       setTimeout(() => {
-        setGenerationStep('Querying Groq LLM API (llama-3.3-70b-versatile) for formal post-incident synthesis...')
+        setGenerationStep('Querying Google Gemini API (gemini-2.5-flash) for comprehensive post-incident synthesis...')
       }, 1200)
 
       const response = await fetch(`${BACKEND_URL}/api/reports/generate`, {

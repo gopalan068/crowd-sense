@@ -14,7 +14,7 @@
 const express = require('express');
 const router = express.Router();
 const { aggregateReportData } = require('../services/reportAggregationService');
-const { generateAndPersistReport } = require('../services/groqReportService');
+const { generateAndPersistReport } = require('../services/geminiReportService');
 const { getLatestReport, getReportHistory, getReportById } = require('../db/database');
 
 /**
