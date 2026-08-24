@@ -161,8 +161,8 @@ export default function PostEventAnalysisView({ auditLogs = [], initialSubTab = 
             <button
               onClick={() => setActiveSubTab('REPORT')}
               className={`px-4 py-2 rounded-xl font-bold text-xs transition-all flex items-center gap-1.5 ${activeSubTab === 'REPORT'
-                  ? 'bg-sky-600 text-white shadow-md'
-                  : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300'
+                ? 'bg-sky-600 text-white shadow-md'
+                : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300'
                 }`}
             >
               <span>📄 FORMAL SAFETY REPORT</span>
@@ -171,8 +171,8 @@ export default function PostEventAnalysisView({ auditLogs = [], initialSubTab = 
             <button
               onClick={() => setActiveSubTab('TIMELINE')}
               className={`px-4 py-2 rounded-xl font-bold text-xs transition-all flex items-center gap-1.5 ${activeSubTab === 'TIMELINE'
-                  ? 'bg-sky-600 text-white shadow-md'
-                  : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300'
+                ? 'bg-sky-600 text-white shadow-md'
+                : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300'
                 }`}
             >
               <span>📈 TIMELINE &amp; AUDIT LOGS</span>
@@ -191,8 +191,8 @@ export default function PostEventAnalysisView({ auditLogs = [], initialSubTab = 
                   key={zId}
                   onClick={() => setSelectedZone(zId)}
                   className={`px-3 py-1.5 rounded-lg font-bold text-xs transition-all ${selectedZone === zId
-                      ? 'bg-sky-600 text-white shadow-xs'
-                      : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+                    ? 'bg-sky-600 text-white shadow-xs'
+                    : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
                     }`}
                 >
                   {zId === 'all' ? 'ALL ZONES' : zId.toUpperCase()}
@@ -208,9 +208,6 @@ export default function PostEventAnalysisView({ auditLogs = [], initialSubTab = 
                 onChange={(e) => setIncludeSimulatedRef(e.target.checked)}
                 className="rounded text-sky-600 focus:ring-sky-500"
               />
-              <span className="text-slate-700 dark:text-slate-300 font-bold">
-                Include Simulated Reference Capacity (1,800 Ticketed Baseline)
-              </span>
             </label>
           </div>
 

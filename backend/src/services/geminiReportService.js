@@ -78,8 +78,15 @@ async function callGeminiApi(aggregatedData) {
     throw new Error('GEMINI_API_KEY (or GOOGLE_API_KEY) is not set in environment.');
   }
 
+  // Compact payload to prevent token overflow/truncation if incident trail is very large
+  const payloadToPrompt = { ...aggregatedData };
+  if (Array.isArray(payloadToPrompt.incident_audit_trail) && payloadToPrompt.incident_audit_trail.length > 20) {
+    payloadToPrompt.incident_audit_trail_note = `[PAYLOAD SUMMARY: Showing top 20 of ${payloadToPrompt.incident_audit_trail.length} total recorded incident alerts]`;
+    payloadToPrompt.incident_audit_trail = payloadToPrompt.incident_audit_trail.slice(0, 20);
+  }
+
   const systemPrompt = buildSystemPrompt();
-  const userMessage = `Here is the complete, verified system-collected data for this gathering:\n\n\`\`\`json\n${JSON.stringify(aggregatedData, null, 2)}\n\`\`\`\n\nPlease generate the comprehensive, exhaustive 6-section Post-Incident Crowd Safety & Accountability Report now:`;
+  const userMessage = `Here is the complete, verified system-collected data for this gathering:\n\n\`\`\`json\n${JSON.stringify(payloadToPrompt, null, 2)}\n\`\`\`\n\nPlease generate the comprehensive, exhaustive 6-section Post-Incident Crowd Safety & Accountability Report now:`;
 
   const modelsToTry = [...new Set(CANDIDATE_MODELS)];
   let lastError = null;
@@ -133,6 +140,15 @@ async function callGeminiApi(aggregatedData) {
       if (!markdown || markdown.trim() === '') {
         console.warn(`[GeminiReport] Model ${model} returned empty completion.`);
         lastError = new Error(`Model ${model} returned empty completion.`);
+        continue;
+      }
+
+      // Check completeness: Ensure Gemini didn't cut off early before writing all 6 sections
+      const hasKeySections = (markdown.includes('# 5.') || markdown.includes('Accountability')) &&
+                            (markdown.includes('# 6.') || markdown.includes('Actionable Observations') || markdown.includes('Recommendations'));
+      if (!hasKeySections) {
+        console.warn(`[GeminiReport] Model ${model} returned truncated report (missing sections 5 & 6).`);
+        lastError = new Error(`Model ${model} returned incomplete report truncated mid-generation.`);
         continue;
       }
 

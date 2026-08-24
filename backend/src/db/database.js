@@ -385,6 +385,18 @@ function insertReport(report) {
         console.error('[DB] Error inserting report:', err);
         return reject(err);
       }
+      // Also write markdown file to local codebase data/reports directory for instant direct viewing
+      try {
+        const REPORTS_DIR = path.join(DB_DIR, 'reports');
+        if (!fs.existsSync(REPORTS_DIR)) {
+          fs.mkdirSync(REPORTS_DIR, { recursive: true });
+        }
+        fs.writeFileSync(path.join(REPORTS_DIR, `${report.report_id}.md`), report.markdown_content, 'utf8');
+        fs.writeFileSync(path.join(REPORTS_DIR, 'latest.md'), report.markdown_content, 'utf8');
+        console.log(`[DB] Saved local markdown files: backend/data/reports/${report.report_id}.md and backend/data/reports/latest.md`);
+      } catch (fsErr) {
+        console.warn('[DB] Could not write report file to disk:', fsErr.message);
+      }
       resolve();
     });
   });
