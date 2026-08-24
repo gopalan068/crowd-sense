@@ -37,21 +37,21 @@ export default function DualPhoneSimulator({
   }, [])
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-sky-500 selection:text-white">
+    <div className="min-h-screen bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans selection:bg-sky-500 selection:text-white">
       {/* Top Simulator Control Bar */}
-      <header className="px-6 py-3 border-b border-slate-800 bg-slate-900/90 backdrop-blur-md flex flex-wrap items-center justify-between gap-4 sticky top-0 z-30 shadow-md">
+      <header className="px-6 py-3 border-b border-slate-200 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md flex flex-wrap items-center justify-between gap-4 sticky top-0 z-30 shadow-xs">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-sky-500 to-indigo-600 flex items-center justify-center font-bold text-white shadow-lg text-sm">
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-sky-500 to-indigo-600 flex items-center justify-center font-bold text-white shadow-md text-sm">
             📱
           </div>
           <div>
-            <h1 className="text-base font-extrabold tracking-tight text-white flex items-center gap-2">
+            <h1 className="text-base font-extrabold tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
               CrowdSense Field Mobile Simulator
-              <span className="text-xs px-2 py-0.5 rounded-full bg-sky-500/20 text-sky-400 border border-sky-500/30 font-mono-num font-normal">
+              <span className="text-xs px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/30 font-mono-num font-normal">
                 {window.location.port === '5174' ? 'PORT 5174 (DEDICATED)' : 'DUAL PHONE MODE'}
               </span>
             </h1>
-            <p className="text-xs text-slate-400 font-mono-num">
+            <p className="text-xs text-slate-500 dark:text-slate-400 font-mono-num">
               Live Side-by-Side Citizen SOS ↔ Field Patrol Synchronization Demo
             </p>
           </div>
@@ -59,23 +59,23 @@ export default function DualPhoneSimulator({
 
         {/* Live Metrics & Connectivity Badges */}
         <div className="flex items-center gap-3 text-xs font-mono-num">
-          <div className="hidden md:flex items-center gap-2 px-3 py-1 rounded-full border border-slate-800 bg-slate-900 text-slate-300">
+          <div className="hidden md:flex items-center gap-2 px-3 py-1 rounded-full border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-slate-700 dark:text-slate-300">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span>Sync: <strong className="text-sky-400">Bidirectional WS</strong></span>
+            <span>Sync: <strong className="text-sky-600 dark:text-sky-400">Bidirectional WS</strong></span>
           </div>
 
-          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full border border-slate-800 bg-slate-900">
+          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900">
             <span
               className={`w-2.5 h-2.5 rounded-full ${connected ? 'bg-emerald-500' : 'bg-red-500 animate-pulse'}`}
             />
-            <span className="text-slate-300">{connected ? 'WS CONNECTED' : 'DISCONNECTED'}</span>
+            <span className="text-slate-700 dark:text-slate-300">{connected ? 'WS CONNECTED' : 'DISCONNECTED'}</span>
           </div>
 
           <a
             href={`${window.location.protocol}//${window.location.hostname}:5173`}
             target="_blank"
             rel="noopener noreferrer"
-            className="px-3 py-1.5 rounded-lg border border-sky-500/40 bg-sky-600/20 text-sky-300 hover:bg-sky-600/30 font-bold transition-all flex items-center gap-1.5"
+            className="px-3 py-1.5 rounded-lg border border-sky-500/40 bg-sky-50 dark:bg-sky-600/20 text-sky-700 dark:text-sky-300 hover:bg-sky-100 dark:hover:bg-sky-600/30 font-bold transition-all flex items-center gap-1.5 shadow-xs"
           >
             🖥️ Open Command Ops Dashboard (5173) ↗
           </a>
@@ -83,15 +83,15 @@ export default function DualPhoneSimulator({
       </header>
 
       {/* Synchronized Demo Guidance Banner */}
-      <div className="px-6 py-2.5 bg-gradient-to-r from-sky-950/80 via-slate-900 to-indigo-950/80 border-b border-slate-800/80 text-xs font-mono-num text-slate-300 flex flex-wrap items-center justify-between gap-3">
+      <div className="px-6 py-2.5 bg-sky-50 dark:bg-slate-900 border-b border-sky-100 dark:border-slate-800 text-xs font-mono-num text-slate-700 dark:text-slate-300 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <span className="text-amber-400 text-sm">💡</span>
+          <span className="text-amber-500 text-sm">💡</span>
           <span>
-            <strong className="text-white">Interactive Demo:</strong> Tap <span className="text-rose-400 font-bold">"🚨 SEND EMERGENCY REPORT"</span> on the Left Citizen Phone → instantly watch the alert beep &amp; appear on the Right Responder Phone!
+            <strong className="text-slate-900 dark:text-white">Interactive Demo:</strong> Tap <span className="text-rose-600 dark:text-rose-400 font-bold">"🚨 SEND EMERGENCY REPORT"</span> on the Left Citizen Phone → instantly watch the alert beep &amp; appear on the Right Responder Phone!
           </span>
         </div>
-        <div className="text-slate-400 text-[11px]">
-          Both devices connected to <code className="text-sky-400 font-bold">{`${window.location.hostname}:4000`}</code>
+        <div className="text-slate-500 dark:text-slate-400 text-[11px]">
+          Both devices connected to <code className="text-sky-600 dark:text-sky-400 font-bold">{`${window.location.hostname}:4000`}</code>
         </div>
       </div>
 
@@ -105,23 +105,23 @@ export default function DualPhoneSimulator({
           <div className="flex flex-col items-center space-y-3">
             {/* Phone Label */}
             <div className="flex items-center justify-between w-full max-w-[390px] px-2 font-mono-num text-xs">
-              <span className="font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+              <span className="font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-rose-500" />
                 DEVICE 1: CITIZEN SOS APP
               </span>
-              <span className="text-slate-400 text-[11px]">Crowd Mobile Web</span>
+              <span className="text-slate-500 dark:text-slate-400 text-[11px]">Crowd Mobile Web</span>
             </div>
 
             {/* Smartphone Chassis Frame (iPhone Style) */}
-            <div className="relative w-full max-w-[390px] h-[660px] rounded-[44px] border-[8px] border-slate-800 bg-slate-900 shadow-2xl shadow-sky-950/40 ring-1 ring-slate-700/50 overflow-hidden flex flex-col">
+            <div className="relative w-full max-w-[390px] h-[660px] rounded-[44px] border-[8px] border-slate-300 dark:border-slate-800 bg-slate-100 dark:bg-slate-900 shadow-xl overflow-hidden isolate flex flex-col">
               {/* Speaker Notch & Camera Island */}
-              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-36 h-5 bg-slate-800 rounded-b-xl z-40 flex items-center justify-center gap-2">
-                <div className="w-2.5 h-2.5 rounded-full bg-slate-900 border border-slate-700" />
-                <div className="w-9 h-1 rounded-full bg-slate-900" />
+              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-36 h-5 bg-slate-200 dark:bg-slate-800 rounded-b-xl z-40 flex items-center justify-center gap-2">
+                <div className="w-2.5 h-2.5 rounded-full bg-slate-400 dark:bg-slate-900 border border-slate-300 dark:border-slate-700" />
+                <div className="w-9 h-1 rounded-full bg-slate-400 dark:bg-slate-900" />
               </div>
 
               {/* Status Bar */}
-              <div className="pt-2.5 px-6 pb-1 flex items-center justify-between text-[11px] font-mono-num text-slate-400 font-bold z-30 select-none bg-slate-900 border-b border-slate-800/50 flex-shrink-0">
+              <div className="pt-2.5 px-6 pb-1 flex items-center justify-between text-[11px] font-mono-num text-slate-600 dark:text-slate-400 font-bold z-30 select-none bg-slate-100 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800/50 flex-shrink-0">
                 <span>{currentTime || '09:41'}</span>
                 <div className="flex items-center gap-1.5 text-[10px]">
                   <span>5G</span>
@@ -131,7 +131,7 @@ export default function DualPhoneSimulator({
               </div>
 
               {/* App View Screen */}
-              <div className="flex-1 overflow-hidden min-h-0 relative bg-slate-950">
+              <div className="flex-1 overflow-hidden min-h-0 relative bg-slate-50 dark:bg-slate-950 isolate">
                 <CitizenReportView
                   socket={socket}
                   backendUrl={backendUrl}
@@ -139,8 +139,8 @@ export default function DualPhoneSimulator({
               </div>
 
               {/* Home Indicator Bar */}
-              <div className="py-2 flex justify-center bg-slate-900 border-t border-slate-800/50 z-30">
-                <div className="w-32 h-1 rounded-full bg-slate-600/60" />
+              <div className="py-2 flex justify-center bg-slate-100 dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800/50 z-30">
+                <div className="w-32 h-1 rounded-full bg-slate-400 dark:bg-slate-600/60" />
               </div>
             </div>
           </div>
@@ -151,33 +151,33 @@ export default function DualPhoneSimulator({
           <div className="flex flex-col items-center space-y-3">
             {/* Phone Label */}
             <div className="flex items-center justify-between w-full max-w-[390px] px-2 font-mono-num text-xs">
-              <span className="font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+              <span className="font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-sky-500" />
                 DEVICE 2: FIELD PATROL APP
               </span>
-              <span className="text-slate-400 text-[11px]">Rugged Tactical Terminal</span>
+              <span className="text-slate-500 dark:text-slate-400 text-[11px]">Rugged Tactical Terminal</span>
             </div>
 
             {/* Smartphone Chassis Frame (Android Tactical Style) */}
-            <div className="relative w-full max-w-[390px] h-[660px] rounded-[44px] border-[8px] border-slate-800 bg-slate-900 shadow-2xl shadow-indigo-950/40 ring-1 ring-slate-700/50 overflow-hidden flex flex-col">
+            <div className="relative w-full max-w-[390px] h-[660px] rounded-[44px] border-[8px] border-slate-300 dark:border-slate-800 bg-slate-100 dark:bg-slate-900 shadow-xl overflow-hidden isolate flex flex-col">
               {/* Speaker Notch */}
-              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-28 h-5 bg-slate-800 rounded-b-xl z-40 flex items-center justify-center gap-2">
-                <div className="w-2.5 h-2.5 rounded-full bg-slate-900 border border-slate-700" />
-                <div className="w-8 h-1 rounded-full bg-slate-900" />
+              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-28 h-5 bg-slate-200 dark:bg-slate-800 rounded-b-xl z-40 flex items-center justify-center gap-2">
+                <div className="w-2.5 h-2.5 rounded-full bg-slate-400 dark:bg-slate-900 border border-slate-300 dark:border-slate-700" />
+                <div className="w-8 h-1 rounded-full bg-slate-400 dark:bg-slate-900" />
               </div>
 
               {/* Status Bar */}
-              <div className="pt-2.5 px-6 pb-1 flex items-center justify-between text-[11px] font-mono-num text-slate-400 font-bold z-30 select-none bg-slate-900 border-b border-slate-800/50 flex-shrink-0">
+              <div className="pt-2.5 px-6 pb-1 flex items-center justify-between text-[11px] font-mono-num text-slate-600 dark:text-slate-400 font-bold z-30 select-none bg-slate-100 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800/50 flex-shrink-0">
                 <span>{currentTime || '09:41'}</span>
                 <div className="flex items-center gap-1.5 text-[10px]">
-                  <span className="text-emerald-400 font-bold">GPS FIXED</span>
+                  <span className="text-emerald-600 dark:text-emerald-400 font-bold">GPS FIXED</span>
                   <span>📶</span>
                   <span>🔋 95%</span>
                 </div>
               </div>
 
               {/* App View Screen */}
-              <div className="flex-1 overflow-hidden min-h-0 relative flex flex-col bg-slate-950">
+              <div className="flex-1 overflow-hidden min-h-0 relative flex flex-col bg-slate-50 dark:bg-slate-950 isolate">
                 <ResponderDashboard
                   socket={socket}
                   backendUrl={backendUrl}
@@ -190,8 +190,8 @@ export default function DualPhoneSimulator({
               </div>
 
               {/* Home Indicator Bar */}
-              <div className="py-2 flex justify-center bg-slate-900 border-t border-slate-800/50 z-30">
-                <div className="w-32 h-1 rounded-full bg-slate-600/60" />
+              <div className="py-2 flex justify-center bg-slate-100 dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800/50 z-30">
+                <div className="w-32 h-1 rounded-full bg-slate-400 dark:bg-slate-600/60" />
               </div>
             </div>
           </div>
@@ -200,7 +200,7 @@ export default function DualPhoneSimulator({
       </main>
 
       {/* Footer Info */}
-      <footer className="py-3 px-6 text-center text-xs font-mono-num text-slate-500 border-t border-slate-900 bg-slate-950">
+      <footer className="py-3 px-6 text-center text-xs font-mono-num text-slate-500 dark:text-slate-500 border-t border-slate-200 dark:border-slate-900 bg-white dark:bg-slate-950">
         CrowdSense · Dual-Phone Field Mobile Simulator · Live Peer-to-Peer Safety Pipeline
       </footer>
     </div>

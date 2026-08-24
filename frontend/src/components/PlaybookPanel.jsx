@@ -26,15 +26,29 @@ export default function PlaybookPanel({
   const [completedStepsMap, setCompletedStepsMap] = useState({}) // step_index -> { completed_at, completed_by }
   const [completingIndex, setCompletingIndex] = useState(null)
 
-  const alertId = alert?.alert_id
-  const zoneId = alert?.zone_id
+  const alertId = typeof alert === 'string' ? alert : (alert?.alert_id || alert?.id || `alt_${Date.now()}`)
+  const zoneId = alert?.zone_id || 'zone_1'
+
+  const resolvedBackendUrl = (backendUrl !== undefined && backendUrl !== null && backendUrl !== '')
+    ? backendUrl
+    : (typeof window !== 'undefined' && window.location.port !== '4000' && window.location.port !== '5173' && window.location.port !== '5174'
+      ? `${window.location.protocol}//${window.location.hostname}:4000`
+      : '')
 
   // Fetch complete playbook package (protocol, shortfall, completed steps, narrative)
   const fetchPlaybook = useCallback(async () => {
-    if (!alertId || !backendUrl) return
+    if (!alertId) return
     setLoading(true)
     try {
-      const res = await fetch(`${backendUrl}/api/alerts/${alertId}/playbook`)
+      const qs = new URLSearchParams()
+      if (alert?.zone_id) qs.set('zone_id', alert.zone_id)
+      if (alert?.severity) qs.set('severity', alert.severity)
+      if (alert?.alert_type) qs.set('alert_type', alert.alert_type)
+      if (alert?.category) qs.set('category', alert.category)
+      const queryStr = qs.toString() ? `?${qs.toString()}` : ''
+
+      const baseUrl = resolvedBackendUrl || ''
+      const res = await fetch(`${baseUrl}/api/alerts/${alertId}/playbook${queryStr}`)
       if (res.ok) {
         const data = await res.json()
         setPlaybookData(data)
@@ -43,14 +57,16 @@ export default function PlaybookPanel({
             stepMap[s.step_index] = s
           })
         setCompletedStepsMap(stepMap)
+      } else {
+        console.warn('[PlaybookPanel] Backend returned status:', res.status)
       }
     } catch (err) {
       console.error('[PlaybookPanel] Fetch error:', err)
     }
     setLoading(false)
-  }, [alertId, backendUrl])
+  }, [alertId, resolvedBackendUrl, alert?.zone_id, alert?.severity, alert?.alert_type, alert?.category])
 
-  // Initial load when expanded
+  // Initial load when expanded or rendered in open view
   useEffect(() => {
     if ((expanded || hideToggle) && !playbookData) {
       fetchPlaybook()
@@ -72,7 +88,7 @@ export default function PlaybookPanel({
 
     const handleResponderCheckin = () => {
       // Re-evaluate shortfall live when any responder checks in or shifts zones
-      if (expanded) {
+      if (expanded || hideToggle) {
         fetchPlaybook()
       }
     }
@@ -84,7 +100,7 @@ export default function PlaybookPanel({
       socket.off('playbook_step_completed', handleStepCompleted)
       socket.off('responder_checkin', handleResponderCheckin)
     }
-  }, [socket, alertId, expanded, fetchPlaybook])
+  }, [socket, alertId, expanded, hideToggle, fetchPlaybook])
 
   // Handle clicking a checklist step
   const handleToggleStep = async (stepIndex, stepText) => {
@@ -116,7 +132,8 @@ export default function PlaybookPanel({
 
     // Fallback REST call
     try {
-      await fetch(`${backendUrl}/api/alerts/${alertId}/playbook-step`, {
+      const baseUrl = resolvedBackendUrl || ''
+      await fetch(`${baseUrl}/api/alerts/${alertId}/playbook-step`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -203,23 +220,23 @@ export default function PlaybookPanel({
               </div>
 
               {/* 3. Resource Assessment & Live Shortfall Indicator */}
-              <div className="p-3 rounded-lg border bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 space-y-2">
-                <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
+              <div className="p-3 rounded-lg border bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 space-y-2 text-slate-900 dark:text-slate-100">
+                <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-700 dark:text-slate-300">
                   Resource Sufficiency &amp; Staging Check:
                 </div>
 
                 <div className="flex items-center justify-between flex-wrap gap-2 text-xs">
-                  <div className="space-y-0.5">
+                  <div className="space-y-1 text-slate-700 dark:text-slate-300">
                     <div>
                       Recommended Personnel:{' '}
-                      <strong className="text-slate-900 dark:text-slate-100 font-bold">
+                      <strong className="text-slate-900 dark:text-slate-100 font-extrabold">
                         {shortfall?.required_personnel} responders
                       </strong>
                     </div>
                     <div>
                       Currently Checked in Near{' '}
-                      <span className="font-bold">{shortfall?.zone_label}</span>:{' '}
-                      <strong className="text-slate-900 dark:text-slate-100 font-bold">
+                      <span className="font-extrabold text-slate-800 dark:text-slate-200">{shortfall?.zone_label}</span>:{' '}
+                      <strong className="text-slate-900 dark:text-slate-100 font-extrabold">
                         {shortfall?.checked_in_personnel}
                       </strong>
                     </div>
@@ -238,29 +255,38 @@ export default function PlaybookPanel({
                   </div>
                 </div>
 
-                <div className="pt-1.5 border-t border-slate-100 dark:border-slate-800 text-[11px] text-slate-500 flex items-center gap-4">
-                  <span>🚑 Ambulance Standby: <strong className="text-slate-700 dark:text-slate-300">{shortfall?.ambulances > 0 ? `${shortfall.ambulances} Unit(s)` : 'Not mandatory'}</strong></span>
-                  <span>🚪 Evac Team Required: <strong className="text-slate-700 dark:text-slate-300">{shortfall?.evacuation_team ? 'YES (Active Deploy)' : 'No'}</strong></span>
+                <div className="pt-1.5 border-t border-slate-200 dark:border-slate-800 text-[11px] text-slate-700 dark:text-slate-300 flex items-center gap-4 flex-wrap">
+                  <span>🚑 Ambulance Standby: <strong className="text-slate-900 dark:text-slate-100 font-bold">{shortfall?.ambulances > 0 ? `${shortfall.ambulances} Unit(s)` : 'Not mandatory'}</strong></span>
+                  <span>🚪 Evac Team Required: <strong className="text-slate-900 dark:text-slate-100 font-bold">{shortfall?.evacuation_team ? 'YES (Active Deploy)' : 'No'}</strong></span>
                 </div>
               </div>
 
               {/* 4. Contextual Narrative Wrapper (Gemini LLM or Deterministic Fallback) */}
               {narrative?.text && (
-                <div className="p-3 rounded-lg border bg-sky-500/10 border-sky-500/30 text-sky-900 dark:text-sky-200 space-y-1">
-                  <div className="flex items-center justify-between text-[10px] font-extrabold uppercase tracking-wider text-sky-700 dark:text-sky-300">
+                <div className="p-3 rounded-lg border bg-sky-500/10 border-sky-500/30 space-y-1.5 shadow-xs">
+                  <div
+                    className="flex items-center justify-between text-[10px] font-extrabold uppercase tracking-wider"
+                    style={{ color: '#0369A1' }}
+                  >
                     <span className="flex items-center gap-1">
                       <span>💡</span> AI Contextual Prioritization Framing (Gemini Decision Support)
                     </span>
-                    <span className="opacity-75">
+                    <span className="font-mono-num font-bold">
                       {narrative.source === 'gemini_llm' || narrative.source === 'groq_llm'
-                        ? `Model: ${narrative.model || 'Gemini 3.5 Flash'}`
+                        ? `Model: ${narrative.model || 'Gemini 2.5 Flash'}`
                         : 'Source: Deterministic Fallback'}
                     </span>
                   </div>
-                  <p className="text-xs leading-relaxed font-sans font-medium text-slate-800 dark:text-slate-200">
+                  <p
+                    className="text-xs leading-relaxed font-sans font-medium"
+                    style={{ color: '#0F172A' }}
+                  >
                     "{narrative.text}"
                   </p>
-                  <p className="text-[9px] opacity-75 font-mono-num">
+                  <p
+                    className="text-[9px] font-mono-num font-bold opacity-90"
+                    style={{ color: '#334155' }}
+                  >
                     *Framing generated dynamically from current live context. Action steps and resource counts remain 100% static.
                   </p>
                 </div>

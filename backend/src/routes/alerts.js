@@ -58,12 +58,13 @@ router.get('/alerts/:id/playbook', async (req, res) => {
     }
 
     if (!alert) {
-      // Create fallback alert envelope for testing/mock purposes if needed
+      // Create fallback alert envelope with query parameters if present
       alert = {
         alert_id: alertId,
-        zone_id: 'zone_1',
-        severity: 'yellow',
-        alert_type: 'graduated_escalation',
+        zone_id: req.query.zone_id || 'zone_1',
+        severity: req.query.severity || 'yellow',
+        alert_type: req.query.alert_type || 'graduated_escalation',
+        category: req.query.category || undefined,
       };
     }
 
