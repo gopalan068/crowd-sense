@@ -243,10 +243,10 @@ export default function ZonePanel({ zoneData, zoneId = 'zone_1', panicConfirming
       </div>
 
       {/* Main Content Grid */}
-      <div className="p-5 grid grid-cols-1 lg:grid-cols-12 gap-5">
+      <div className="p-5 grid grid-cols-1 2xl:grid-cols-12 gap-5">
 
         {/* Video / Visual Stream Box (7 Cols) */}
-        <div className="lg:col-span-7 relative min-h-[260px] rounded-xl overflow-hidden bg-slate-950 border border-slate-700 flex items-center justify-center">
+        <div className="2xl:col-span-7 relative min-h-[260px] rounded-xl overflow-hidden bg-slate-950 border border-slate-700 flex items-center justify-center">
 
           {/* MJPEG Live Stream from CV Service */}
           {useMjpegStream ? (
@@ -302,7 +302,7 @@ export default function ZonePanel({ zoneData, zoneId = 'zone_1', panicConfirming
         </div>
 
         {/* Metrics Column (5 Cols) */}
-        <div className="lg:col-span-5 flex flex-col justify-between space-y-3">
+        <div className="2xl:col-span-5 flex flex-col justify-between space-y-3">
           <div className="p-4 rounded-xl border flex items-center justify-between"
                style={{ background: 'var(--color-bg)', borderColor: 'var(--color-border)' }}>
             <div>

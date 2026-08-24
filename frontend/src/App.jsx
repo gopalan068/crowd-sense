@@ -303,7 +303,7 @@ export default function App() {
       </header>
 
       {/* Main Operations Shell */}
-      <main className="flex-1 p-6 space-y-6 max-w-7xl mx-auto w-full">
+      <main className="flex-1 p-6 space-y-6 max-w-7xl 2xl:max-w-[1600px] mx-auto w-full">
 
         {/* Environmental Conditions & Presenter Control Strip */}
         <WeatherControlPanel weatherState={weatherState} backendUrl={BACKEND_URL} />
@@ -311,7 +311,7 @@ export default function App() {
         {/* Tab 1: Live Operations */}
         {activeTab === 'LIVE' && (
           <div className="space-y-6">
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <div className="space-y-3">
                 <ZonePanel zoneData={zoneMap.zone_1} zoneId="zone_1" panicConfirming={panicConfirming['zone_1'] ?? null} />
                 <FlowMetricsDisplay zoneData={zoneMap.zone_1} />
