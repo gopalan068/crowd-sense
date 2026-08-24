@@ -7,9 +7,7 @@
  */
 import React, { useState } from 'react'
 
-const BACKEND_URL =
-  import.meta.env.VITE_BACKEND_URL ||
-  `${window.location.protocol}//${window.location.hostname}:4000`
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || ''
 
 export default function MockDispatchControl({ activeToasts = [], onDismissToast }) {
   const [loadingAction, setLoadingAction] = useState(null)

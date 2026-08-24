@@ -11,7 +11,7 @@ import React, { useEffect, useState } from 'react'
 import AuditLogView from './AuditLogView'
 import PostEventReportDocument from './PostEventReportDocument'
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || `${window.location.protocol}//${window.location.hostname}:4000`
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || ''
 
 export default function PostEventAnalysisView({ auditLogs = [], initialSubTab = 'REPORT' }) {
   const [activeSubTab, setActiveSubTab] = useState(initialSubTab || 'REPORT') // 'REPORT' | 'TIMELINE'

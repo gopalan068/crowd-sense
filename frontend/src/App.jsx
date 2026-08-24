@@ -16,7 +16,7 @@ import CitizenReportView from './components/CitizenReportView'
 import DualPhoneSimulator from './components/DualPhoneSimulator'
 import WeatherControlPanel from './components/WeatherControlPanel'
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || `${window.location.protocol}//${window.location.hostname}:4000`
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || ''
 
 export default function App() {
   const isPort5174 = window.location.port === '5174'

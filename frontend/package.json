@@ -7,7 +7,13 @@
     "dev": "vite --host",
     "dev:field": "vite --port 5174 --host",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "tunnel": "npx localtunnel --port 5173 --subdomain crowdsense-ops-app",
+    "tunnel:backend": "npx localtunnel --port 4000 --subdomain crowdsense-backend-api",
+    "tunnel:field": "npx localtunnel --port 5174 --subdomain crowdsense-field-app",
+    "ngrok": "npx ngrok http 5173",
+    "ngrok:backend": "npx ngrok http 4000",
+    "ngrok:field": "npx ngrok http 5174"
   },
   "dependencies": {
     "react": "^18.2.0",

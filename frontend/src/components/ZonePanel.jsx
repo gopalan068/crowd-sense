@@ -6,9 +6,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import ZoneIntensityOverlay from './ZoneIntensityOverlay'
 
-const STREAM_BASE_URL =
-  import.meta.env.VITE_CV_STREAM_URL ||
-  `${window.location.protocol}//${window.location.hostname}:5001/stream`
+const STREAM_BASE_URL = import.meta.env.VITE_CV_STREAM_URL || '/stream'
 
 export default function ZonePanel({ zoneData, zoneId = 'zone_1', panicConfirming = null }) {
   const videoRef = useRef(null)

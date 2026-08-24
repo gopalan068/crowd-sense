@@ -1,0 +1,19 @@
+# Node dependencies
+node_modules/
+
+# Environment files
+.env
+.env.local
+
+# Runtime databases and generated reports (local state)
+backend/data/
+**/data/
+*.db
+rep_*.md
+latest.md
+
+# OS / IDE junk
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

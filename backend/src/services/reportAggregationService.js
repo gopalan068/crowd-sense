@@ -155,7 +155,8 @@ async function aggregateReportData(options = {}) {
             : `${citizenReportsCount} citizen emergency SOS reports were processed through the unified alert bus.`,
       },
     },
-    incident_audit_trail: fullIncidentsList,
+    incident_audit_trail: fullIncidentsList.slice(0, 10),
+    incident_audit_trail_note: `Displaying recent 10 incident audit logs (out of ${relevantLogs.length} total logged incidents).`,
     total_incidents_in_db: relevantLogs.length,
     environmental_condition_changes: {
       is_simulated: true,

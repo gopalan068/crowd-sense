@@ -78,11 +78,20 @@ async function callGeminiApi(aggregatedData) {
     throw new Error('GEMINI_API_KEY (or GOOGLE_API_KEY) is not set in environment.');
   }
 
-  // Compact payload to prevent token overflow/truncation if incident trail is very large
+  // Compact payload to 10 logs with concise key attributes to prevent LLM token truncation
   const payloadToPrompt = { ...aggregatedData };
-  if (Array.isArray(payloadToPrompt.incident_audit_trail) && payloadToPrompt.incident_audit_trail.length > 20) {
-    payloadToPrompt.incident_audit_trail_note = `[PAYLOAD SUMMARY: Showing top 20 of ${payloadToPrompt.incident_audit_trail.length} total recorded incident alerts]`;
-    payloadToPrompt.incident_audit_trail = payloadToPrompt.incident_audit_trail.slice(0, 20);
+  if (Array.isArray(payloadToPrompt.incident_audit_trail)) {
+    const totalLogs = aggregatedData.total_incidents_in_db || payloadToPrompt.incident_audit_trail.length;
+    payloadToPrompt.incident_audit_trail_note = `[PAYLOAD SUMMARY: Showing 10 most recent of ${totalLogs} total recorded incident alerts]`;
+    payloadToPrompt.incident_audit_trail = payloadToPrompt.incident_audit_trail.slice(0, 10).map((inc) => ({
+      alert_id: inc.alert_id,
+      zone_id: inc.zone_id,
+      severity: inc.severity,
+      alert_type: inc.alert_type,
+      triggered_at: inc.triggered_at,
+      status: inc.was_auto_escalated ? 'AUTO_ESCALATED' : inc.acknowledged_at ? `ACK (${inc.time_to_acknowledge_sec}s)` : 'UNACKNOWLEDGED',
+      responder_action: inc.responder_status || 'unassigned',
+    }));
   }
 
   const systemPrompt = buildSystemPrompt();
@@ -193,11 +202,11 @@ function generateLocalDeterministicReport(data) {
   }).join('\n');
 
   const incidentRows = incidents.length > 0
-    ? incidents.map((inc) => {
-      const ackDisplay = inc.acknowledged_at
-        ? `Ack by ${inc.acknowledged_by || 'Official'} (${inc.time_to_acknowledge_sec}s)`
-        : inc.was_auto_escalated ? `⚠️ AUTO-ESCALATED (${inc.escalated_to})` : 'UNACKNOWLEDGED';
-      return `| \`${inc.alert_id}\` | ${inc.zone_id.toUpperCase()} | **${inc.severity.toUpperCase()}** | ${new Date(inc.triggered_at).toLocaleTimeString()} | ${inc.alert_type.replace(/_/g, ' ')} | ${ackDisplay} | ${inc.responder_status || 'unassigned'} |`;
+    ? incidents.slice(0, 10).map((inc) => {
+      const ackDisplay = inc.acknowledged_at || inc.status?.startsWith('ACK')
+        ? `Ack (${inc.time_to_acknowledge_sec || 'N/A'}s)`
+        : inc.was_auto_escalated || inc.status === 'AUTO_ESCALATED' ? `⚠️ AUTO-ESCALATED` : 'UNACKNOWLEDGED';
+      return `| \`${inc.alert_id}\` | ${inc.zone_id.toUpperCase()} | **${inc.severity.toUpperCase()}** | ${new Date(inc.triggered_at).toLocaleTimeString()} | ${inc.alert_type.replace(/_/g, ' ')} | ${ackDisplay} | ${inc.responder_status || inc.responder_action || 'unassigned'} |`;
     }).join('\n')
     : '| *No incident alerts recorded during this session* | — | — | — | — | — | — |';
 
