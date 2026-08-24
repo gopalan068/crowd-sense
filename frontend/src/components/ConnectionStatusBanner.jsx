@@ -18,7 +18,7 @@ export default function ConnectionStatusBanner({ connected, reconnectAttempts = 
           ⚠️ Connection Lost to Backend (Attempt {reconnectAttempts}/10)
         </span>
         <span className="hidden sm:inline text-amber-100">
-          — Real-time Socket.io stream interrupted. Auto-reconnecting to http://localhost:4000...
+          — Real-time Socket.io stream interrupted. Auto-reconnecting...
         </span>
       </div>
 

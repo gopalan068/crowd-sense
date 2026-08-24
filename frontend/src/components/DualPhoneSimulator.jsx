@@ -91,7 +91,7 @@ export default function DualPhoneSimulator({
           </span>
         </div>
         <div className="text-slate-400 text-[11px]">
-          Both devices connected to <code className="text-sky-400 font-bold">http://localhost:4000</code>
+          Both devices connected to <code className="text-sky-400 font-bold">{`${window.location.hostname}:4000`}</code>
         </div>
       </div>
 
