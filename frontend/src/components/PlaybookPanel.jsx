@@ -29,11 +29,7 @@ export default function PlaybookPanel({
   const alertId = typeof alert === 'string' ? alert : (alert?.alert_id || alert?.id || `alt_${Date.now()}`)
   const zoneId = alert?.zone_id || 'zone_1'
 
-  const resolvedBackendUrl = (backendUrl !== undefined && backendUrl !== null && backendUrl !== '')
-    ? backendUrl
-    : (typeof window !== 'undefined' && window.location.port !== '4000' && window.location.port !== '5173' && window.location.port !== '5174'
-      ? `${window.location.protocol}//${window.location.hostname}:4000`
-      : '')
+  const resolvedBackendUrl = (backendUrl !== undefined && backendUrl !== null && backendUrl !== '') ? backendUrl : ''
 
   // Fetch complete playbook package (protocol, shortfall, completed steps, narrative)
   const fetchPlaybook = useCallback(async () => {

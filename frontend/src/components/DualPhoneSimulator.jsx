@@ -72,12 +72,12 @@ export default function DualPhoneSimulator({
           </div>
 
           <a
-            href={`${window.location.protocol}//${window.location.hostname}:5173`}
+            href={window.location.port ? `${window.location.protocol}//${window.location.hostname}:5173` : '/'}
             target="_blank"
             rel="noopener noreferrer"
             className="px-3 py-1.5 rounded-lg border border-sky-500/40 bg-sky-50 dark:bg-sky-600/20 text-sky-700 dark:text-sky-300 hover:bg-sky-100 dark:hover:bg-sky-600/30 font-bold transition-all flex items-center gap-1.5 shadow-xs"
           >
-            🖥️ Open Command Ops Dashboard (5173) ↗
+            🖥️ Open Command Ops Dashboard ↗
           </a>
         </div>
       </header>
@@ -91,7 +91,7 @@ export default function DualPhoneSimulator({
           </span>
         </div>
         <div className="text-slate-500 dark:text-slate-400 text-[11px]">
-          Both devices connected to <code className="text-sky-600 dark:text-sky-400 font-bold">{`${window.location.hostname}:4000`}</code>
+          Both devices connected to <code className="text-sky-600 dark:text-sky-400 font-bold">{window.location.hostname}</code>
         </div>
       </div>
 

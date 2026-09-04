@@ -180,12 +180,18 @@ export default function ZonePanel({ zoneData, zoneId = 'zone_1', panicConfirming
     risk_score = 0,
     trend_slope = 0,
     eta_to_red_min = null,
-    red_threshold = zone_type === 'corridor' ? 2.0 : 3.5,
-    base_red_threshold = zone_type === 'corridor' ? 2.0 : 3.5,
     weather_modifier = null,
     cv_confidence = 96,
     timestamp = new Date().toISOString(),
   } = zoneData
+
+  const base_red_threshold = camera_type === 'drone'
+    ? 3.5
+    : (zoneData?.base_red_threshold ?? (zone_type === 'corridor' ? 2.0 : 3.5))
+
+  const red_threshold = camera_type === 'drone'
+    ? (weather_modifier?.density_factor ? 3.5 * weather_modifier.density_factor : 3.5)
+    : (zoneData?.red_threshold ?? (zone_type === 'corridor' ? 2.0 : 3.5))
 
   const streamUrl = `${STREAM_BASE_URL}/${zone_id}`
   const isHeatActive = weather_modifier?.density_factor < 1.0
@@ -355,8 +361,8 @@ export default function ZonePanel({ zoneData, zoneId = 'zone_1', panicConfirming
           <div className="p-2.5 rounded-lg border text-[11px] flex justify-between items-center font-mono-num"
                style={{ background: 'var(--color-bg)', borderColor: 'var(--color-border)', color: 'var(--color-muted)' }}>
             <span>Red Threshold Limit:</span>
-            <span className="font-bold" style={{ color: isHeatActive || isCorridor ? 'var(--risk-red)' : 'var(--color-text)' }}>
-              {red_threshold} p/m² {isHeatActive ? `(HEAT TIGHTENED FROM ${base_red_threshold})` : isCorridor ? '(STRICT EGRESS)' : '(STANDARD)'}
+            <span className="font-bold" style={{ color: isHeatActive || (isCorridor && camera_type !== 'drone') ? 'var(--risk-red)' : 'var(--color-text)' }}>
+              {red_threshold} p/m² {isHeatActive ? `(HEAT TIGHTENED FROM ${base_red_threshold})` : (isCorridor && camera_type !== 'drone') ? '(STRICT EGRESS)' : '(STANDARD)'}
             </span>
           </div>
         </div>
