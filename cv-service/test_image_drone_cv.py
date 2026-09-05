@@ -8,9 +8,9 @@ Usage:
 
 Features:
     - Direct image input & high-resolution aerial crowd detection
-    - Drone Aerial Pipeline: Ultralytics YOLOv8 + SAHI Sliced Tiling + Circular Head Feature Detection
+    - Drone Aerial Pipeline: Ultralytics YOLOv8 + SAHI Sliced Tiling + Saturation Fallback
     - Outputs annotated image with head detection dots, headcount overlay, and latency stats
-    - Prints detailed headcount, density (p/m²), and box coordinates to console
+    - Prints detailed headcount, density (p/m2), and box coordinates to console
 """
 from __future__ import annotations
 
@@ -35,26 +35,25 @@ def test_drone_image(
     area_sqm: float = 250.0,
     model_path: str | None = None,
     use_sahi: bool = True,
-    use_circular_heads: bool = True,
     show_window: bool = False,
 ) -> None:
     if not os.path.exists(image_path):
-        print(f"\n❌ Error: Input image file not found at '{image_path}'")
+        print(f"\n[ERROR] Input image file not found at '{image_path}'")
         sys.exit(1)
 
     print("\n" + "=" * 65)
-    print("🚁 CrowdSense Aerial Drone View CV Testing Harness")
+    print("[TEST] CrowdSense Aerial Drone View CV Testing Harness")
     print("=" * 65)
-    print(f"📷 Input Image        : {image_path}")
+    print(f"  Input Image        : {image_path}")
 
     # Load input image
     frame = cv2.imread(image_path)
     if frame is None or frame.size == 0:
-        print(f"❌ Error: Unable to decode image file '{image_path}'. Ensure it is a valid JPEG/PNG.")
+        print(f"[ERROR] Unable to decode image file '{image_path}'. Ensure it is a valid JPEG/PNG.")
         sys.exit(1)
 
     h, w, c = frame.shape
-    print(f"📐 Image Resolution   : {w} x {h} px ({c} channels)")
+    print(f"  Image Resolution   : {w} x {h} px ({c} channels)")
 
     # Resolve model path
     if model_path is None:
@@ -65,11 +64,10 @@ def test_drone_image(
         else:
             model_path = "models/yolov8n.pt"
 
-    print(f"🤖 Model Weights      : {model_path}")
-    print(f"🎯 Confidence Floor   : {conf_thresh} ({conf_thresh * 100:.1f}%)")
-    print(f"🧩 SAHI Sliced Tiling : {'ENABLED' if use_sahi else 'DISABLED'}")
-    print(f"⭕ Head Geometry Det  : {'ENABLED' if use_circular_heads else 'DISABLED'}")
-    print(f"📐 Physical Area      : {area_sqm} m²")
+    print(f"  Model Weights      : {model_path}")
+    print(f"  Confidence Floor   : {conf_thresh} ({conf_thresh * 100:.1f}%)")
+    print(f"  SAHI Sliced Tiling : {'ENABLED' if use_sahi else 'DISABLED'}")
+    print(f"  Physical Area      : {area_sqm} m2")
     print("-" * 65)
 
     # Set environment variables for PersonDetector configuration override
@@ -77,66 +75,77 @@ def test_drone_image(
     os.environ["USE_SAHI"] = "true" if use_sahi else "false"
 
     # Initialize Detector
-    print("⏳ Initializing Drone AI Detector Pipeline...")
+    print("[INIT] Initializing Drone AI Detector Pipeline...")
     init_start = time.monotonic()
     detector = PersonDetector(model_path=model_path, camera_type="drone")
-    detector.enable_circular_heads = use_circular_heads
     detector.conf_threshold = conf_thresh
     init_time_ms = (time.monotonic() - init_start) * 1000.0
-    print(f"✅ Detector Initialized in {init_time_ms:.1f} ms")
+    print(f"[OK] Detector Initialized in {init_time_ms:.1f} ms")
     print("-" * 65)
 
     # Run Detection
-    print("🚀 Running Aerial Computer Vision Inference on Input Image...")
-    count, boxes, latency_ms = detector.detect(frame)
-    density = count / area_sqm if area_sqm > 0 else 0.0
+    print("[TEST] Running Aerial Computer Vision Inference on Input Image...")
+    raw_count, boxes, latency_ms = detector.detect(frame)
+    raw_density = raw_count / area_sqm if area_sqm > 0 else 0.0
 
-    print("\n📊 --- DETECTION RESULTS ---")
-    print(f"👥 Total Headcount     : {count} people detected")
-    print(f"⚡ Processing Latency  : {latency_ms:.1f} ms")
-    print(f"📊 Crowd Density       : {density:.2f} people / m²")
+    # Saturation Check & Spatial Grid Override
+    from saturation_detector import SaturationDetector
+    from density_override import DensityOverrideEngine
+    sat_detector = SaturationDetector(grid_cols=16, grid_rows=16)
+    override_engine = DensityOverrideEngine()
 
-    if count > 0:
+    grid_result = sat_detector.analyze_spatial_grid(
+        frame,
+        boxes=boxes,
+        area_sqm=area_sqm,
+        override_engine=override_engine,
+        zone_polygon=config.ZONE_POLYGONS.get("zone_1", None),
+        zone_id="zone_1",
+    )
+
+    is_saturated = grid_result["is_saturated"]
+    effective_count = grid_result["effective_count"]
+    effective_density = grid_result["effective_density"]
+    saturated_cells = grid_result["saturated_cells"]
+    density_source = "override_live" if is_saturated else "detection"
+
+    print("\n[RESULTS] --- DETECTION & DENSITY RESULTS ---")
+    print(f"  Total Headcount    : {effective_count} people (Raw YOLO={raw_count})")
+    print(f"  Processing Latency : {latency_ms:.1f} ms")
+    print(f"  Crowd Density      : {effective_density:.2f} people / m2")
+    print(f"  Density Source     : {density_source.upper()}")
+    print(f"  Saturation Status  : {'SATURATED (FALLBACK ACTIVE)' if is_saturated else 'NOMINAL'}")
+    print(f"  Saturated Patches  : {len(saturated_cells)} grid patches filled by texture proxy")
+    print(f"  Saturated Area     : {grid_result['saturated_area_ratio'] * 100:.1f}% of zone")
+
+    if raw_count > 0:
         confs = [b[4] for b in boxes]
         avg_conf = sum(confs) / len(confs)
         max_conf = max(confs)
         min_conf = min(confs)
-        print(f"🎯 Conf Stats          : Avg={avg_conf:.3f} | Min={min_conf:.3f} | Max={max_conf:.3f}")
+        print(f"  Conf Stats         : Avg={avg_conf:.3f} | Min={min_conf:.3f} | Max={max_conf:.3f}")
 
-    # Annotate Frame
-    annotated = detector.annotate(frame, boxes)
-
-    # Draw Banner Overlay on Result Image
-    banner_h = 70
-    banner = np.zeros((banner_h, w, 3), dtype=np.uint8)
-    banner[:] = (20, 24, 33)
-
-    cv2.putText(
-        banner,
-        f"DRONE VIEW CV DETECTED: {count} PEOPLE | Density: {density:.2f} p/m2 | Latency: {latency_ms:.1f} ms",
-        (15, 30),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.7,
-        (56, 189, 248),
-        2,
-        cv2.LINE_AA,
+    # Annotate Frame: Render continuous aerial crowd density heatmap overlay
+    final_output = sat_detector.annotate_density_heatmap(
+        frame=frame,
+        boxes=boxes,
+        saturated_cells=saturated_cells,
+        area_sqm=area_sqm,
+        effective_count=effective_count,
+        effective_density=effective_density,
+        density_source=density_source,
+        is_saturated=is_saturated,
+        latency_ms=latency_ms,
+        show_hud_legend=True,
+        show_top_badge=True,
+        show_pinpoint_dots=True,
+        zone_polygon=config.ZONE_POLYGONS.get("zone_1", None),
+        zone_id="zone_1",
     )
-    cv2.putText(
-        banner,
-        f"Conf Floor: {conf_thresh} | SAHI: {use_sahi} | Circular Heads: {use_circular_heads} | Input: {os.path.basename(image_path)}",
-        (15, 55),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.48,
-        (180, 190, 205),
-        1,
-        cv2.LINE_AA,
-    )
-
-    final_output = np.vstack([banner, annotated])
 
     # Save output image
     cv2.imwrite(output_path, final_output)
-    print(f"\n💾 Saved Annotated Image : {os.path.abspath(output_path)}")
+    print(f"\n[OK] Saved Annotated Image : {os.path.abspath(output_path)}")
     print("=" * 65)
 
     if show_window:
@@ -163,16 +172,13 @@ def main() -> None:
         "--conf", type=float, default=0.06, help="Aerial drone confidence floor (default: 0.06)"
     )
     parser.add_argument(
-        "--area", type=float, default=250.0, help="Physical ground area in m² for density (default: 250.0)"
+        "--area", type=float, default=250.0, help="Physical ground area in m2 for density (default: 250.0)"
     )
     parser.add_argument(
         "--model", type=str, default=None, help="Path to custom model weights file (.pt)"
     )
     parser.add_argument(
         "--no-sahi", action="store_true", help="Disable SAHI sliced tiling inference"
-    )
-    parser.add_argument(
-        "--no-circular", action="store_true", help="Disable OpenCV circular head feature detector"
     )
     parser.add_argument(
         "--show", action="store_true", help="Display result in GUI popup window"
@@ -187,7 +193,6 @@ def main() -> None:
         area_sqm=args.area,
         model_path=args.model,
         use_sahi=not args.no_sahi,
-        use_circular_heads=not args.no_circular,
         show_window=args.show,
     )
 

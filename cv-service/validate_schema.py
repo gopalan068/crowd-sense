@@ -33,24 +33,35 @@ REQUIRED_FIELDS: dict[str, type | tuple] = {
     "timestamp":        str,
 }
 
+OPTIONAL_FIELDS: dict[str, type | tuple] = {
+    "feed_source":      str,
+    "camera_type":      str,
+    "panic_signature":  bool,
+    "exodus_signature": bool,
+    "density_source":   str,
+    "saturated":        bool,
+}
+
 VALID_ZONE_TYPES = {"general", "corridor"}
+VALID_DENSITY_SOURCES = {"detection", "override_live", "override_cached"}
 
 
 def validate(payload: dict) -> list[str]:
     errors: list[str] = []
+    all_allowed = {**REQUIRED_FIELDS, **OPTIONAL_FIELDS}
 
-    # Check for missing fields
+    # Check for missing required fields
     for field in REQUIRED_FIELDS:
         if field not in payload:
-            errors.append(f"MISSING field: {field!r}")
+            errors.append(f"MISSING required field: {field!r}")
 
     # Check for extra fields not in the contract
-    extra = set(payload.keys()) - set(REQUIRED_FIELDS.keys())
+    extra = set(payload.keys()) - set(all_allowed.keys())
     if extra:
         errors.append(f"EXTRA fields not in contract: {sorted(extra)}")
 
     # Type checks for present fields
-    for field, expected_type in REQUIRED_FIELDS.items():
+    for field, expected_type in all_allowed.items():
         if field in payload and not isinstance(payload[field], expected_type):
             errors.append(
                 f"WRONG TYPE for {field!r}: "
@@ -63,6 +74,13 @@ def validate(payload: dict) -> list[str]:
         errors.append(
             f"INVALID zone_type {payload['zone_type']!r}; "
             f"must be one of {sorted(VALID_ZONE_TYPES)}"
+        )
+
+    # Value constraint: density_source must be a known value
+    if "density_source" in payload and payload["density_source"] not in VALID_DENSITY_SOURCES:
+        errors.append(
+            f"INVALID density_source {payload['density_source']!r}; "
+            f"must be one of {sorted(VALID_DENSITY_SOURCES)}"
         )
 
     # Timestamp must end in Z (ISO 8601 UTC, not +00:00)
@@ -91,7 +109,7 @@ if __name__ == "__main__":
     if errors:
         print("\n[FAIL] Schema validation errors:")
         for err in errors:
-            print(f"  ✗  {err}")
+            print(f"  [X] {err}")
         sys.exit(1)
     else:
         print("\n[PASS] Payload matches docs/api-contract.md contract exactly.")

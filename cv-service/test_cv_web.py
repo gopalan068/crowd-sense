@@ -269,11 +269,6 @@ HTML_PAGE = """<!DOCTYPE html>
                     <input type="checkbox" id="sahiCheck" checked>
                 </div>
 
-                <div class="toggle-group">
-                    <label style="margin:0;">Circular Head Feature Detection</label>
-                    <input type="checkbox" id="circularCheck" checked>
-                </div>
-
                 <div style="margin-top: 14px;">
                     <label>Physical Zone Area (m²)</label>
                     <input type="number" id="areaInput" value="250" min="1" step="1">
@@ -374,7 +369,6 @@ HTML_PAGE = """<!DOCTYPE html>
             formData.append('image', selectedFile);
             formData.append('conf', document.getElementById('confSlider').value);
             formData.append('sahi', document.getElementById('sahiCheck').checked ? 'true' : 'false');
-            formData.append('circular', document.getElementById('circularCheck').checked ? 'true' : 'false');
             formData.append('area', document.getElementById('areaInput').value);
 
             try {
@@ -483,7 +477,6 @@ class WebTesterHandler(BaseHTTPRequestHandler):
                 # Parse parameters
                 conf_val = float(params.get("conf", "0.06"))
                 use_sahi = params.get("sahi", "true").lower() == "true"
-                use_circular = params.get("circular", "true").lower() == "true"
                 area_sqm = float(params.get("area", "250.0"))
 
                 # Decode image bytes
@@ -507,7 +500,6 @@ class WebTesterHandler(BaseHTTPRequestHandler):
 
                 detector = DETECTORS[model_path]
                 detector.conf_threshold = conf_val
-                detector.enable_circular_heads = use_circular
 
                 count, boxes, latency_ms = detector.detect(frame)
                 density = count / area_sqm if area_sqm > 0 else 0.0

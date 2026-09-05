@@ -95,6 +95,8 @@ router.post('/density', async (req, res) => {
     timestamp,
     people_count: payload.people_count,
     area_sqm: payload.area_sqm,
+    density_source: payload.density_source || 'detection',
+    saturated: Boolean(payload.saturated),
     weather_modifier: riskResult.breakdown.weather_modifier,
     cv_confidence: riskResult.breakdown.weather_modifier.cv_confidence,
     breakdown: riskResult.breakdown,

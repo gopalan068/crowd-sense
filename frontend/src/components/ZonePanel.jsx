@@ -176,6 +176,8 @@ export default function ZonePanel({ zoneData, zoneId = 'zone_1', panicConfirming
     camera_type = 'drone',
     people_count = 0,
     density = 0,
+    density_source = 'detection',
+    saturated = false,
     risk_level = 'green',
     risk_score = 0,
     trend_slope = 0,
@@ -184,6 +186,8 @@ export default function ZonePanel({ zoneData, zoneId = 'zone_1', panicConfirming
     cv_confidence = 96,
     timestamp = new Date().toISOString(),
   } = zoneData
+
+  const isFallbackActive = density_source === 'override_live' || density_source === 'override_cached' || saturated
 
   const base_red_threshold = camera_type === 'drone'
     ? 3.5
@@ -209,10 +213,10 @@ export default function ZonePanel({ zoneData, zoneId = 'zone_1', panicConfirming
     >
       {/* Zone Header */}
       <div
-        className="px-5 py-3 border-b flex items-center justify-between"
+        className="px-5 py-3 border-b flex flex-wrap items-center justify-between gap-2"
         style={{ borderColor: 'var(--color-border)', background: 'var(--color-surface-hover)' }}
       >
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2.5 flex-wrap">
           <span className="text-xs font-mono-num px-2.5 py-1 rounded-lg font-bold uppercase tracking-wider border shadow-xs"
                 style={{ background: 'var(--color-bg)', borderColor: 'var(--color-border)', color: 'var(--color-text)' }}>
             ZONE: {zone_id}
@@ -225,6 +229,17 @@ export default function ZonePanel({ zoneData, zoneId = 'zone_1', panicConfirming
           }`}>
             {camera_type === 'drone' ? '🛸 DRONE OVERHEAD' : '📹 CCTV ANGLE'}
           </span>
+
+          {/* Density Saturation Fallback Badge (Transparency / Audit Honesty) */}
+          {isFallbackActive && (
+            <span
+              className="text-[10px] px-2.5 py-1 rounded-lg font-mono-num font-bold uppercase tracking-wider bg-amber-500/20 text-amber-500 dark:text-amber-300 border border-amber-500/40 animate-pulse flex items-center gap-1.5 shadow-xs"
+              title="Detection saturation detected (packed crowd mass). Calibrated edge/texture density override active."
+            >
+              <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping inline-block" />
+              ⚠️ DENSITY FALLBACK ACTIVE ({density_source === 'override_cached' ? 'CALIBRATED CACHE' : 'LIVE PROXY'})
+            </span>
+          )}
 
           {/* Environmental Modifier Badge */}
           {weather_modifier && weather_modifier.condition !== 'clear' && (
@@ -312,9 +327,16 @@ export default function ZonePanel({ zoneData, zoneId = 'zone_1', panicConfirming
           <div className="p-4 rounded-xl border flex items-center justify-between"
                style={{ background: 'var(--color-bg)', borderColor: 'var(--color-border)' }}>
             <div>
-              <p className="text-[11px] uppercase font-bold tracking-wider" style={{ color: 'var(--color-muted)' }}>
-                Current Density
-              </p>
+              <div className="flex items-center gap-2">
+                <p className="text-[11px] uppercase font-bold tracking-wider" style={{ color: 'var(--color-muted)' }}>
+                  Current Density
+                </p>
+                {density_source !== 'detection' && (
+                  <span className="text-[9px] font-mono-num font-extrabold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-500 border border-amber-500/30 uppercase">
+                    {density_source === 'override_cached' ? 'CACHED' : 'LIVE PROXY'}
+                  </span>
+                )}
+              </div>
               <div className="text-3xl font-extrabold font-mono-num mt-0.5" style={{ color: 'var(--color-text)' }}>
                 {density.toFixed(2)}
                 <span className="text-xs font-normal ml-1" style={{ color: 'var(--color-muted)' }}>p / m²</span>

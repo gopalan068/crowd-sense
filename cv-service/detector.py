@@ -1,10 +1,10 @@
 """
 cv-service/detector.py
-Drone-Domain Overhead Detector wrapping Ultralytics YOLOv8, SAHI & OpenCV Circular Head Feature Detector.
+Drone-Domain Overhead Detector wrapping Ultralytics YOLOv8 & SAHI (Slicing Aided Hyper Inference).
 
 Enforces strict mode-specific confidence thresholds:
   - CCTV Mode: STRICT 0.30 (30% minimum confidence floor). ZERO boxes under 0.30 allowed.
-  - Drone Mode: 0.06 (6% sensitive aerial threshold with SAHI & Circular Head extraction).
+  - Drone Mode: 0.06 (6% sensitive aerial threshold with SAHI sliced inference).
 """
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ except ImportError:
 
 class PersonDetector:
     """
-    YOLOv8 Drone & Ground Detector with SAHI and OpenCV Circular Head Feature Detector.
+    YOLOv8 Aerial Drone & CCTV Ground Detector with SAHI sliced tiling inference.
     """
 
     def __init__(self, model_path: str, camera_type: str = "drone", model_type: str = "coco") -> None:
@@ -49,18 +49,16 @@ class PersonDetector:
             self.slice_w = 640
             self.overlap = 0.20
             self.use_sahi = False
-            self.enable_circular_heads = False
         else:
             # Sensitive 0.06 threshold for aerial drone head dots
             self.conf_threshold = float(os.getenv("CONF_THRESH_DRONE", os.getenv("CONF_THRESH", "0.06")))
-            self.slice_h = int(os.getenv("SAHI_SLICE_HEIGHT", "400"))
-            self.slice_w = int(os.getenv("SAHI_SLICE_WIDTH", "400"))
-            self.overlap = float(os.getenv("SAHI_OVERLAP_RATIO", "0.25"))
+            self.slice_h = int(os.getenv("SAHI_SLICE_HEIGHT", "320"))
+            self.slice_w = int(os.getenv("SAHI_SLICE_WIDTH", "320"))
+            self.overlap = float(os.getenv("SAHI_OVERLAP_RATIO", "0.20"))
             self.use_sahi = (
                 SAHI_AVAILABLE
                 and os.getenv("USE_SAHI", "true").lower() in ("true", "1", "yes")
             )
-            self.enable_circular_heads = True
 
         self.iou_threshold = float(os.getenv("NMS_IOU_THRESH", "0.60"))
         self.imgsz = int(os.getenv("INFERENCE_IMGSZ", "1280" if self.camera_type == "drone" else "640"))
@@ -87,56 +85,6 @@ class PersonDetector:
             f"[Detector] Mode={self.camera_type.upper()} | ModelType={self.model_type.upper()} | "
             f"StrictConfFloor={self.conf_threshold} | IoU={self.iou_threshold} | SAHI={self.use_sahi}"
         )
-
-    def detect_circular_heads(self, frame: np.ndarray) -> list[tuple[int, int, int, int, float]]:
-        """
-        Detects invariant round head geometries using CLAHE + OpenCV Hough Circles.
-        """
-        boxes: list[tuple[int, int, int, int, float]] = []
-
-        try:
-            if len(frame.shape) == 2:
-                gray = frame
-            elif len(frame.shape) == 3 and frame.shape[2] == 3:
-                bgr2gray_flag = getattr(cv2, "COLOR_BGR2GRAY", 6)
-                gray = cv2.cvtColor(frame, bgr2gray_flag)
-            elif len(frame.shape) == 3 and frame.shape[2] == 4:
-                bgra2gray_flag = getattr(cv2, "COLOR_BGRA2GRAY", 10)
-                gray = cv2.cvtColor(frame, bgra2gray_flag)
-            else:
-                gray = frame
-
-            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-            enhanced = clahe.apply(gray)
-            blurred = cv2.GaussianBlur(enhanced, (5, 5), 0)
-
-            hough_flag = getattr(cv2, "HOUGH_GRADIENT", 3)
-
-            circles = cv2.HoughCircles(
-                blurred,
-                hough_flag,
-                dp=1.2,
-                minDist=24,
-                param1=50,
-                param2=22,
-                minRadius=4,
-                maxRadius=18,
-            )
-
-            if circles is not None:
-                circles = np.uint16(np.around(circles))
-                for i in circles[0, :]:
-                    cx, cy, r = int(i[0]), int(i[1]), int(i[2])
-                    x1 = max(0, cx - r)
-                    y1 = max(0, cy - r)
-                    x2 = min(frame.shape[1], cx + r)
-                    y2 = min(frame.shape[0], cy + r)
-                    boxes.append((x1, y1, x2, y2, 0.70))
-
-        except Exception as err:
-            print(f"[Circular Head Detector] Exception caught safely: {err}")
-
-        return boxes
 
     def _nms_centroids(self, boxes: list[tuple[int, int, int, int, float]], min_dist_px: float = 20.0) -> list[tuple[int, int, int, int, float]]:
         """
@@ -169,6 +117,7 @@ class PersonDetector:
     def detect(self, frame: np.ndarray) -> tuple[int, list[tuple[int, int, int, int, float]], float]:
         """
         Mode-Aware Detection Pipeline with Strict Confidence Filtering.
+        Pipeline: YOLO + SAHI (sliced tiling) -> Whole-Frame YOLO -> Spatial NMS Deduplication.
         """
         start_time = time.monotonic()
         all_boxes: list[tuple[int, int, int, int, float]] = []
@@ -216,16 +165,11 @@ class PersonDetector:
                 conf = float(box.conf[0])
                 all_boxes.append((bx1, by1, bx2, by2, conf))
 
-        # 3. Circular Head Structure Detector (Drone Mode Only)
-        if self.enable_circular_heads:
-            circular_head_boxes = self.detect_circular_heads(frame)
-            all_boxes.extend(circular_head_boxes)
-
-        # 4. Spatial Centroid Distance NMS Deduplication
+        # 3. Spatial Centroid Distance NMS Deduplication
         min_spatial_dist = 20.0 if self.camera_type == "drone" else 15.0
         deduped_boxes = self._nms_centroids(all_boxes, min_dist_px=min_spatial_dist)
 
-        # 5. STRICT CONFIDENCE FLOOR FILTER (Strictly rejects any detection under self.conf_threshold)
+        # 4. STRICT CONFIDENCE FLOOR FILTER (Strictly rejects any detection under self.conf_threshold)
         final_boxes = [b for b in deduped_boxes if b[4] >= self.conf_threshold]
 
         latency_ms = (time.monotonic() - start_time) * 1000.0

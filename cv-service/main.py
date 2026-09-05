@@ -27,6 +27,21 @@ from detector import PersonDetector
 from emitter import emit
 from flow_analyzer import FlowAnalyzer
 from stream_server import start_stream_server, update_zone_frame
+from saturation_detector import SaturationDetector
+from density_override import DensityOverrideEngine
+
+
+def load_zone_density_cache(cache_path: str = "zone_density_cache.json") -> dict:
+    if os.path.exists(cache_path):
+        try:
+            with open(cache_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                frames_cache = data.get("frames", {})
+                print(f"[CV Cache] Loaded precomputed density cache ({len(frames_cache)} zones) from {cache_path}")
+                return frames_cache
+        except Exception as err:
+            print(f"[CV Cache] Warning: Could not read {cache_path} ({err})")
+    return {}
 
 
 def parse_source(src: str) -> int | str:
@@ -67,6 +82,9 @@ def zone_loop(
     src,                        # original source (int or str)
     detector: PersonDetector,
     flow_analyzer,              # FlowAnalyzer or None
+    saturation_detector: SaturationDetector,
+    override_engine: DensityOverrideEngine,
+    zone_density_cache: dict,
     zone_id: str,
     zone_type: str,
     area_sqm: float,
@@ -80,21 +98,29 @@ def zone_loop(
     
     Streams video frames at smooth 30 FPS pacing continuously.
     Runs heavy AI analysis every analysis_interval seconds:
-      - 4.0 seconds for Drone overhead feeds (SAHI + Farneback Flow).
-      - 1.0 second for CCTV ground feeds.
+      - 3.0-4.0 seconds for Drone overhead feeds (SAHI + Farneback Flow + Saturation Fallback).
+      - 1.0 second for CCTV ground feeds (Standard YOLO detection).
     """
     analysis_interval_sec = config.DRONE_ANALYSIS_INTERVAL_SEC if camera_type == "drone" else config.CCTV_ANALYSIS_INTERVAL_SEC
+    override_mode = config.OVERRIDE_MODE.lower()
+    zone_polygon = config.ZONE_POLYGONS.get(zone_id, None)
 
     last_analysis_time = 0.0
     last_boxes: list[tuple] = []
     conv, turb, panic, exodus = 0.0, 0.0, False, False
     last_latency = 0.0
     last_count = 0
+    last_effective_density = 0.0
+    last_density_source = "detection"
+    last_saturated = False
     demo_step = 0
     last_frame_pos: int = -1   # tracks video position for loop detection
     loop_count: int = 0        # how many times the file has looped
 
-    print(f"{log_tag} Started worker thread | Mode=[{camera_type.upper()}] | Type=[{zone_type.upper()}] | Area={area_sqm}m² | Interval={analysis_interval_sec}s")
+    print(
+        f"{log_tag} Started worker thread | Mode=[{camera_type.upper()}] | Type=[{zone_type.upper()}] | "
+        f"Area={area_sqm}m² | Interval={analysis_interval_sec}s | OverrideMode=[{override_mode.upper()}]"
+    )
 
     while not stop_event.is_set():
         # 1. Read next video frame
@@ -110,17 +136,16 @@ def zone_loop(
                     continue
 
             # Detect video loop: position jumped back to near 0
-            # (curr_frame_pos is checked BEFORE read, so a drop to 0 means loop)
             is_loop_frame = isinstance(src, str) and (curr_frame_pos < last_frame_pos - 1) and last_frame_pos > 0
             if is_loop_frame:
                 loop_count += 1
-                print(f"{log_tag} [VIDEO LOOP #{loop_count}] Video restarted — resetting FlowAnalyzer state to prevent false-positive carry-over.")
+                print(f"{log_tag} [VIDEO LOOP #{loop_count}] Video restarted — resetting FlowAnalyzer state.")
                 if flow_analyzer:
                     flow_analyzer.reset()
-                # Reset last displayed panic/exodus state so the UI doesn't freeze on 'red'
                 conv, turb, panic, exodus = 0.0, 0.0, False, False
             last_frame_pos = curr_frame_pos
         else:
+            curr_frame_pos = demo_step
             is_loop_frame = False
             frame = create_demo_crowd_frame(demo_step)
             demo_step += 1
@@ -129,17 +154,68 @@ def zone_loop(
 
         # 2. Camera Mode-Specific Streaming & Analysis Strategy
         if camera_type == "drone":
-            # Drone Mode: Only annotate & stream the frame when AI analysis actually runs (Step/Jump Effect)
+            # Drone Mode: Analysis + Saturation Override Module
             if now - last_analysis_time >= analysis_interval_sec and not is_loop_frame:
-                last_count, last_boxes, last_latency = detector.detect(frame)
+                raw_count, last_boxes, last_latency = detector.detect(frame)
+                raw_density = round(raw_count / area_sqm, 3) if area_sqm > 0 else 0.0
 
+                effective_count = raw_count
+                effective_density = raw_density
+                density_source = "detection"
+                is_saturated = False
+                saturated_cells = []
+
+                # Saturation Detection & Override (Drone Mode Only)
+                if override_mode != "off":
+                    grid_eval = saturation_detector.analyze_spatial_grid(
+                        frame,
+                        boxes=last_boxes,
+                        area_sqm=area_sqm,
+                        override_engine=override_engine,
+                        zone_polygon=zone_polygon,
+                        zone_id=zone_id,
+                    )
+                    is_saturated = grid_eval["is_saturated"]
+                    saturated_cells = grid_eval["saturated_cells"]
+
+                    if is_saturated:
+                        # Auto / Precomputed Mode: Check cache first
+                        cached_zone_frames = zone_density_cache.get(zone_id, {})
+                        cached_rec = None
+
+                        if override_mode in ("auto", "precomputed") and cached_zone_frames:
+                            frame_key = str(curr_frame_pos)
+                            if frame_key in cached_zone_frames:
+                                cached_rec = cached_zone_frames[frame_key]
+                            else:
+                                # Match nearest cached sample within +/- 15 frames
+                                nearby_keys = [int(k) for k in cached_zone_frames.keys() if abs(int(k) - curr_frame_pos) <= 15]
+                                if nearby_keys:
+                                    nearest_k = min(nearby_keys, key=lambda k: abs(k - curr_frame_pos))
+                                    cached_rec = cached_zone_frames[str(nearest_k)]
+
+                        if cached_rec:
+                            effective_density = float(cached_rec.get("density", 0.0))
+                            effective_count = int(cached_rec.get("people_count", int(effective_density * area_sqm)))
+                            density_source = "override_cached"
+                        elif override_mode in ("auto", "live_proxy", "precomputed"):
+                            # Spatial Grid Live Proxy Fallback
+                            effective_density = grid_eval["effective_density"]
+                            effective_count = grid_eval["effective_count"]
+                            density_source = "override_live"
+
+                last_count = effective_count
+                last_effective_density = effective_density
+                last_density_source = density_source
+                last_saturated = is_saturated
+
+                # Flow analysis using effective density
                 if flow_analyzer:
-                    curr_den = last_count / area_sqm
-                    conv, turb, panic, exodus = flow_analyzer.analyze(frame, curr_den)
+                    conv, turb, panic, exodus = flow_analyzer.analyze(frame, effective_density)
 
                 # Emit reading to backend
                 payload = emit(
-                    [last_count],
+                    [effective_count],
                     zone_id=zone_id,
                     zone_type=zone_type,
                     area_sqm=area_sqm,
@@ -149,24 +225,47 @@ def zone_loop(
                     flow_turbulence=round(turb, 3),
                     panic_signature=panic,
                     exodus_signature=exodus,
+                    density_source=density_source,
+                    saturated=is_saturated,
+                    override_density=effective_density,
+                    override_people_count=effective_count,
                 )
+
+                override_tag = f"[{density_source.upper()} SATURATED: {len(saturated_cells)} patches]" if is_saturated else "[DETECTION]"
                 print(
-                    f"{log_tag} [AI Analyzed] count={last_count} den={payload['density']} p/m² "
-                    f"panic={panic} exodus={exodus} flow_turb={round(turb, 2)} (latency: {last_latency}ms)"
+                    f"{log_tag} [AI Analyzed] {override_tag} count={effective_count} (raw={raw_count}) "
+                    f"den={effective_density:.2f} p/m2 source={density_source} panic={panic} "
+                    f"flow_turb={round(turb, 2)} (latency: {last_latency}ms)"
                 )
                 last_analysis_time = now
 
-                # Push ONLY the evaluated frame to the dashboard stream
-                annotated = detector.annotate(frame, last_boxes)
+                # Push evaluated frame with annotations to dashboard stream
+                annotated = saturation_detector.annotate_density_heatmap(
+                    frame=frame,
+                    boxes=last_boxes,
+                    saturated_cells=saturated_cells,
+                    area_sqm=area_sqm,
+                    effective_count=effective_count,
+                    effective_density=effective_density,
+                    density_source=density_source,
+                    is_saturated=is_saturated,
+                    latency_ms=last_latency,
+                    show_hud_legend=True,
+                    show_top_badge=True,
+                    show_pinpoint_dots=True,
+                    zone_polygon=zone_polygon,
+                    zone_id=zone_id,
+                )
+
                 update_zone_frame(zone_id, annotated)
         else:
-            # CCTV Mode: Smooth continuous 30 FPS video playback with periodic AI updates
+            # CCTV Mode: Standard ground CCTV analysis (Zero override)
             if now - last_analysis_time >= analysis_interval_sec and not is_loop_frame:
                 last_count, last_boxes, last_latency = detector.detect(frame)
+                cctv_density = round(last_count / area_sqm, 3) if area_sqm > 0 else 0.0
 
                 if flow_analyzer:
-                    curr_den = last_count / area_sqm
-                    conv, turb, panic, exodus = flow_analyzer.analyze(frame, curr_den)
+                    conv, turb, panic, exodus = flow_analyzer.analyze(frame, cctv_density)
 
                 payload = emit(
                     [last_count],
@@ -179,6 +278,8 @@ def zone_loop(
                     flow_turbulence=round(turb, 3),
                     panic_signature=panic,
                     exodus_signature=exodus,
+                    density_source="detection",
+                    saturated=False,
                 )
                 print(
                     f"{log_tag} [AI Analyzed] count={last_count} den={payload['density']} p/m² "
@@ -199,7 +300,11 @@ def main() -> None:
     parser.add_argument("--z2",    type=str, default=None, help="Zone 2 video source (path to .mp4)")
     parser.add_argument("--type1", type=str, default=None, choices=["drone", "cctv"])
     parser.add_argument("--type2", type=str, default=None, choices=["drone", "cctv"])
+    parser.add_argument("--override-mode", type=str, default=None, choices=["auto", "precomputed", "live_proxy", "off"])
     args = parser.parse_args()
+
+    if args.override_mode:
+        config.OVERRIDE_MODE = args.override_mode
 
     z1_source_str = args.z1   or config.VIDEO_SOURCE_Z1
     z2_source_str = args.z2   or config.VIDEO_SOURCE_Z2
@@ -215,6 +320,7 @@ def main() -> None:
     print(
         f"\n[CV] Multi-Zone Engine Starting — Model: {config.MODEL_PATH}\n"
         f"     Model Type: {config.MODEL_TYPE.upper()} | SAHI Enabled: {config.USE_SAHI}\n"
+        f"     Override Mode: [{config.OVERRIDE_MODE.upper()}] (Active for Drone perspective)\n"
         f"     Zone 1: 'zone_1' ({config.ZONE_TYPE_Z1}) Area={config.AREA_SQM_Z1}m² Source: {src_z1!r} Mode: [{type_z1.upper()}]\n"
         f"     Zone 2: 'zone_2' ({config.ZONE_TYPE_Z2}) Area={config.AREA_SQM_Z2}m² Source: {src_z2!r} Mode: [{type_z2.upper()}]\n"
     )
@@ -226,6 +332,14 @@ def main() -> None:
 
     flow_z1 = FlowAnalyzer(config.FOCAL_POINTS["zone_1"], camera_type=type_z1) if config.ENABLE_OPTICAL_FLOW else None
     flow_z2 = FlowAnalyzer(config.FOCAL_POINTS["zone_2"], camera_type=type_z2) if config.ENABLE_OPTICAL_FLOW else None
+
+    # Load Saturation Detector, Override Engine, and Precomputed Cache
+    saturation_detector = SaturationDetector(
+        min_detection_density=config.SATURATION_MIN_DETECTION_DENSITY,
+        saturation_edge_threshold=config.SATURATION_EDGE_THRESHOLD,
+    )
+    override_engine = DensityOverrideEngine(config.CALIBRATION_FILE)
+    zone_density_cache = load_zone_density_cache(config.CACHE_FILE)
 
     # Open Zone 1 Stream
     cap_z1 = cv2.VideoCapture(src_z1) if src_z1 is not None else None
@@ -246,6 +360,9 @@ def main() -> None:
             src=src_z1,
             detector=detector_z1,
             flow_analyzer=flow_z1,
+            saturation_detector=saturation_detector,
+            override_engine=override_engine,
+            zone_density_cache=zone_density_cache,
             zone_id="zone_1",
             zone_type=config.ZONE_TYPE_Z1,
             area_sqm=config.AREA_SQM_Z1,
@@ -265,6 +382,9 @@ def main() -> None:
             src=src_z2,
             detector=detector_z2,
             flow_analyzer=flow_z2,
+            saturation_detector=saturation_detector,
+            override_engine=override_engine,
+            zone_density_cache=zone_density_cache,
             zone_id="zone_2",
             zone_type=config.ZONE_TYPE_Z2,
             area_sqm=config.AREA_SQM_Z2,

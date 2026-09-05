@@ -1,0 +1,151 @@
+{
+  "frames": {
+    "zone_1": {
+      "0": {
+        "frame": 0,
+        "people_count": 2060,
+        "density": 7.12,
+        "density_source": "detection",
+        "saturated": false,
+        "raw_detection_count": 2060,
+        "edge_density_ratio": 0.15632
+      },
+      "10": {
+        "frame": 10,
+        "people_count": 1985,
+        "density": 6.9,
+        "density_source": "detection",
+        "saturated": false,
+        "raw_detection_count": 1985,
+        "edge_density_ratio": 0.15133
+      },
+      "20": {
+        "frame": 20,
+        "people_count": 1899,
+        "density": 6.644,
+        "density_source": "detection",
+        "saturated": false,
+        "raw_detection_count": 1899,
+        "edge_density_ratio": 0.15068
+      },
+      "30": {
+        "frame": 30,
+        "people_count": 1869,
+        "density": 6.464,
+        "density_source": "detection",
+        "saturated": false,
+        "raw_detection_count": 1869,
+        "edge_density_ratio": 0.1476
+      },
+      "40": {
+        "frame": 40,
+        "people_count": 1825,
+        "density": 6.324,
+        "density_source": "detection",
+        "saturated": false,
+        "raw_detection_count": 1825,
+        "edge_density_ratio": 0.14867
+      },
+      "50": {
+        "frame": 50,
+        "people_count": 1845,
+        "density": 6.468,
+        "density_source": "detection",
+        "saturated": false,
+        "raw_detection_count": 1845,
+        "edge_density_ratio": 0.14749
+      },
+      "60": {
+        "frame": 60,
+        "people_count": 1858,
+        "density": 6.412,
+        "density_source": "detection",
+        "saturated": false,
+        "raw_detection_count": 1858,
+        "edge_density_ratio": 0.14934
+      },
+      "70": {
+        "frame": 70,
+        "people_count": 1869,
+        "density": 6.496,
+        "density_source": "detection",
+        "saturated": false,
+        "raw_detection_count": 1869,
+        "edge_density_ratio": 0.14903
+      },
+      "80": {
+        "frame": 80,
+        "people_count": 1816,
+        "density": 6.244,
+        "density_source": "detection",
+        "saturated": false,
+        "raw_detection_count": 1816,
+        "edge_density_ratio": 0.14784
+      },
+      "90": {
+        "frame": 90,
+        "people_count": 1890,
+        "density": 6.432,
+        "density_source": "detection",
+        "saturated": false,
+        "raw_detection_count": 1890,
+        "edge_density_ratio": 0.14902
+      },
+      "100": {
+        "frame": 100,
+        "people_count": 1833,
+        "density": 6.316,
+        "density_source": "detection",
+        "saturated": false,
+        "raw_detection_count": 1833,
+        "edge_density_ratio": 0.14647
+      },
+      "110": {
+        "frame": 110,
+        "people_count": 1846,
+        "density": 6.376,
+        "density_source": "detection",
+        "saturated": false,
+        "raw_detection_count": 1846,
+        "edge_density_ratio": 0.14828
+      },
+      "120": {
+        "frame": 120,
+        "people_count": 1811,
+        "density": 6.172,
+        "density_source": "detection",
+        "saturated": false,
+        "raw_detection_count": 1811,
+        "edge_density_ratio": 0.14619
+      },
+      "130": {
+        "frame": 130,
+        "people_count": 1852,
+        "density": 6.336,
+        "density_source": "detection",
+        "saturated": false,
+        "raw_detection_count": 1852,
+        "edge_density_ratio": 0.14722
+      },
+      "140": {
+        "frame": 140,
+        "people_count": 1812,
+        "density": 6.244,
+        "density_source": "detection",
+        "saturated": false,
+        "raw_detection_count": 1812,
+        "edge_density_ratio": 0.14451
+      }
+    }
+  },
+  "metadata": {
+    "generated_at": "2026-09-05 11:37:08Z",
+    "source_video": "crowd_5.mp4",
+    "zone_id": "zone_1",
+    "camera_type": "drone",
+    "area_sqm": 250.0,
+    "total_cached_frames": 15,
+    "saturation_threshold": 0.075,
+    "min_detection_density": 0.35
+  }
+}

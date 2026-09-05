@@ -24,6 +24,10 @@ def build_payload(
     flow_turbulence: float = 0.0,
     panic_signature: bool = False,
     exodus_signature: bool = False,
+    density_source: str = "detection",
+    saturated: bool = False,
+    override_density: Optional[float] = None,
+    override_people_count: Optional[int] = None,
 ) -> dict:
     zid = zone_id or config.ZONE_ID
     ztype = zone_type or config.ZONE_TYPE
@@ -31,8 +35,15 @@ def build_payload(
     fsrc = feed_source or ("live_webcam" if zid == "zone_1" else "pre_recorded")
     ctype = camera_type or (config.CAMERA_TYPE_Z1 if zid == "zone_1" else config.CAMERA_TYPE_Z2)
 
-    avg_count = round(sum(count_samples) / len(count_samples)) if count_samples else 0
-    density = round(avg_count / asqm, 3)
+    if override_people_count is not None:
+        avg_count = override_people_count
+    else:
+        avg_count = round(sum(count_samples) / len(count_samples)) if count_samples else 0
+
+    if override_density is not None:
+        density = round(override_density, 3)
+    else:
+        density = round(avg_count / asqm, 3) if asqm > 0 else 0.0
 
     return {
         "zone_id": zid,
@@ -42,6 +53,8 @@ def build_payload(
         "people_count": avg_count,
         "area_sqm": asqm,
         "density": density,
+        "density_source": density_source,
+        "saturated": bool(saturated),
         "flow_convergence": flow_convergence,
         "flow_turbulence": flow_turbulence,
         "panic_signature": panic_signature,
@@ -61,6 +74,10 @@ def emit(
     flow_turbulence: float = 0.0,
     panic_signature: bool = False,
     exodus_signature: bool = False,
+    density_source: str = "detection",
+    saturated: bool = False,
+    override_density: Optional[float] = None,
+    override_people_count: Optional[int] = None,
 ) -> dict:
     payload = build_payload(
         count_samples,
@@ -73,6 +90,10 @@ def emit(
         flow_turbulence=flow_turbulence,
         panic_signature=panic_signature,
         exodus_signature=exodus_signature,
+        density_source=density_source,
+        saturated=saturated,
+        override_density=override_density,
+        override_people_count=override_people_count,
     )
 
     try:
@@ -83,7 +104,7 @@ def emit(
         )
         resp.raise_for_status()
     except requests.exceptions.ConnectionError:
-        print(f"[WARN] Cannot reach backend at {config.BACKEND_URL} — is it running?")
+        print(f"[WARN] Cannot reach backend at {config.BACKEND_URL} - is it running?")
     except requests.exceptions.Timeout:
         print(f"[WARN] POST to {config.BACKEND_URL} timed out after 2 s")
     except requests.exceptions.HTTPError as exc:
