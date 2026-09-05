@@ -1,11 +1,11 @@
 """
 cv-service/scratch/test_head_detector.py
-Test script for Circular Head Detection (HoughCircles + Laplacian Peak Filter) on crowd_2.mp4
+Test script for Circular Head Detection (HoughCircles + Laplacian Peak Filter) on crowd_5.mp4
 """
 import cv2
 import numpy as np
 
-video_path = "videos/crowd_2.mp4"
+video_path = "videos/crowd_5.mp4"
 cap = cv2.VideoCapture(video_path)
 ret, frame = cap.read()
 cap.release()
@@ -43,5 +43,5 @@ if circles is not None:
         cv2.circle(annotated, (cx, cy), 3, (248, 189, 56), -1)
         cv2.circle(annotated, (cx, cy), r, (16, 185, 129), 1)
 
-print(f"[Circular Head Detector] Detected {count} round head structures in crowd_2.mp4!")
+print(f"[Circular Head Detector] Detected {count} round head structures in crowd_5.mp4!")
 cv2.imwrite("head_test_output.jpg", annotated)
