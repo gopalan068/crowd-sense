@@ -21,6 +21,10 @@ else:
 VIDEO_SOURCE_Z1: str = os.getenv("VIDEO_SOURCE_Z1", os.getenv("VIDEO_SOURCE", default_z1_video))
 VIDEO_SOURCE_Z2: str = os.getenv("VIDEO_SOURCE_Z2", os.getenv("CORRIDOR_VIDEO_SOURCE", "models/sample_corridor.mp4"))
 
+# Independent initial frame start offsets (prevents videos from starting or looping in lockstep)
+START_OFFSET_Z1_FRAMES: int = int(os.getenv("START_OFFSET_Z1_FRAMES", "0"))
+START_OFFSET_Z2_FRAMES: int = int(os.getenv("START_OFFSET_Z2_FRAMES", "140"))
+
 # Camera Perspective Modes: "drone" (overhead low-threshold + SAHI) vs "cctv" (angled high-threshold + full frame)
 CAMERA_TYPE_Z1: str = os.getenv("CAMERA_TYPE_Z1", os.getenv("CAMERA_TYPE", "drone" if "crowd_5" in VIDEO_SOURCE_Z1 or "crowd_2" in VIDEO_SOURCE_Z1 or "drone" in VIDEO_SOURCE_Z1 else "cctv" if "crowd_1" in VIDEO_SOURCE_Z1 else "drone")).lower()
 CAMERA_TYPE_Z2: str = os.getenv("CAMERA_TYPE_Z2", "cctv").lower()
@@ -72,7 +76,6 @@ CALIBRATION_FILE: str = os.getenv("CALIBRATION_FILE", "calibration.json")
 CACHE_FILE: str = os.getenv("CACHE_FILE", "zone_density_cache.json")
 
 # Designated Crowd Zone Polygons (normalized [0.0 - 1.0] [X, Y] coordinates)
-# Restricts edge-density proxy to actual gathering grounds / streets, ignoring rooftops & trees
 ZONE_POLYGONS = {
     "zone_1": [
         (0.0, 0.0),
@@ -88,22 +91,10 @@ ZONE_POLYGONS = {
     ],
 }
 
-# Non-crowd building rooftop exclusions (normalized [0.0 - 1.0] [X, Y] coordinates)
-# Carves out corrugated metal slabs & concrete roofs to prevent false heat on empty structures
-ROOFTOP_EXCLUSIONS = {
-    "zone_2": [
-        # Orange building concrete roof (center-left)
-        [(0.18, 0.35), (0.295, 0.35), (0.295, 0.70), (0.18, 0.70)],
-        # Center gate building roof
-        [(0.415, 0.20), (0.545, 0.20), (0.545, 0.49), (0.415, 0.49)],
-        # Right corrugated building & courtyard shed
-        [(0.60, 0.25), (0.90, 0.25), (0.90, 0.66), (0.60, 0.66)],
-        # Left middle house roof
-        [(0.0, 0.24), (0.16, 0.24), (0.16, 0.36), (0.0, 0.36)],
-        # Bottom left corner house
-        [(0.0, 0.68), (0.14, 0.68), (0.14, 0.99), (0.0, 0.99)],
-    ]
-}
+# Rooftop exclusions are now handled dynamically per standalone frame via isotropic head-blob morphology
+# and directional line suppression, removing static coordinate polygon drift.
+ROOFTOP_EXCLUSIONS = {}
+
 
 # Focal Points (X, Y) pixel coordinates of the Egress Exit Door / Staircase in each video feed
 FOCAL_POINTS = {

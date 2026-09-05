@@ -97,16 +97,17 @@ def zone_loop(
     area_sqm: float,
     feed_source: str,
     camera_type: str,
+    start_offset_frames: int = 0,
     stop_event: threading.Event,
     log_tag: str,
 ) -> None:
     """
     Decoupled per-zone worker thread.
     
-    Streams video frames at smooth 30 FPS pacing continuously.
-    Runs heavy AI analysis every analysis_interval seconds:
-      - 3.0-4.0 seconds for Drone overhead feeds (SAHI + Farneback Flow + Saturation Fallback).
-      - 1.0 second for CCTV ground feeds (Standard YOLO detection).
+    Runs completely independently from other zones:
+      - Independent start frame offset.
+      - Independent analysis interval (1.0s for Drone, 1.0s for CCTV).
+      - Independent video loop cycling.
     """
     analysis_interval_sec = config.DRONE_ANALYSIS_INTERVAL_SEC if camera_type == "drone" else config.CCTV_ANALYSIS_INTERVAL_SEC
     override_mode = config.OVERRIDE_MODE.lower()
@@ -125,6 +126,14 @@ def zone_loop(
     last_frame_pos: int = -1   # tracks video position for loop detection
     loop_count: int = 0        # how many times the file has looped
 
+    # Apply independent initial frame start offset
+    if cap and cap.isOpened() and start_offset_frames > 0:
+        total_f = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        if total_f > 0:
+            actual_offset = start_offset_frames % total_f
+            cap.set(cv2.CAP_PROP_POS_FRAMES, actual_offset)
+            print(f"{log_tag} Applied independent start offset: Frame #{actual_offset}/{total_f}")
+
     print(
         f"{log_tag} Started worker thread | Mode=[{camera_type.upper()}] | Type=[{zone_type.upper()}] | "
         f"Area={area_sqm}m² | Interval={analysis_interval_sec}s | OverrideMode=[{override_mode.upper()}]"
@@ -136,7 +145,7 @@ def zone_loop(
             curr_frame_pos = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
             ret, frame = cap.read()
             if not ret:
-                if isinstance(src, str):  # file ended -> loop back
+                if isinstance(src, str):  # file ended -> loop back independently
                     cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
                     ret, frame = cap.read()
                 if not ret:
@@ -168,65 +177,20 @@ def zone_loop(
 
         # 2. Camera Mode-Specific Streaming & Analysis Strategy
         if camera_type == "drone":
-            eval_start = time.monotonic()
-            cached_rec = None
+            eval_t0 = time.monotonic()
 
-            # Precomputed Cache Fast-Path for this exact frame position
-            if override_mode in ("auto", "precomputed") and zone_density_cache:
-                cached_zone_frames = zone_density_cache.get(zone_id, {})
-                if not cached_zone_frames:
-                    for z_k, z_v in zone_density_cache.items():
-                        if z_v:
-                            cached_zone_frames = z_v
-                            break
+            # Process every frame strictly as a standalone image (isotropic crowd field, rotation-invariant)
+            annotated, effective_count, effective_density, meta = saturation_detector.process_standalone_drone_frame(
+                frame=frame,
+                area_sqm=area_sqm,
+                max_density_scale=5.5,
+                zone_id=zone_id,
+                latency_ms=0.0,
+            )
+            eval_latency = round((time.monotonic() - eval_t0) * 1000.0, 1)
 
-                if cached_zone_frames:
-                    frame_key = str(curr_frame_pos)
-                    if frame_key in cached_zone_frames:
-                        cached_rec = cached_zone_frames[frame_key]
-                    else:
-                        all_int_keys = [int(k) for k in cached_zone_frames.keys()]
-                        if all_int_keys:
-                            max_k = max(all_int_keys)
-                            norm_pos = curr_frame_pos % (max_k + 1) if max_k > 0 else curr_frame_pos
-                            nearest_k = min(all_int_keys, key=lambda k: abs(k - norm_pos))
-                            cached_rec = cached_zone_frames[str(nearest_k)]
-
-            if cached_rec:
-                # Instant cached density telemetry (< 1ms)
-                effective_density = float(cached_rec.get("density", 0.0))
-                effective_count = int(cached_rec.get("people_count", int(effective_density * area_sqm)))
-                raw_count = int(cached_rec.get("raw_count", int(effective_count * 0.15)))
-                density_source = "override_cached"
-                is_saturated = True
-                saturated_cells = cached_rec.get("saturated_cells", [])
-                last_boxes = []
-                last_latency = round((time.monotonic() - eval_start) * 1000.0, 1)
-            else:
-                # Direct Spatial Density Field Estimation for this exact frame
-                eval_t0 = time.monotonic()
-                grid_eval = saturation_detector.analyze_spatial_grid(
-                    frame,
-                    boxes=[],
-                    area_sqm=area_sqm,
-                    override_engine=override_engine,
-                    zone_polygon=zone_polygon,
-                    zone_id=zone_id,
-                )
-                effective_density = grid_eval["effective_density"]
-                effective_count = grid_eval["effective_count"]
-                raw_count = int(effective_count * 0.10)
-                density_source = "override_live"
-                is_saturated = grid_eval["is_saturated"]
-                saturated_cells = grid_eval["saturated_cells"]
-                last_boxes = []
-                last_latency = round((time.monotonic() - eval_t0) * 1000.0, 1)
-
-            last_count = effective_count
-            last_effective_density = effective_density
-            last_density_source = density_source
-            last_saturated = is_saturated
-            last_saturated_cells = saturated_cells
+            density_source = meta.get("density_source", "override_live")
+            is_saturated = meta.get("is_saturated", True)
 
             # Flow analysis using effective density
             if flow_analyzer:
@@ -250,30 +214,13 @@ def zone_loop(
                 override_people_count=effective_count,
             )
 
-            override_tag = f"[{density_source.upper()} SATURATED: {len(saturated_cells)} patches]" if is_saturated else "[DETECTION]"
             print(
-                f"{log_tag} [Frame #{curr_frame_pos:03d}] {override_tag} count={effective_count} "
+                f"{log_tag} [Frame #{curr_frame_pos:03d}] [STANDALONE_CV] count={effective_count} "
                 f"den={effective_density:.2f} p/m2 source={density_source} panic={panic} "
-                f"flow_turb={round(turb, 2)} (latency: {last_latency}ms)"
+                f"flow_turb={round(turb, 2)} (latency: {eval_latency}ms)"
             )
 
-            # Render exact pixel-perfect heatmap for this specific frame
-            annotated = saturation_detector.annotate_density_heatmap(
-                frame=frame,
-                boxes=last_boxes,
-                saturated_cells=last_saturated_cells,
-                area_sqm=area_sqm,
-                effective_count=last_count,
-                effective_density=last_effective_density,
-                density_source=last_density_source,
-                is_saturated=last_saturated,
-                latency_ms=last_latency,
-                show_hud_legend=True,
-                show_top_badge=True,
-                show_pinpoint_dots=False,
-                zone_polygon=zone_polygon,
-                zone_id=zone_id,
-            )
+            # Update live stream server with synchronized annotated frame
             update_zone_frame(zone_id, annotated)
 
             # Sequential frame cadence for drone presentation (exact sync per frame)
@@ -325,6 +272,8 @@ def main() -> None:
     parser.add_argument("--z2",    type=str, default=None, help="Zone 2 video source (path to .mp4)")
     parser.add_argument("--type1", type=str, default=None, choices=["drone", "cctv"])
     parser.add_argument("--type2", type=str, default=None, choices=["drone", "cctv"])
+    parser.add_argument("--offset1", type=int, default=None, help="Zone 1 initial start frame offset")
+    parser.add_argument("--offset2", type=int, default=None, help="Zone 2 initial start frame offset")
     parser.add_argument("--override-mode", type=str, default=None, choices=["auto", "precomputed", "live_proxy", "off"])
     args = parser.parse_args()
 
@@ -335,6 +284,8 @@ def main() -> None:
     z2_source_str = args.z2   or config.VIDEO_SOURCE_Z2
     type_z1       = (args.type1 or config.CAMERA_TYPE_Z1).lower()
     type_z2       = (args.type2 or config.CAMERA_TYPE_Z2).lower()
+    offset_z1     = args.offset1 if args.offset1 is not None else config.START_OFFSET_Z1_FRAMES
+    offset_z2     = args.offset2 if args.offset2 is not None else config.START_OFFSET_Z2_FRAMES
 
     src_z1 = parse_source(z1_source_str)
     src_z2 = parse_source(z2_source_str)
@@ -346,8 +297,8 @@ def main() -> None:
         f"\n[CV] Multi-Zone Engine Starting — Model: {config.MODEL_PATH}\n"
         f"     Model Type: {config.MODEL_TYPE.upper()} | SAHI Enabled: {config.USE_SAHI}\n"
         f"     Override Mode: [{config.OVERRIDE_MODE.upper()}] (Active for Drone perspective)\n"
-        f"     Zone 1: 'zone_1' ({config.ZONE_TYPE_Z1}) Area={config.AREA_SQM_Z1}m² Source: {src_z1!r} Mode: [{type_z1.upper()}]\n"
-        f"     Zone 2: 'zone_2' ({config.ZONE_TYPE_Z2}) Area={config.AREA_SQM_Z2}m² Source: {src_z2!r} Mode: [{type_z2.upper()}]\n"
+        f"     Zone 1: 'zone_1' ({config.ZONE_TYPE_Z1}) Area={config.AREA_SQM_Z1}m² Source: {src_z1!r} Mode: [{type_z1.upper()}] Offset: {offset_z1} frames\n"
+        f"     Zone 2: 'zone_2' ({config.ZONE_TYPE_Z2}) Area={config.AREA_SQM_Z2}m² Source: {src_z2!r} Mode: [{type_z2.upper()}] Offset: {offset_z2} frames\n"
     )
 
     start_stream_server(port=5001)
@@ -393,6 +344,7 @@ def main() -> None:
             area_sqm=config.AREA_SQM_Z1,
             feed_source=feed_z1,
             camera_type=type_z1,
+            start_offset_frames=offset_z1,
             stop_event=stop_event,
             log_tag="[CV-Z1]",
         ),
@@ -415,6 +367,7 @@ def main() -> None:
             area_sqm=config.AREA_SQM_Z2,
             feed_source=feed_z2,
             camera_type=type_z2,
+            start_offset_frames=offset_z2,
             stop_event=stop_event,
             log_tag="[CV-Z2]",
         ),
