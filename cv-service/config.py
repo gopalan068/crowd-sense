@@ -75,17 +75,34 @@ CACHE_FILE: str = os.getenv("CACHE_FILE", "zone_density_cache.json")
 # Restricts edge-density proxy to actual gathering grounds / streets, ignoring rooftops & trees
 ZONE_POLYGONS = {
     "zone_1": [
-        (0.05, 0.05),
-        (0.95, 0.05),
-        (0.95, 0.95),
-        (0.05, 0.95),
+        (0.0, 0.0),
+        (1.0, 0.0),
+        (1.0, 1.0),
+        (0.0, 1.0),
     ],
     "zone_2": [
-        (0.15, 0.00),
-        (0.85, 0.00),
-        (0.85, 1.00),
-        (0.15, 1.00),
+        (0.0, 0.0),
+        (1.0, 0.0),
+        (1.0, 1.0),
+        (0.0, 1.0),
     ],
+}
+
+# Non-crowd building rooftop exclusions (normalized [0.0 - 1.0] [X, Y] coordinates)
+# Carves out corrugated metal slabs & concrete roofs to prevent false heat on empty structures
+ROOFTOP_EXCLUSIONS = {
+    "zone_2": [
+        # Orange building concrete roof (center-left)
+        [(0.18, 0.35), (0.295, 0.35), (0.295, 0.70), (0.18, 0.70)],
+        # Center gate building roof
+        [(0.415, 0.20), (0.545, 0.20), (0.545, 0.49), (0.415, 0.49)],
+        # Right corrugated building & courtyard shed
+        [(0.60, 0.25), (0.90, 0.25), (0.90, 0.66), (0.60, 0.66)],
+        # Left middle house roof
+        [(0.0, 0.24), (0.16, 0.24), (0.16, 0.36), (0.0, 0.36)],
+        # Bottom left corner house
+        [(0.0, 0.68), (0.14, 0.68), (0.14, 0.99), (0.0, 0.99)],
+    ]
 }
 
 # Focal Points (X, Y) pixel coordinates of the Egress Exit Door / Staircase in each video feed

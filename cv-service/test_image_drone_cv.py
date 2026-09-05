@@ -32,7 +32,7 @@ def test_drone_image(
     image_path: str,
     output_path: str = "detected_drone_output.jpg",
     conf_thresh: float = 0.06,
-    area_sqm: float = 250.0,
+    area_sqm: float = 2000.0,
     model_path: str | None = None,
     use_sahi: bool = True,
     show_window: bool = False,
@@ -172,7 +172,7 @@ def main() -> None:
         "--conf", type=float, default=0.06, help="Aerial drone confidence floor (default: 0.06)"
     )
     parser.add_argument(
-        "--area", type=float, default=250.0, help="Physical ground area in m2 for density (default: 250.0)"
+        "--area", type=float, default=2000.0, help="Physical ground area in m2 for density (default: 2000.0)"
     )
     parser.add_argument(
         "--model", type=str, default=None, help="Path to custom model weights file (.pt)"

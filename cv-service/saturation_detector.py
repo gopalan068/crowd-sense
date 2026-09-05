@@ -22,6 +22,7 @@ import os
 from typing import List, Tuple, Optional, Dict, Any
 import cv2
 import numpy as np
+import config
 
 
 class SaturationDetector:
@@ -69,6 +70,17 @@ class SaturationDetector:
             cv2.fillPoly(mask, [pts_np], 255)
         else:
             mask[:] = 255
+
+        # Exclude known non-crowd building rooftops for this zone if defined
+        rooftop_exclusions = getattr(config, "ROOFTOP_EXCLUSIONS", {}).get(zone_id, [])
+        for poly in rooftop_exclusions:
+            if len(poly) >= 3:
+                r_pts = []
+                for p in poly:
+                    r_px = int(p[0] * w) if (0.0 <= p[0] <= 1.0 and isinstance(p[0], float)) else int(p[0])
+                    r_py = int(p[1] * h) if (0.0 <= p[1] <= 1.0 and isinstance(p[1], float)) else int(p[1])
+                    r_pts.append([r_px, r_py])
+                cv2.fillPoly(mask, [np.array(r_pts, dtype=np.int32).reshape((-1, 1, 2))], 0)
 
         self._mask_cache[cache_key] = mask
         return mask
@@ -201,14 +213,17 @@ class SaturationDetector:
                 cell_edge_px = int(np.count_nonzero(cell_edges))
                 cell_edge_ratio = cell_edge_px / float(cell_mask_px)
 
-                # Saturation condition on patch level
+                override_den = override_engine.interpolate_density(cell_edge_ratio)
+
+                # Saturation condition on patch level:
+                # 1. Zero/low detections in high texture area
+                # 2. Or detected count severely under-represents physical crowd density (crush undercounting)
                 is_cell_saturated = (
-                    cell_detected_density < self.min_detection_density
-                    and cell_edge_ratio >= self.saturation_edge_threshold
+                    (cell_detected_density < self.min_detection_density and cell_edge_ratio >= self.saturation_edge_threshold)
+                    or (override_den >= 2.0 and override_den > cell_detected_density * 1.35)
                 )
 
                 if is_cell_saturated:
-                    override_den = override_engine.interpolate_density(cell_edge_ratio)
                     override_cnt = max(1, int(round(override_den * cell_area_sqm)))
                     total_effective_count += override_cnt
                     saturated_pixel_area += cell_mask_px
@@ -289,45 +304,31 @@ class SaturationDetector:
 
     def compute_crowd_texture_energy(self, frame: np.ndarray, zone_mask: Optional[np.ndarray] = None) -> np.ndarray:
         """
-        Extracts omnidirectional high-frequency crowd texture energy while suppressing
-        directional straight lines from building roofs and flat surfaces.
+        Extracts multi-scale crowd head-blob energy while suppressing non-crowd rooftops.
         """
         h, w = frame.shape[:2]
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) if len(frame.shape) == 3 else frame
 
-        # 1. CLAHE Local Contrast Enhancement
-        clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8))
-        enhanced = clahe.apply(gray)
+        # Multi-scale Head & Crowd Texture Extraction (Top-Hat + Black-Hat head blob filter)
+        kernel_head = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+        black_th = cv2.morphologyEx(gray, cv2.MORPH_BLACKHAT, kernel_head)
+        white_th = cv2.morphologyEx(gray, cv2.MORPH_TOPHAT, kernel_head)
+        blob_response = (black_th.astype(np.float32) + white_th.astype(np.float32))
 
-        # 2. Omnidirectional High-Frequency Texture (Laplacian of Gaussian)
-        blurred = cv2.GaussianBlur(enhanced, (5, 5), 0)
-        lap = cv2.Laplacian(blurred, cv2.CV_32F, ksize=3)
-        abs_lap = np.abs(lap)
-
-        # 3. Local Standard Deviation (Crowd contrast vs uniform roofs)
-        blur_sq = cv2.GaussianBlur(gray.astype(np.float32)**2, (21, 21), 0)
-        sq_blur = cv2.GaussianBlur(gray.astype(np.float32), (21, 21), 0)**2
+        # Local standard deviation for crowd clothing diversity
+        blur_sq = cv2.GaussianBlur(gray.astype(np.float32)**2, (15, 15), 0)
+        sq_blur = cv2.GaussianBlur(gray.astype(np.float32), (15, 15), 0)**2
         local_std = np.sqrt(np.maximum(0, blur_sq - sq_blur))
+        norm_std = np.clip((local_std - 10.0) / 20.0, 0.0, 1.5)
 
-        # 4. Directional Edge Uniformity (Isotropic check)
-        gx = cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3)
-        gy = cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3)
-        grad_mag = np.sqrt(gx**2 + gy**2)
-
-        dir_ratio = np.abs(gx) / (np.abs(gx) + np.abs(gy) + 1e-5)
-        directional_penalty = np.clip(1.0 - 1.8 * np.abs(dir_ratio - 0.5), 0.2, 1.0)
-
-        norm_lap = np.clip(abs_lap / 40.0, 0.0, 2.0)
-        norm_std = np.clip((local_std - 12.0) / 22.0, 0.0, 1.5)
-        norm_grad = np.clip(grad_mag / 65.0, 0.0, 2.0)
-
-        combined = (0.45 * norm_lap + 0.35 * norm_std + 0.20 * norm_grad) * directional_penalty
+        combined = 0.65 * (blob_response / 18.0) + 0.35 * norm_std
 
         if zone_mask is not None:
-            combined = combined * (zone_mask.astype(np.float32) / 255.0)
+            mask_soft = cv2.GaussianBlur(zone_mask.astype(np.float32) / 255.0, (15, 15), 4.0)
+            combined = combined * mask_soft
 
         texture_field = cv2.GaussianBlur(combined, (21, 21), 6.0)
-        return np.clip(texture_field, 0.0, 3.0)
+        return np.clip(texture_field, 0.0, 3.5)
 
     def annotate_density_heatmap(
         self,
@@ -349,18 +350,8 @@ class SaturationDetector:
     ) -> np.ndarray:
         """
         Renders a continuous scientific crowd density heatmap overlay on the drone frame.
-
-        Pipeline:
-          1. 2D Gaussian Kernel Splatting for all detected persons (calibrated to physical footprint).
-          2. Omnidirectional Crowd Texture Energy Field for packed crush masses.
-          3. Saturated Patch Crush Energy Injection (fills crush corridors where detections collapsed).
-          4. Continuous Multi-Scale Thermal Diffusion (dissolves grid boundaries into fluid thermal topology).
-          5. Scientific JET Colormapping (Deep Blue -> Cyan -> Emerald Green -> Amber -> Radiant Red).
-          6. Density-Aware Dynamic Alpha Blending (0% opacity on empty roofs/roads, up to ~60% in crush crowd).
-          7. Sleek Pinpoint Detection Markers with glowing cyan halos.
-          8. Modern Glassmorphic HUD Color Bar Legend & Status Header.
         """
-        # Handle flexible caller signatures (e.g. if saturated_cells was passed as 2nd arg)
+        # Handle flexible caller signatures
         box_list = []
         if boxes is not None:
             if isinstance(boxes, list) and len(boxes) > 0 and isinstance(boxes[0], dict):
@@ -370,63 +361,92 @@ class SaturationDetector:
                 box_list = boxes
 
         h, w = frame.shape[:2]
-        density_map = np.zeros((h, w), dtype=np.float32)
-        px_per_sqm = (h * w) / float(area_sqm) if area_sqm > 0 else 1.0
 
-        # 1. 2D Gaussian Splatting for Detected Individuals
+        if w > 960:
+            scale_factor = 640.0 / w
+            gh = int(h * scale_factor)
+            gw = 640
+            scale_x, scale_y = gw / float(w), gh / float(h)
+            calc_frame = cv2.resize(frame, (gw, gh), interpolation=cv2.INTER_AREA)
+        else:
+            calc_frame = frame
+            scale_factor = 1.0
+            gh, gw = h, w
+            scale_x, scale_y = 1.0, 1.0
+
+        density_map = np.zeros((gh, gw), dtype=np.float32)
+        px_per_sqm = (gh * gw) / float(area_sqm) if area_sqm > 0 else 1.0
+
+        # 1. 2D Gaussian Splatting for Detected Individuals (if any)
         if box_list:
             for b in box_list:
                 if len(b) < 4:
                     continue
-                cx = int((b[0] + b[2]) / 2)
-                cy = int((b[1] + b[3]) / 2)
-                bw = max(10, b[2] - b[0])
-                bh = max(10, b[3] - b[1])
-                sigma = max(16.0, float(max(bw, bh)) * 0.9)
+                cx = int(((b[0] + b[2]) / 2) * scale_x)
+                cy = int(((b[1] + b[3]) / 2) * scale_y)
+                bw = max(6, int((b[2] - b[0]) * scale_x))
+                bh = max(6, int((b[3] - b[1]) * scale_y))
+                sigma = max(8.0, float(max(bw, bh)) * 0.9)
                 radius = int(2.8 * sigma)
-                radius = max(24, min(radius, 64))
+                radius = max(12, min(radius, 36))
 
                 y1 = max(0, cy - radius)
-                y2 = min(h, cy + radius + 1)
+                y2 = min(gh, cy + radius + 1)
                 x1 = max(0, cx - radius)
-                x2 = min(w, cx + radius + 1)
+                x2 = min(gw, cx + radius + 1)
 
                 gy, gx = np.ogrid[y1 - cy : y2 - cy, x1 - cx : x2 - cx]
                 kernel = (1.0 / (2 * np.pi * (sigma**2 / px_per_sqm))) * np.exp(-(gx**2 + gy**2) / (2.0 * sigma**2))
                 density_map[y1:y2, x1:x2] += kernel.astype(np.float32)
 
         # 2. Omnidirectional Crowd Texture Energy
-        zone_mask = self.get_zone_mask((h, w), zone_polygon, zone_id=zone_id) if zone_polygon else None
-        texture_field = self.compute_crowd_texture_energy(frame, zone_mask=zone_mask)
-        texture_density = np.power(np.clip(texture_field - 0.20, 0.0, 2.0) / 1.05, 1.15) * 3.8
-        density_map += texture_density
+        zone_mask = self.get_zone_mask((gh, gw), zone_polygon, zone_id=zone_id)
+        texture_field = self.compute_crowd_texture_energy(calc_frame, zone_mask=zone_mask)
+        density_map += texture_field * 2.8
 
-        # 3. Saturated Patch Crush Energy Injection
+        # 3. Saturated Patch Crush Energy Injection (masked to ground areas)
         if saturated_cells:
-            sat_plane = np.zeros((h, w), dtype=np.float32)
+            sat_plane = np.zeros((gh, gw), dtype=np.float32)
             for cell in saturated_cells:
-                x1, y1, x2, y2 = cell["box"]
+                ox1, oy1, ox2, oy2 = cell["box"]
+                x1 = max(0, min(gw, int(ox1 * scale_x)))
+                y1 = max(0, min(gh, int(oy1 * scale_y)))
+                x2 = max(0, min(gw, int(ox2 * scale_x)))
+                y2 = max(0, min(gh, int(oy2 * scale_y)))
                 den = float(cell.get("density", 4.2))
                 sat_plane[y1:y2, x1:x2] = np.maximum(sat_plane[y1:y2, x1:x2], den * 0.85)
 
-            sat_plane_smooth = cv2.GaussianBlur(sat_plane, (55, 55), 18.0)
+            if zone_mask is not None:
+                sat_plane = sat_plane * (zone_mask.astype(np.float32) / 255.0)
+
+            sat_plane_smooth = cv2.GaussianBlur(sat_plane, (27, 27), 9.0)
             density_map = np.maximum(density_map, sat_plane_smooth)
 
         # 4. Continuous Multi-Scale Thermal Diffusion
-        smooth_fine = cv2.GaussianBlur(density_map, (31, 31), 8.0)
-        smooth_med = cv2.GaussianBlur(density_map, (61, 61), 18.0)
-        smooth_broad = cv2.GaussianBlur(density_map, (101, 101), 32.0)
+        smooth_fine = cv2.GaussianBlur(density_map, (15, 15), 4.0)
+        smooth_med = cv2.GaussianBlur(density_map, (31, 31), 9.0)
+        smooth_broad = cv2.GaussianBlur(density_map, (51, 51), 16.0)
         continuous_density = 0.50 * smooth_fine + 0.35 * smooth_med + 0.15 * smooth_broad
+
+        if zone_mask is not None:
+            mask_soft = cv2.GaussianBlur(zone_mask.astype(np.float32) / 255.0, (15, 15), 4.0)
+            continuous_density = continuous_density * mask_soft
 
         # 5. Scientific JET Colormapping
         norm_vis = np.clip(continuous_density / max_density_scale, 0.0, 1.0)
         heat_u8 = (norm_vis * 255).astype(np.uint8)
-        colored_heat = cv2.applyColorMap(heat_u8, cv2.COLORMAP_JET)
+        colored_heat_small = cv2.applyColorMap(heat_u8, cv2.COLORMAP_JET)
 
         # 6. Density-Aware Dynamic Alpha Blending
-        alpha = np.clip((norm_vis - 0.05) / 0.62, 0.0, 1.0)
-        alpha = np.power(alpha, 0.85) * 0.58
-        alpha_3d = alpha[:, :, np.newaxis]
+        alpha_small = np.clip((norm_vis - 0.04) / 0.55, 0.0, 1.0)
+        alpha_small = np.power(alpha_small, 0.85) * 0.60
+
+        if scale_factor != 1.0:
+            colored_heat = cv2.resize(colored_heat_small, (w, h), interpolation=cv2.INTER_LINEAR)
+            alpha_3d = cv2.resize(alpha_small, (w, h), interpolation=cv2.INTER_LINEAR)[:, :, np.newaxis]
+        else:
+            colored_heat = colored_heat_small
+            alpha_3d = alpha_small[:, :, np.newaxis]
 
         blended = (frame.astype(np.float32) * (1.0 - alpha_3d) + colored_heat.astype(np.float32) * alpha_3d).astype(np.uint8)
 
@@ -489,9 +509,10 @@ class SaturationDetector:
                 1,
                 cv2.LINE_AA,
             )
+            model_label = "Direct Density Field" if density_source.startswith("override") else "YOLOv8+SAHI"
             cv2.putText(
                 blended,
-                f"Density: {status_str} | Latency: {latency_ms:.1f} ms | Model: YOLOv8+SAHI",
+                f"Density: {status_str} | Latency: {latency_ms:.1f} ms | Engine: {model_label}",
                 (tx1 + 14, ty1 + 42),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.42,
