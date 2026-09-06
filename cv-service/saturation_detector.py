@@ -346,18 +346,60 @@ class SaturationDetector:
         texture_field = cv2.GaussianBlur(crowd_signal, (21, 21), 6.0)
         return np.clip(texture_field, 0.0, 3.5)
 
+    @staticmethod
+    def _create_balanced_palette_lut() -> np.ndarray:
+        """
+        Builds a multi-tier balanced 256-color Look-Up Table (LUT).
+        Provides clear, appealing differentiation across crowd density tiers:
+          - Tier 0 (0-20%):   Cool Sky Blue / Cyan (Sparse / Low)
+          - Tier 1 (20-45%):  Emerald / Mint Green (Normal Crowd Flow)
+          - Tier 2 (45-70%):  Sunny Gold / Warm Amber (Dense Pack)
+          - Tier 3 (70-88%):  Vibrant Alert Orange (Heavy Congestion)
+          - Tier 4 (88-100%): Deep Crimson Red / Magenta (Crush Epicenter ONLY)
+        """
+        lut = np.zeros((256, 1, 3), dtype=np.uint8)
+        for i in range(256):
+            u = i / 255.0
+            if u < 0.20:
+                t = u / 0.20
+                b = int(220 * (1 - t) + 160 * t)
+                g = int(140 * (1 - t) + 210 * t)
+                r = int(20 * (1 - t) + 30 * t)
+            elif u < 0.45:
+                t = (u - 0.20) / 0.25
+                b = int(160 * (1 - t) + 30 * t)
+                g = int(210 * (1 - t) + 235 * t)
+                r = int(30 * (1 - t) + 120 * t)
+            elif u < 0.70:
+                t = (u - 0.45) / 0.25
+                b = int(30 * (1 - t) + 20 * t)
+                g = int(235 * (1 - t) + 175 * t)
+                r = int(120 * (1 - t) + 250 * t)
+            elif u < 0.88:
+                t = (u - 0.70) / 0.18
+                b = int(20 * (1 - t) + 20 * t)
+                g = int(175 * (1 - t) + 50 * t)
+                r = int(250 * (1 - t) + 245 * t)
+            else:
+                t = (u - 0.88) / 0.12
+                b = int(20 * (1 - t) + 90 * t)
+                g = int(50 * (1 - t) + 15 * t)
+                r = int(245 * (1 - t) + 225 * t)
+            lut[i, 0] = [b, g, r]
+        return lut
+
     def process_standalone_drone_frame(
         self,
         frame: np.ndarray,
         area_sqm: float = 2000.0,
-        max_density_scale: float = 5.5,
+        max_density_scale: float = 6.0,
         zone_id: str = "zone_1",
         latency_ms: float = 0.0,
     ) -> Tuple[np.ndarray, int, float, Dict[str, Any]]:
         """
         Processes a single drone video frame as a 100% standalone, independent image.
-        Uses isotropic head-blob morphology, directional line suppression, and multi-scale
-        thermal diffusion without requiring sequence tracking or static rooftop masks.
+        Uses isotropic head-blob morphology, directional line suppression, and multi-tier
+        perceptual color scaling to clearly differentiate dense vs extreme crush crowds.
         """
         h, w = frame.shape[:2]
 
@@ -407,8 +449,8 @@ class SaturationDetector:
         smooth_fine = cv2.GaussianBlur(crowd_signal, (11, 11), 3.0)
         smooth_med = cv2.GaussianBlur(crowd_signal, (21, 21), 6.0)
         smooth_broad = cv2.GaussianBlur(crowd_signal, (41, 41), 12.0)
-        diffused_density = (0.50 * smooth_fine + 0.35 * smooth_med + 0.15 * smooth_broad) * 11.0
-        diffused_density = np.clip(diffused_density, 0.0, 5.5)
+        diffused_density = (0.50 * smooth_fine + 0.35 * smooth_med + 0.15 * smooth_broad) * 7.5
+        diffused_density = np.clip(diffused_density, 0.0, 6.0)
 
         # Headcount & Density Calibration
         active_mask = diffused_density > 0.35
@@ -423,13 +465,15 @@ class SaturationDetector:
         else:
             full_density = diffused_density
 
-        # 6. Thermal JET Colormap & Dynamic Alpha Blending
+        # 6. Balanced Multi-Tier Palette Mapping & Non-linear Alpha Blending
+        palette_lut = self._create_balanced_palette_lut()
         norm_vis = np.clip(full_density / max_density_scale, 0.0, 1.0)
-        heat_u8 = (norm_vis * 255).astype(np.uint8)
-        colored_heat = cv2.applyColorMap(heat_u8, cv2.COLORMAP_JET)
+        norm_gamma = np.power(norm_vis, 1.25)
+        u8_map = (norm_gamma * 255).astype(np.uint8)
+        colored_heat = cv2.LUT(cv2.cvtColor(u8_map, cv2.COLOR_GRAY2BGR), palette_lut)
 
-        alpha = np.clip((norm_vis - 0.05) / 0.55, 0.0, 1.0)
-        alpha = np.power(alpha, 0.85) * 0.58
+        alpha = np.clip((norm_vis - 0.05) / 0.60, 0.0, 1.0)
+        alpha = np.power(alpha, 0.90) * 0.58
         alpha_3d = alpha[:, :, np.newaxis]
 
         blended = (frame.astype(np.float32) * (1.0 - alpha_3d) + colored_heat.astype(np.float32) * alpha_3d).astype(np.uint8)
@@ -437,19 +481,23 @@ class SaturationDetector:
         # 7. Render Clean Modern Glassmorphic HUD
         if w >= 640 and h >= 400:
             # HUD Legend (Bottom Right)
-            lx1, ly1, lw, lh = w - 310 - 24, h - 64 - 24, 310, 64
+            lx1, ly1, lw, lh = w - 320 - 24, h - 64 - 24, 320, 64
             sub_hud = blended[ly1:ly1+lh, lx1:lx1+lw]
             dark = np.zeros_like(sub_hud); dark[:] = (15, 23, 42)
             cv2.addWeighted(dark, 0.82, sub_hud, 0.18, 0, sub_hud)
             cv2.rectangle(blended, (lx1, ly1), (lx1+lw, ly1+lh), (100, 116, 139), 1, cv2.LINE_AA)
 
-            bx, by, bw, bh = lx1 + 14, ly1 + 14, 282, 12
-            grad = np.repeat(np.linspace(0, 255, bw, dtype=np.uint8).reshape(1, bw), bh, axis=0)
-            blended[by:by+bh, bx:bx+bw] = cv2.applyColorMap(grad, cv2.COLORMAP_JET)
+            bx, by, bw, bh = lx1 + 14, ly1 + 14, 292, 12
+            grad_line = np.linspace(0, 255, bw, dtype=np.uint8).reshape(1, bw)
+            grad_strip = np.repeat(grad_line, bh, axis=0)
+            grad_colored = cv2.LUT(cv2.cvtColor(grad_strip, cv2.COLOR_GRAY2BGR), palette_lut)
+            blended[by:by+bh, bx:bx+bw] = grad_colored
             cv2.rectangle(blended, (bx, by), (bx+bw, by+bh), (255, 255, 255), 1)
-            cv2.putText(blended, "0.0 p/m2", (bx, ly1 + 46), cv2.FONT_HERSHEY_SIMPLEX, 0.36, (203, 213, 225), 1, cv2.LINE_AA)
-            cv2.putText(blended, "2.1 (ALERT)", (bx + 90, ly1 + 46), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (251, 191, 36), 1, cv2.LINE_AA)
-            cv2.putText(blended, "4.5+ (CRUSH)", (bx + 198, ly1 + 46), cv2.FONT_HERSHEY_SIMPLEX, 0.36, (239, 68, 68), 1, cv2.LINE_AA)
+
+            cv2.putText(blended, "0.0 Low", (bx, ly1 + 46), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (203, 213, 225), 1, cv2.LINE_AA)
+            cv2.putText(blended, "2.0 Flow", (bx + 68, ly1 + 46), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (52, 211, 153), 1, cv2.LINE_AA)
+            cv2.putText(blended, "3.5 Dense", (bx + 145, ly1 + 46), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (251, 191, 36), 1, cv2.LINE_AA)
+            cv2.putText(blended, "5.0+ Crush", (bx + 224, ly1 + 46), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (239, 68, 68), 1, cv2.LINE_AA)
 
             # Status Badge (Top Left)
             tx1, ty1, tw, th = 20, 20, 580, 52
@@ -469,7 +517,7 @@ class SaturationDetector:
             )
             cv2.putText(
                 blended,
-                f"Density: {overall_density:.2f} p/m2 | Latency: {latency_ms:.1f} ms | Engine: Isotropic Density Field",
+                f"Density: {overall_density:.2f} p/m2 | Latency: {latency_ms:.1f} ms | Engine: Balanced Multi-Tier Field",
                 (tx1 + 14, ty1 + 42),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.42,
@@ -499,7 +547,7 @@ class SaturationDetector:
         density_source: str = "detection",
         is_saturated: bool = False,
         latency_ms: float = 0.0,
-        max_density_scale: float = 5.5,
+        max_density_scale: float = 6.0,
         show_hud_legend: bool = True,
         show_top_badge: bool = True,
         show_pinpoint_dots: bool = True,
@@ -517,5 +565,6 @@ class SaturationDetector:
             latency_ms=latency_ms,
         )
         return annotated
+
 
 

@@ -223,9 +223,12 @@ def zone_loop(
             # Update live stream server with synchronized annotated frame
             update_zone_frame(zone_id, annotated)
 
-            # Sequential frame cadence for drone presentation (exact sync per frame)
-            drone_step_sec = getattr(config, "DRONE_ANALYSIS_INTERVAL_SEC", 1.0)
-            time.sleep(drone_step_sec)
+            # Sequential frame cadence for drone presentation (exact 2 FPS / 0.5s per frame)
+            drone_step_sec = getattr(config, "DRONE_ANALYSIS_INTERVAL_SEC", 0.5)
+            elapsed_eval = time.monotonic() - eval_t0
+            sleep_duration = max(0.02, drone_step_sec - elapsed_eval)
+            time.sleep(sleep_duration)
+
         else:
             # CCTV Mode: Standard ground CCTV analysis (Zero override)
             if now - last_analysis_time >= analysis_interval_sec and not is_loop_frame:
