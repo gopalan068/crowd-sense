@@ -2187,6 +2187,20 @@ export default function PlannerPage({ backendUrl = '' }) {
               width={CANVAS_W}
               height={CANVAS_H}
               onResetToDemo={resetToDemoVenue}
+              agentsRef={agentsRef}
+              simMode={simMode}
+              isEmergency={isEmergency}
+              agentCount={agentCount}
+              simTimeSec={simTimeSec}
+              maxDensityPpm2={maxDensity}
+              fps={fps}
+              onStart={handleStart}
+              onPause={handlePause}
+              onReset={handleReset}
+              onTriggerEmergency={handleTriggerEmergency}
+              onToggleEmergencyGate={toggleOpening}
+              onOpenAllOpenings={openAllOpenings}
+              onCloseAllOpenings={closeAllOpenings}
             />
           ) : (
             <>

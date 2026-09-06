@@ -1,22 +1,20 @@
 /**
  * frontend/src/components/Venue25DViewer.jsx
  *
- * Three.js 2.5D/3D Venue Visualizer.
+ * High-Performance Three.js 2.5D/3D Venue Visualizer with Integrated
+ * Real-Time Social Force Model (SFM) Simulation Engine.
  *
- * Hardware-accelerated 3D extrusion of standalone building blocks,
- * full-height continuous structures, Gopuram landmark, chariot obstacle,
- * crowd-control barricades, and live dynamic emergency gates.
- *
- * Baseplane is tightly bounded to the venue dimensions with exactly
- * 2 grid squares of margin on all sides.
- *
- * Includes tasteful architectural rooftop elements (HVAC chillers,
- * water storage tanks, stairwell penthouses, solar arrays, telecom masts,
- * and helipad) to give realistic urban density and depth.
+ * - Renders 1000+ simulated 3D pedestrian agents with GPU instancing (InstancedMesh)
+ * - Real-time velocity alignment, dynamic panic/speed color mapping, and evacuation routing
+ * - Live crowd-control barricades, dynamic emergency gates (Open/Closed), exits, and spawns
+ * - Standalone solid building extrusions with authentic urban rooftop architecture
+ * - Tight, balanced baseplane pedestal with exact 2-grid-square margin
+ * - Embedded 3D simulation controls toolbar (Play, Pause, Reset, Emergency)
  */
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
+import { getDensityBand } from '../lib/fruinDensity.js'
 
 /**
  * Deterministic pseudo-random number generator for consistent rooftop details
@@ -102,7 +100,6 @@ function sanitizePolygonPoints(pts) {
     }
     clean.push(p)
   }
-  // Check wrap-around
   if (clean.length > 2) {
     const first = clean[0]
     const last = clean[clean.length - 1]
@@ -118,6 +115,21 @@ export default function Venue25DViewer({
   width = 800,
   height = 850,
   onResetToDemo = null,
+  // ── Simulation Engine Props ──────────────────────────────────────────────
+  agentsRef = null,
+  simMode = 'edit',
+  isEmergency = false,
+  agentCount = 0,
+  simTimeSec = 0,
+  maxDensityPpm2 = 0,
+  fps = 0,
+  onStart = null,
+  onPause = null,
+  onReset = null,
+  onTriggerEmergency = null,
+  onToggleEmergencyGate = null,
+  onOpenAllOpenings = null,
+  onCloseAllOpenings = null,
 }) {
   const mountRef = useRef(null)
   const sceneRef = useRef(null)
@@ -125,9 +137,28 @@ export default function Venue25DViewer({
   const rendererRef = useRef(null)
   const controlsRef = useRef(null)
   const dynamicGroupRef = useRef(null)
+  const instancedAgentsRef = useRef(null)
+  const venueCenterRef = useRef({ cx: 400, cz: 425, pxM: 25 })
+  const interactiveGateMeshesRef = useRef([])
+  const raycasterRef = useRef(new THREE.Raycaster())
+  const mouseVecRef = useRef(new THREE.Vector2())
+  const onToggleEmergencyGateRef = useRef(onToggleEmergencyGate)
 
   const [structureCount, setStructureCount] = useState(0)
   const [gateStats, setGateStats] = useState({ open: 0, closed: 0 })
+  const [activeCameraPreset, setActiveCameraPreset] = useState('isometric')
+  const [sceneReady, setSceneReady] = useState(0)
+
+  useEffect(() => {
+    onToggleEmergencyGateRef.current = onToggleEmergencyGate
+  }, [onToggleEmergencyGate])
+
+  // Reusable dummy objects for Three.js instance matrix & color calculations
+  const dummyObjRef = useRef(new THREE.Object3D())
+  const colorNormalRef = useRef(new THREE.Color(0x38bdf8))      // Sky cyan
+  const colorPanicRef = useRef(new THREE.Color(0xef4444))       // Red panic
+  const colorFocusRef = useRef(new THREE.Color(0xc084fc))       // Purple focus
+  const colorEvacRef = useRef(new THREE.Color(0xf59e0b))        // Amber evac
 
   // ─── Initialize Three.js Scene ─────────────────────────────────────────────
   useEffect(() => {
@@ -149,7 +180,6 @@ export default function Venue25DViewer({
       10,
       4000
     )
-    // Default overhead angled view looking from South towards Temple & North
     camera.position.set(0, 700, 840)
     cameraRef.current = camera
 
@@ -199,16 +229,150 @@ export default function Venue25DViewer({
     scene.add(dynamicGroup)
     dynamicGroupRef.current = dynamicGroup
 
-    // 6. Animation / Render Loop
+    // 6. GPU Instanced Mesh for 3D Simulated Agents
+    const MAX_3D_AGENTS = 1500
+    const agentGeo = new THREE.CapsuleGeometry(2.3, 4.8, 4, 8)
+    const agentMat = new THREE.MeshStandardMaterial({
+      roughness: 0.3,
+      metalness: 0.2,
+    })
+    const instancedMesh = new THREE.InstancedMesh(agentGeo, agentMat, MAX_3D_AGENTS)
+    instancedMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
+    instancedMesh.castShadow = true
+    instancedMesh.receiveShadow = true
+    instancedMesh.count = 0
+    scene.add(instancedMesh)
+    instancedAgentsRef.current = instancedMesh
+
+    // Notify layout builder that scene is ready
+    setSceneReady(n => n + 1)
+
+    // ── Interactive Raycasting on 3D Emergency Gates ─────────────────────────
+    let downPos = { x: 0, y: 0 }
+    const dom = renderer.domElement
+
+    const handlePointerDown = (e) => {
+      downPos = { x: e.clientX, y: e.clientY }
+    }
+
+    const handlePointerUp = (e) => {
+      const dist = Math.hypot(e.clientX - downPos.x, e.clientY - downPos.y)
+      if (dist > 6) return // Dragged/orbited, not a click
+
+      const rect = dom.getBoundingClientRect()
+      const mouse = mouseVecRef.current
+      mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1
+      mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1
+
+      const raycaster = raycasterRef.current
+      raycaster.setFromCamera(mouse, camera)
+
+      const interactive = interactiveGateMeshesRef.current
+      const targets = interactive.map(item => item.mesh)
+      const hits = raycaster.intersectObjects(targets, true)
+
+      if (hits.length > 0) {
+        const hitObj = hits[0].object
+        const match = interactive.find(item => item.mesh === hitObj || item.mesh.children.includes(hitObj))
+        if (match && onToggleEmergencyGateRef.current) {
+          onToggleEmergencyGateRef.current(match.gateId)
+        }
+      }
+    }
+
+    const handlePointerMove = (e) => {
+      const rect = dom.getBoundingClientRect()
+      const mouse = mouseVecRef.current
+      mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1
+      mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1
+
+      const raycaster = raycasterRef.current
+      raycaster.setFromCamera(mouse, camera)
+
+      const interactive = interactiveGateMeshesRef.current
+      const targets = interactive.map(item => item.mesh)
+      const hits = raycaster.intersectObjects(targets, true)
+
+      if (hits.length > 0) {
+        dom.style.cursor = 'pointer'
+      } else {
+        dom.style.cursor = 'grab'
+      }
+    }
+
+    dom.addEventListener('pointerdown', handlePointerDown)
+    dom.addEventListener('pointerup', handlePointerUp)
+    dom.addEventListener('pointermove', handlePointerMove)
+
+    // 7. Animation / Render Loop (Sim + Camera)
     let animId
+    const dummy = dummyObjRef.current
+    const cNormal = colorNormalRef.current
+    const cPanic = colorPanicRef.current
+    const cFocus = colorFocusRef.current
+    const cEvac = colorEvacRef.current
+
     const animate = () => {
       animId = requestAnimationFrame(animate)
       controls.update()
+
+      // Update 3D Simulated Agents from Social Force Model simulation
+      const instMesh = instancedAgentsRef.current
+      if (instMesh) {
+        const rawAgents = agentsRef?.current || []
+        const { cx, cz, pxM } = venueCenterRef.current
+        let activeCount = 0
+        const nowMs = performance.now() * 0.008
+
+        for (let i = 0; i < rawAgents.length && i < MAX_3D_AGENTS; i++) {
+          const agent = rawAgents[i]
+          if (agent.reachedExit) continue
+
+          const x3d = agent.pos.x * pxM - cx
+          const z3d = agent.pos.y * pxM - cz
+          const y3d = 4.7 // Height off ground plane
+
+          // Rotate agent mesh in direction of movement velocity + natural walking bob
+          const vx = agent.vel?.x || 0
+          const vy = agent.vel?.y || 0
+          const speed = Math.hypot(vx, vy)
+          const bob = speed > 0.08 ? Math.sin((agent.id * 1.5) + nowMs) * 0.35 : 0
+
+          dummy.position.set(x3d, y3d + bob, z3d)
+
+          if (speed > 0.08) {
+            dummy.rotation.y = -Math.atan2(vy, vx) + Math.PI / 2
+          }
+
+          dummy.updateMatrix()
+          instMesh.setMatrixAt(activeCount, dummy.matrix)
+
+          // Color based on agent state
+          let agentColor = cNormal
+          if (agent.isPanic) {
+            agentColor = cPanic
+          } else if (agent.isFocus) {
+            agentColor = cFocus
+          } else if (agent.goalExit?.isEmergencyOpening) {
+            agentColor = cEvac
+          }
+
+          instMesh.setColorAt(activeCount, agentColor)
+          activeCount++
+        }
+
+        instMesh.count = activeCount
+        instMesh.instanceMatrix.needsUpdate = true
+        if (instMesh.instanceColor) {
+          instMesh.instanceColor.needsUpdate = true
+        }
+      }
+
       renderer.render(scene, camera)
     }
     animate()
 
-    // 7. Resize Handler
+    // 8. Resize Handler
     const handleResize = () => {
       if (!mountRef.current || !rendererRef.current || !cameraRef.current) return
       const nw = mountRef.current.clientWidth || width
@@ -222,8 +386,13 @@ export default function Venue25DViewer({
     return () => {
       cancelAnimationFrame(animId)
       window.removeEventListener('resize', handleResize)
+      dom.removeEventListener('pointerdown', handlePointerDown)
+      dom.removeEventListener('pointerup', handlePointerUp)
+      dom.removeEventListener('pointermove', handlePointerMove)
       controls.dispose()
       renderer.dispose()
+      if (instancedMesh.geometry) instancedMesh.geometry.dispose()
+      if (instancedMesh.material) instancedMesh.material.dispose()
       mount.replaceChildren()
     }
   }, [width, height])
@@ -293,6 +462,8 @@ export default function Venue25DViewer({
     // Exact geometric center
     const cx = (groundMinX + groundMaxX) / 2
     const cz = (groundMinY + groundMaxY) / 2
+
+    venueCenterRef.current = { cx, cz, pxM }
 
     const groundW = groundMaxX - groundMinX
     const groundD = groundMaxY - groundMinY
@@ -538,7 +709,7 @@ export default function Venue25DViewer({
             }
           }
 
-          // 4. Solar Panel Photovoltaic Arrays (on larger blocks)
+          // 4. Solar Panel Photovoltaic Arrays
           if ((bW >= 65 || bH >= 80) && rng() > 0.25) {
             const solX = minBX + 22 + rng() * Math.max(10, bW - 60)
             const solY = minBY + 22 + rng() * Math.max(10, bH - 60)
@@ -550,7 +721,7 @@ export default function Venue25DViewer({
                   const spGeo = new THREE.BoxGeometry(9, 1, 6)
                   const spMesh = new THREE.Mesh(spGeo, solarMat)
                   spMesh.position.set(spx - cx, heightVal + 1.2, spy - cz)
-                  spMesh.rotation.x = 0.22 // angled tilt towards sun
+                  spMesh.rotation.x = 0.22
                   dynamicGroup.add(spMesh)
                 }
               }
@@ -575,7 +746,7 @@ export default function Venue25DViewer({
             }
           }
 
-          // 6. Glass Skylight Atrium Pyramids (on Central Complex & large roofs)
+          // 6. Glass Skylight Atrium Pyramids
           if (id.includes('ce_complex') || (bW > 70 && bH > 90)) {
             const skylightPositions = id.includes('ce_complex')
               ? [{ x: minBX + bW * 0.45, y: 110 }, { x: minBX + bW * 0.52, y: 460 }]
@@ -689,7 +860,6 @@ export default function Venue25DViewer({
 
           // 10. Additional Distributed Rooftop Elements along the Central-East Complex
           if (id.includes('ce_complex')) {
-            // Additional Solar Array at y=560
             const sol2X = minBX + bW * 0.4
             const sol2Y = 560
             for (let r = 0; r < 2; r++) {
@@ -706,11 +876,9 @@ export default function Venue25DViewer({
               }
             }
 
-            // South End Utility Enclosure & Water Tanks at y=760
             const southUtilX = minBX + bW * 0.45
             const southUtilY = 760
             if (isPointInPoly({ x: southUtilX, y: southUtilY }, pts)) {
-              // Generator / Equipment Enclosure
               const genGeo = new THREE.BoxGeometry(15, 6, 11)
               const genMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.6, roughness: 0.4 })
               const genMesh = new THREE.Mesh(genGeo, genMat)
@@ -718,14 +886,12 @@ export default function Venue25DViewer({
               genMesh.castShadow = true
               dynamicGroup.add(genMesh)
 
-              // Pipe exhaust
               const pipeGeo = new THREE.CylinderGeometry(0.6, 0.6, 6, 8)
               const pipeMat = new THREE.MeshStandardMaterial({ color: 0x64748b, metalness: 0.8 })
               const pipe = new THREE.Mesh(pipeGeo, pipeMat)
               pipe.position.set(southUtilX - cx + 5, heightVal + 7, southUtilY - cz)
               dynamicGroup.add(pipe)
 
-              // Twin Blue Water Tanks next to generator
               const tank1 = new THREE.Mesh(new THREE.CylinderGeometry(4, 4, 6.5, 12), waterTankBlueMat)
               tank1.position.set(southUtilX - cx - 8, heightVal + 3.25, southUtilY - cz - 15)
               const tank2 = new THREE.Mesh(new THREE.CylinderGeometry(4, 4, 6.5, 12), waterTankBlueMat)
@@ -765,7 +931,6 @@ export default function Venue25DViewer({
       barMesh.castShadow = true
       barMesh.receiveShadow = true
 
-      // Highlight line on top of barricade
       const barEdges = new THREE.LineSegments(
         new THREE.EdgesGeometry(barGeo),
         new THREE.LineBasicMaterial({ color: 0xfef08a })
@@ -778,15 +943,17 @@ export default function Venue25DViewer({
     const openGateMat = new THREE.MeshStandardMaterial({
       color: 0x22c55e,
       emissive: 0x16a34a,
-      emissiveIntensity: 0.35,
-      roughness: 0.3,
+      emissiveIntensity: 0.45,
+      roughness: 0.25,
     })
     const closedGateMat = new THREE.MeshStandardMaterial({
       color: 0xef4444,
       emissive: 0xdc2626,
-      emissiveIntensity: 0.35,
-      roughness: 0.3,
+      emissiveIntensity: 0.45,
+      roughness: 0.25,
     })
+
+    const interactiveGates = []
 
     for (const gate of (layout.openings || [])) {
       if (!gate.a || !gate.b) continue
@@ -801,18 +968,35 @@ export default function Venue25DViewer({
       else closedGates++
 
       const gateMat = isOpen ? openGateMat : closedGateMat
-      const gateGeo = new THREE.BoxGeometry(len, 16, 6)
+      const angle = Math.atan2(dz, dx)
+
+      // When open: barrier swings open by 85 degrees to visually clear the walkway
+      // When closed: barrier is horizontally stretched across the gateway
+      const gateGeo = new THREE.BoxGeometry(len, 14, 5)
       const gateMesh = new THREE.Mesh(gateGeo, gateMat)
-      gateMesh.position.set((ax + bx) / 2, 8, (az + bz) / 2)
-      gateMesh.rotation.y = -Math.atan2(dz, dx)
+
+      if (isOpen) {
+        // Swing gate barrier open around post A
+        gateMesh.position.set(
+          ax + (Math.cos(angle + 1.45) * len) / 2,
+          7,
+          az + (Math.sin(angle + 1.45) * len) / 2
+        )
+        gateMesh.rotation.y = -(angle + 1.45)
+      } else {
+        gateMesh.position.set((ax + bx) / 2, 7, (az + bz) / 2)
+        gateMesh.rotation.y = -angle
+      }
+
       gateMesh.castShadow = true
       gateMesh.receiveShadow = true
 
-      // Side Gate Post Pillars
-      const pillarGeo = new THREE.CylinderGeometry(3.5, 3.5, 22, 12)
+      // Gateway boundary pillars
+      const pillarGeo = new THREE.CylinderGeometry(3.5, 3.5, 22, 16)
       const pillarMat = new THREE.MeshStandardMaterial({
         color: isOpen ? 0x4ade80 : 0xf87171,
         roughness: 0.3,
+        metalness: 0.2,
       })
       const p1 = new THREE.Mesh(pillarGeo, pillarMat)
       p1.position.set(ax, 11, az)
@@ -824,9 +1008,46 @@ export default function Venue25DViewer({
       p2.castShadow = true
       dynamicGroup.add(p2)
 
+      // Beacon caps on top of pillars
+      const beaconGeo = new THREE.SphereGeometry(2.4, 12, 12)
+      const beaconMat = new THREE.MeshBasicMaterial({
+        color: isOpen ? 0x22c55e : 0xef4444,
+      })
+      const b1 = new THREE.Mesh(beaconGeo, beaconMat)
+      b1.position.set(ax, 23.5, az)
+      dynamicGroup.add(b1)
+
+      const b2 = new THREE.Mesh(beaconGeo, beaconMat)
+      b2.position.set(bx, 23.5, bz)
+      dynamicGroup.add(b2)
+
+      // Illuminated floor threshold pad for open gates
+      if (isOpen) {
+        const padGeo = new THREE.BoxGeometry(len, 0.5, 14)
+        const padMat = new THREE.MeshStandardMaterial({
+          color: 0x22c55e,
+          emissive: 0x15803d,
+          emissiveIntensity: 0.4,
+          transparent: true,
+          opacity: 0.5,
+        })
+        const padMesh = new THREE.Mesh(padGeo, padMat)
+        padMesh.position.set((ax + bx) / 2, 0.3, (az + bz) / 2)
+        padMesh.rotation.y = -angle
+        dynamicGroup.add(padMesh)
+      }
+
       dynamicGroup.add(gateMesh)
+
+      // Register meshes for raycasting click toggle
+      interactiveGates.push(
+        { mesh: gateMesh, gateId: gate.id },
+        { mesh: p1, gateId: gate.id },
+        { mesh: p2, gateId: gate.id }
+      )
     }
 
+    interactiveGateMeshesRef.current = interactiveGates
     setGateStats({ open: openGates, closed: closedGates })
 
     // ── 4. Exits (3D Ground Portals) ────────────────────────────────────────
@@ -881,19 +1102,36 @@ export default function Venue25DViewer({
       focMesh.position.set(fx, 2.5, fz)
       dynamicGroup.add(focMesh)
     }
-  }, [layout, focusPoint, isFocusMode])
+  }, [layout, focusPoint, isFocusMode, sceneReady])
 
-  // ─── Reset Camera View ───────────────────────────────────────────────────
-  const resetCamera = useCallback(() => {
+  // ─── Camera Presets Handler ──────────────────────────────────────────────
+  const setCameraPreset = useCallback((preset) => {
+    setActiveCameraPreset(preset)
     if (!cameraRef.current || !controlsRef.current) return
-    cameraRef.current.position.set(0, 700, 840)
-    controlsRef.current.target.set(0, 0, 0)
-    controlsRef.current.update()
+    const camera = cameraRef.current
+    const controls = controlsRef.current
+
+    if (preset === 'isometric') {
+      camera.position.set(0, 700, 840)
+      controls.target.set(0, 0, 0)
+    } else if (preset === 'topdown') {
+      camera.position.set(0, 960, 30)
+      controls.target.set(0, 0, 0)
+    } else if (preset === 'north') {
+      camera.position.set(-260, 420, -320)
+      controls.target.set(0, 0, -180)
+    } else if (preset === 'south') {
+      camera.position.set(240, 380, 280)
+      controls.target.set(0, 0, 160)
+    }
+    controls.update()
   }, [])
+
+  const densityBand = getDensityBand(maxDensityPpm2 || 0)
 
   return (
     <div className="flex flex-col items-center justify-center p-2 bg-slate-950/90 rounded-xl border border-slate-800 shadow-2xl">
-      {/* 3D Toolbar Header */}
+      {/* ── 3D Toolbar Header with Live Simulation Controls & Stats ────── */}
       <div className="w-full flex flex-wrap items-center justify-between gap-2 px-3 py-2 border-b border-slate-800/80 mb-2 text-xs">
         <div className="flex items-center gap-2">
           <span className="font-bold text-slate-200 flex items-center gap-1.5">
@@ -901,78 +1139,237 @@ export default function Venue25DViewer({
             <span>3D Venue Visualizer</span>
           </span>
           <span className="px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 font-mono text-[10px]">
-            Three.js WebGL
+            Three.js WebGL + SFM Sim
           </span>
         </div>
 
-        {/* Real-time Status Badge */}
-        <div className="flex items-center gap-3 font-mono text-[11px] text-slate-400">
-          <span className="flex items-center gap-1">
-            <span className="w-2 h-2 rounded-full bg-slate-400"></span>
-            {structureCount} Structures
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="w-2 h-2 rounded-full bg-yellow-400"></span>
-            {layout?.barricades?.length || 0} Barricades
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-            {gateStats.open} Open Gate{gateStats.open !== 1 ? 's' : ''}
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="w-2 h-2 rounded-full bg-red-400"></span>
-            {gateStats.closed} Closed Gate{gateStats.closed !== 1 ? 's' : ''}
-          </span>
+        {/* Live Simulation Controls & Metrics */}
+        <div className="flex items-center gap-2 bg-slate-900/90 px-3 py-1 rounded-lg border border-slate-800">
+          <div className="flex items-center gap-1.5 font-mono text-[11px]">
+            <span
+              className={`w-2.5 h-2.5 rounded-full ${simMode === 'running' ? 'pulse-dot bg-emerald-400' : simMode === 'paused' ? 'bg-amber-400' : 'bg-slate-500'}`}
+            />
+            <span className="font-bold text-slate-200 uppercase">{simMode}</span>
+            <span className="text-slate-400">·</span>
+            <span className="font-bold text-sky-400">🚶 {agentCount}</span>
+            <span className="text-slate-500 text-[10px]">agents</span>
+            <span className="text-slate-400">·</span>
+            <span className="text-slate-300 font-mono text-[10px]">{simTimeSec.toFixed(1)}s</span>
+
+            {maxDensityPpm2 > 0 && (
+              <>
+                <span className="text-slate-400">·</span>
+                <span
+                  className="px-1.5 py-0.5 rounded font-mono text-[10px] font-bold"
+                  style={{
+                    backgroundColor: densityBand.rgba ? `${densityBand.rgba.slice(0, -5)}, 0.2)` : 'rgba(16,185,129,0.2)',
+                    color: densityBand.cssVar ? densityBand.cssVar : '#10b981',
+                  }}
+                  title={`Max local crowd density: ${maxDensityPpm2.toFixed(2)} ped/m² (${densityBand.label})`}
+                >
+                  {maxDensityPpm2.toFixed(1)} p/m² · {densityBand.shortLabel}
+                </span>
+              </>
+            )}
+
+            {fps > 0 && (
+              <>
+                <span className="text-slate-400">·</span>
+                <span className="text-slate-400 font-mono text-[10px]">{fps} FPS</span>
+              </>
+            )}
+          </div>
+
+          {/* Direct Simulation Action Buttons */}
+          <div className="flex items-center gap-1 ml-2 border-l border-slate-800 pl-2">
+            {simMode !== 'running' ? (
+              <button
+                onClick={onStart}
+                className="px-2 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] transition flex items-center gap-1 shadow-sm"
+                title="Start 3D SFM Simulation"
+              >
+                <span>▶</span>
+                <span>Run</span>
+              </button>
+            ) : (
+              <button
+                onClick={onPause}
+                className="px-2 py-0.5 rounded bg-amber-600 hover:bg-amber-500 text-white font-bold text-[10px] transition flex items-center gap-1 shadow-sm"
+                title="Pause Simulation"
+              >
+                <span>⏸</span>
+                <span>Pause</span>
+              </button>
+            )}
+
+            <button
+              onClick={onReset}
+              className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 font-bold text-[10px] transition"
+              title="Reset Simulation"
+            >
+              <span>↺</span>
+            </button>
+
+            {onTriggerEmergency && (
+              <button
+                onClick={onTriggerEmergency}
+                disabled={simMode !== 'running'}
+                className={`px-2 py-0.5 rounded font-bold text-[10px] transition flex items-center gap-1 ${
+                  isEmergency
+                    ? 'bg-red-600 text-white animate-pulse'
+                    : 'bg-red-500/20 text-red-300 hover:bg-red-500/30 border border-red-500/40 disabled:opacity-40'
+                }`}
+                title="Trigger Immediate Panic Evacuation"
+              >
+                <span>🚨</span>
+                <span>{isEmergency ? 'ACTIVE' : 'Evac'}</span>
+              </button>
+            )}
+          </div>
         </div>
 
-        {/* Camera Reset & Reload Clean Venue Buttons */}
-        <div className="flex items-center gap-2">
+        {/* Camera Preset Quick Buttons & Reset */}
+        <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1 bg-slate-900/80 p-0.5 rounded-lg border border-slate-800">
+            <button
+              onClick={() => setCameraPreset('isometric')}
+              className={`px-2 py-0.5 rounded text-[10px] font-medium transition ${
+                activeCameraPreset === 'isometric'
+                  ? 'bg-indigo-600 text-white font-bold shadow'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+              title="3D Oblique Isometric View"
+            >
+              🏛️ 3D Iso
+            </button>
+            <button
+              onClick={() => setCameraPreset('topdown')}
+              className={`px-2 py-0.5 rounded text-[10px] font-medium transition ${
+                activeCameraPreset === 'topdown'
+                  ? 'bg-indigo-600 text-white font-bold shadow'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+              title="Overhead 2.5D Architectural Plan View"
+            >
+              🦅 Top-Down
+            </button>
+            <button
+              onClick={() => setCameraPreset('north')}
+              className={`px-2 py-0.5 rounded text-[10px] font-medium transition ${
+                activeCameraPreset === 'north'
+                  ? 'bg-indigo-600 text-white font-bold shadow'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+              title="Focus on North Gopuram Entrance"
+            >
+              🚪 North
+            </button>
+            <button
+              onClick={() => setCameraPreset('south')}
+              className={`px-2 py-0.5 rounded text-[10px] font-medium transition ${
+                activeCameraPreset === 'south'
+                  ? 'bg-indigo-600 text-white font-bold shadow'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+              title="Focus on South Emergency Gates"
+            >
+              🚨 South
+            </button>
+          </div>
+
           {onResetToDemo && (
             <button
               onClick={onResetToDemo}
-              className="px-2.5 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 transition flex items-center gap-1 font-medium text-[11px]"
+              className="px-2 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 transition flex items-center gap-1 font-medium text-[10px]"
               title="Reset venue to clean 100% solid standalone layout"
             >
               <span>🔄</span>
-              <span>Load Clean Layout</span>
+              <span>Clean Layout</span>
             </button>
           )}
-          <button
-            onClick={resetCamera}
-            className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition flex items-center gap-1 font-medium"
-            title="Reset Camera to Default Overhead Angle"
-          >
-            <span>🎯</span>
-            <span>Reset Camera</span>
-          </button>
         </div>
       </div>
 
-      {/* Three.js Canvas Container */}
+      {/* ── Emergency Gates Interactive Status Bar ─────────────────────── */}
+      {(layout?.openings?.length || 0) > 0 && (
+        <div className="w-full flex flex-wrap items-center justify-between gap-2 px-3 py-1.5 bg-slate-900/60 rounded-lg border border-slate-800/80 mb-2 text-xs">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-bold text-slate-300 text-[11px] flex items-center gap-1">
+              <span>🚨</span>
+              <span>Emergency Gates:</span>
+            </span>
+            {layout.openings.map((gate) => (
+              <button
+                key={gate.id}
+                onClick={() => onToggleEmergencyGate && onToggleEmergencyGate(gate.id)}
+                className={`px-2 py-0.5 rounded-full text-[10px] font-bold border transition flex items-center gap-1 shadow-sm ${
+                  gate.isOpen
+                    ? 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border-emerald-500/40'
+                    : 'bg-red-500/20 hover:bg-red-500/30 text-red-300 border-red-500/40'
+                }`}
+                title="Click to toggle gate open/closed in real-time"
+              >
+                <span>{gate.isOpen ? '🟢 🔓' : '🔴 🔒'}</span>
+                <span>{gate.name || 'Gate'}</span>
+                <span className="font-mono text-[9px] uppercase">
+                  {gate.isOpen ? 'OPEN' : 'CLOSED'}
+                </span>
+              </button>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            {onOpenAllOpenings && (
+              <button
+                onClick={onOpenAllOpenings}
+                className="px-2 py-0.5 rounded bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-200 border border-emerald-500/40 text-[10px] font-bold transition"
+                title="Open all emergency gates simultaneously"
+              >
+                🔓 Open All
+              </button>
+            )}
+            {onCloseAllOpenings && (
+              <button
+                onClick={onCloseAllOpenings}
+                className="px-2 py-0.5 rounded bg-red-600/30 hover:bg-red-600/50 text-red-200 border border-red-500/40 text-[10px] font-bold transition"
+                title="Close all emergency gates simultaneously"
+              >
+                🔒 Close All
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Three.js Canvas Container ─────────────────────────────────── */}
       <div
         ref={mountRef}
         className="w-full relative rounded-lg overflow-hidden border border-slate-800 cursor-grab active:cursor-grabbing"
         style={{
-          minHeight: '620px',
-          maxHeight: '78vh',
+          minHeight: '600px',
+          maxHeight: '76vh',
           background: '#0a0f1d',
         }}
       />
 
-      {/* Legend & Navigation Tips Footer */}
+      {/* ── Legend & Navigation Tips Footer ───────────────────────────── */}
       <div className="w-full flex flex-wrap items-center justify-between gap-2 px-3 py-2 mt-2 text-[11px] text-slate-400 border-t border-slate-800/80">
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3.5 flex-wrap">
           <span className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded bg-slate-600 inline-block"></span>
-            <span>Buildings</span>
+            <span className="w-2.5 h-2.5 rounded-full bg-sky-400 inline-block shadow-sm"></span>
+            <span>Pedestrians (Normal)</span>
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded bg-amber-600 inline-block"></span>
-            <span>Gopuram Tower</span>
+            <span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block shadow-sm"></span>
+            <span>Panicked / High Speed</span>
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded bg-orange-600 inline-block"></span>
-            <span>Chariot Obstacle</span>
+            <span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block shadow-sm"></span>
+            <span>Evacuating</span>
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-full bg-purple-400 inline-block shadow-sm"></span>
+            <span>Attracted (Focus)</span>
           </span>
           <span className="flex items-center gap-1.5">
             <span className="w-2.5 h-2.5 rounded bg-yellow-500 inline-block"></span>
@@ -980,16 +1377,16 @@ export default function Venue25DViewer({
           </span>
           <span className="flex items-center gap-1.5">
             <span className="w-2.5 h-2.5 rounded bg-emerald-500 inline-block"></span>
-            <span>Open Gate</span>
+            <span>Open Gate (Click 3D)</span>
           </span>
           <span className="flex items-center gap-1.5">
             <span className="w-2.5 h-2.5 rounded bg-red-500 inline-block"></span>
-            <span>Closed Gate</span>
+            <span>Closed Gate (Click 3D)</span>
           </span>
         </div>
 
         <div className="font-mono text-[10px] text-slate-500">
-          Left Drag: Orbit · Right Drag: Pan · Scroll: Zoom
+          Left Drag: Orbit · Right Drag: Pan · Scroll: Zoom · Click Gates to Toggle
         </div>
       </div>
     </div>
