@@ -14,6 +14,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { getDensityBand } from '../lib/fruinDensity.js'
 
 /**
@@ -139,6 +140,7 @@ export default function Venue25DViewer({
   const dynamicGroupRef = useRef(null)
   const instancedAgentsRef = useRef(null)
   const venueCenterRef = useRef({ cx: 400, cz: 425, pxM: 25 })
+  const venueBoundsRef = useRef({ vxMin: -400, vxMax: 400, vzMin: -425, vzMax: 425 })
   const interactiveGateMeshesRef = useRef([])
   const raycasterRef = useRef(new THREE.Raycaster())
   const mouseVecRef = useRef(new THREE.Vector2())
@@ -229,12 +231,24 @@ export default function Venue25DViewer({
     scene.add(dynamicGroup)
     dynamicGroupRef.current = dynamicGroup
 
-    // 6. GPU Instanced Mesh for 3D Simulated Agents
-    const MAX_3D_AGENTS = 1500
-    const agentGeo = new THREE.CapsuleGeometry(2.3, 4.8, 4, 8)
+    // 6. GPU Instanced Mesh for 3D Stylized Humanoid Pedestrian Agents
+    const MAX_3D_AGENTS = 2000
+
+    // Humanoid Body: Tapered torso & shoulders with adult human proportions
+    const bodyGeo = new THREE.CylinderGeometry(4.0, 5.2, 10.5, 12)
+    bodyGeo.translate(0, 5.25, 0)
+
+    // Humanoid Head: Spherical head blob mounted on top of shoulders
+    const headGeo = new THREE.SphereGeometry(3.4, 12, 10)
+    headGeo.translate(0, 13.5, 0)
+
+    const agentGeo = mergeGeometries([bodyGeo, headGeo], false)
+    bodyGeo.dispose()
+    headGeo.dispose()
+
     const agentMat = new THREE.MeshStandardMaterial({
-      roughness: 0.3,
-      metalness: 0.2,
+      roughness: 0.35,
+      metalness: 0.15,
     })
     const instancedMesh = new THREE.InstancedMesh(agentGeo, agentMat, MAX_3D_AGENTS)
     instancedMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
@@ -321,6 +335,7 @@ export default function Venue25DViewer({
       if (instMesh) {
         const rawAgents = agentsRef?.current || []
         const { cx, cz, pxM } = venueCenterRef.current
+        const bounds = venueBoundsRef.current || { vxMin: -400, vxMax: 400, vzMin: -425, vzMax: 425 }
         let activeCount = 0
         const nowMs = performance.now() * 0.008
 
@@ -328,9 +343,13 @@ export default function Venue25DViewer({
           const agent = rawAgents[i]
           if (agent.reachedExit) continue
 
-          const x3d = agent.pos.x * pxM - cx
-          const z3d = agent.pos.y * pxM - cz
-          const y3d = 4.7 // Height off ground plane
+          const rawX3d = agent.pos.x * pxM - cx
+          const rawZ3d = agent.pos.y * pxM - cz
+          const y3d = 0.2 // Ground contact level
+
+          // Strictly clamp 3D agents within the virtual venue boundary (cannot enter exterior 2 squares)
+          const x3d = Math.max(bounds.vxMin + 1.2, Math.min(bounds.vxMax - 1.2, rawX3d))
+          const z3d = Math.max(bounds.vzMin + 1.2, Math.min(bounds.vzMax - 1.2, rawZ3d))
 
           // Rotate agent mesh in direction of movement velocity + natural walking bob
           const vx = agent.vel?.x || 0
@@ -498,7 +517,7 @@ export default function Venue25DViewer({
     )
     dynamicGroup.add(gridLines)
 
-    // Cyan Outline Rim around the Baseplane
+    // Cyan Outline Rim around the Baseplane Outer Pedestal
     const borderGeo = new THREE.BufferGeometry()
     borderGeo.setAttribute('position', new THREE.Float32BufferAttribute([
       -halfW, 0.25, -halfD,   halfW, 0.25, -halfD,
@@ -508,9 +527,87 @@ export default function Venue25DViewer({
     ], 3))
     const borderLines = new THREE.LineSegments(
       borderGeo,
-      new THREE.LineBasicMaterial({ color: 0x0284c7, linewidth: 2 })
+      new THREE.LineBasicMaterial({ color: 0x0369a1, linewidth: 1.5 })
     )
     dynamicGroup.add(borderLines)
+
+    // ── 0b. Virtual Venue Boundary Perimeter (Walkable Venue Limit) ─────────
+    const vxMin = minX - cx
+    const vxMax = maxX - cx
+    const vzMin = minY - cz
+    const vzMax = maxY - cz
+    venueBoundsRef.current = { vxMin, vxMax, vzMin, vzMax }
+
+    // Glowing Neon Virtual Venue Boundary Line
+    const venueBorderGeo = new THREE.BufferGeometry()
+    venueBorderGeo.setAttribute('position', new THREE.Float32BufferAttribute([
+      vxMin, 0.45, vzMin,   vxMax, 0.45, vzMin,
+      vxMax, 0.45, vzMin,   vxMax, 0.45, vzMax,
+      vxMax, 0.45, vzMax,   vxMin, 0.45, vzMax,
+      vxMin, 0.45, vzMax,   vxMin, 0.45, vzMin,
+    ], 3))
+    const venueBorderLines = new THREE.LineSegments(
+      venueBorderGeo,
+      new THREE.LineBasicMaterial({ color: 0x38bdf8, linewidth: 2 })
+    )
+    dynamicGroup.add(venueBorderLines)
+
+    // Glowing Corner Security Pylons & Beacons at the 4 Venue Boundary Corners
+    const pylonGeo = new THREE.CylinderGeometry(2.5, 3.2, 14, 16)
+    const pylonMat = new THREE.MeshStandardMaterial({
+      color: 0x1e293b,
+      roughness: 0.3,
+      metalness: 0.6,
+    })
+    const pylonBeaconGeo = new THREE.SphereGeometry(2.0, 12, 12)
+    const pylonBeaconMat = new THREE.MeshStandardMaterial({
+      color: 0x38bdf8,
+      emissive: 0x0284c7,
+      emissiveIntensity: 0.9,
+    })
+    const boundaryCorners = [
+      { x: vxMin, z: vzMin },
+      { x: vxMax, z: vzMin },
+      { x: vxMax, z: vzMax },
+      { x: vxMin, z: vzMax },
+    ]
+    boundaryCorners.forEach(({ x, z }) => {
+      const p = new THREE.Mesh(pylonGeo, pylonMat)
+      p.position.set(x, 7, z)
+      p.castShadow = true
+      dynamicGroup.add(p)
+
+      const b = new THREE.Mesh(pylonBeaconGeo, pylonBeaconMat)
+      b.position.set(x, 15, z)
+      dynamicGroup.add(b)
+    })
+
+    // Exterior Buffer Zone (2 Grid Squares Margin outside Venue Boundary)
+    // Subtle cross-hatch warning lines showing it is the exterior buffer where agents cannot go
+    const exteriorHatchGeo = new THREE.BufferGeometry()
+    const hatchPositions = []
+    // North buffer strip
+    for (let x = -halfW; x < halfW; x += gridCell) {
+      hatchPositions.push(x, 0.22, -halfD, x + gridCell, 0.22, vzMin)
+    }
+    // South buffer strip
+    for (let x = -halfW; x < halfW; x += gridCell) {
+      hatchPositions.push(x, 0.22, vzMax, x + gridCell, 0.22, halfD)
+    }
+    // West buffer strip
+    for (let z = -halfD; z < halfD; z += gridCell) {
+      hatchPositions.push(-halfW, 0.22, z, vxMin, 0.22, z + gridCell)
+    }
+    // East buffer strip
+    for (let z = -halfD; z < halfD; z += gridCell) {
+      hatchPositions.push(vxMax, 0.22, z, halfW, 0.22, z + gridCell)
+    }
+    exteriorHatchGeo.setAttribute('position', new THREE.Float32BufferAttribute(hatchPositions, 3))
+    const exteriorHatchLines = new THREE.LineSegments(
+      exteriorHatchGeo,
+      new THREE.LineBasicMaterial({ color: 0x334155, transparent: true, opacity: 0.45 })
+    )
+    dynamicGroup.add(exteriorHatchLines)
 
     let builtCount = 0
     let openGates = 0
@@ -1380,8 +1477,16 @@ export default function Venue25DViewer({
             <span>Open Gate (Click 3D)</span>
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded bg-red-500 inline-block"></span>
+            <span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block"></span>
             <span>Closed Gate (Click 3D)</span>
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-sm border border-sky-400 bg-sky-400/20 inline-block"></span>
+            <span>Virtual Venue Boundary</span>
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-sm bg-slate-800 border border-slate-700 inline-block"></span>
+            <span>Exterior Buffer (2 Squares)</span>
           </span>
         </div>
 

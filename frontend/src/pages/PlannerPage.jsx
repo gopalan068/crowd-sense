@@ -25,6 +25,7 @@ import {
   setFocusTarget,
   step as sfmStep,
   extractWallSegments,
+  extractBuildingPolygons,
   convertExitsToMeters,
   convertSpawnsToMeters,
   resetAgentIds,
@@ -253,14 +254,14 @@ const DEMO_VENUE = {
     {
       id: 'spawn_nw',
       name: 'Entry 1 (North-West)',
-      x: 45,
-      y: 61,
+      x: 50,
+      y: 66,
     },
     {
       id: 'spawn_south',
       name: 'Entry (South Broadway)',
-      x: 239,
-      y: 821,
+      x: 215,
+      y: 818,
     },
   ],
   barricades: [
@@ -1220,6 +1221,9 @@ export default function PlannerPage({ backendUrl = '' }) {
         }
       }
 
+      // ── Extract building closed polygons in meters ────────────────────
+      const buildingPolys_m = extractBuildingPolygons(lay.walls, pxM)
+
       // ── Spawn agents ───────────────────────────────────────────────────
       if (
         simModeRef.current === 'running' &&
@@ -1243,14 +1247,20 @@ export default function PlannerPage({ backendUrl = '' }) {
             const goalExit = oppositeExits.length > 0
               ? oppositeExits[Math.floor(Math.random() * oppositeExits.length)]
               : (exits_m.find(e => isSouth ? e.id.includes('north') : e.id.includes('south')) || exits_m[0])
-            agentsRef.current.push(spawnAgent(sp_m, goalExit, DEFAULT_SFM_PARAMS))
+            agentsRef.current.push(spawnAgent(sp_m, goalExit, DEFAULT_SFM_PARAMS, null, buildingPolys_m, wallSegs))
           }
         }
       }
 
       // ── Step SFM ──────────────────────────────────────────────────────
+      const minX_m = 0
+      const maxX_m = (lay.canvasWidth || CANVAS_W) / pxM
+      const minY_m = 0
+      const maxY_m = (lay.canvasHeight || CANVAS_H) / pxM
+      const boundary_m = { minX: minX_m, maxX: maxX_m, minY: minY_m, maxY: maxY_m }
+
       if (simModeRef.current === 'running' && agentsRef.current.length > 0) {
-        sfmStep(agentsRef.current, wallSegs, exits_m, dt, DEFAULT_SFM_PARAMS)
+        sfmStep(agentsRef.current, wallSegs, exits_m, dt, DEFAULT_SFM_PARAMS, boundary_m, buildingPolys_m)
       }
 
       // ── Remove exited agents ──────────────────────────────────────────

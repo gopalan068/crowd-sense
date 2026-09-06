@@ -211,14 +211,14 @@ const DEMO_LAYOUT = {
     {
       id: 'spawn_nw',
       name: 'Entry 1 (North-West)',
-      x: 45,
-      y: 61,
+      x: 50,
+      y: 66,
     },
     {
       id: 'spawn_south',
       name: 'Entry (South Broadway)',
-      x: 239,
-      y: 821,
+      x: 215,
+      y: 818,
     },
   ],
   barricades: [
