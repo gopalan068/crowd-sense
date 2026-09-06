@@ -19,6 +19,7 @@ const citizenReportsRouter = require('./routes/citizenReports');
 const conditionsRouter = require('./routes/conditions');
 const reportsRouter = require('./routes/reports');
 const venuesRouter = require('./routes/venues');
+const plannerRouter = require('./routes/planner');
 const { seedDemoVenue } = require('../scripts/seedDemoVenue');
 const { sendEmergencyNotification } = require('./services/notifications');
 
@@ -74,6 +75,7 @@ app.use('/api', citizenReportsRouter);
 app.use('/api', conditionsRouter);
 app.use('/api', reportsRouter);
 app.use('/api', venuesRouter);
+app.use('/api', plannerRouter);
 
 // --- Socket.io ---
 const io = setupSockets(server);
@@ -93,6 +95,7 @@ server.listen(PORT, () => {
   console.log(`[Backend] ReportsGenerate   → POST http://localhost:${PORT}/api/reports/generate`);
   console.log(`[Backend] ReportsLatest     → GET http://localhost:${PORT}/api/reports/latest`);
   console.log(`[Backend] Venues            → GET/POST http://localhost:${PORT}/api/venues`);
+  console.log(`[Backend] PlannerNarrate   → POST http://localhost:${PORT}/api/planner/narrate-report`);
   // Seed demo venue after a short delay to let DB initialize tables
   setTimeout(seedDemoVenue, 500);
 });

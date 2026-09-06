@@ -247,7 +247,7 @@ export default function PlannerControls({
                       ? 'bg-emerald-600 hover:bg-emerald-500 text-white animate-pulse'
                       : 'bg-red-600 hover:bg-red-500 text-white'
                   }`}
-                  title={op.isOpen ? 'Click to close gate (barrier)' : 'Click to open gate (egress exit)'}
+                  title={op.isOpen ? 'Click to close gate (solid barrier obstacle)' : 'Click to open gate (clear passageway)'}
                 >
                   {op.isOpen ? 'OPEN' : 'CLOSED'}
                 </button>
@@ -255,7 +255,7 @@ export default function PlannerControls({
             ))}
           </div>
           <p className="text-[9px] leading-tight text-slate-500">
-            Closed gates act as solid walls. Open gates allow crowd evacuation flow.
+            Closed gates act as solid barrier obstacles. Open gates allow agents to cross through freely.
           </p>
         </div>
       )}

@@ -17,6 +17,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 
 import PlannerControls from '../components/PlannerControls.jsx'
 import Venue25DViewer from '../components/Venue25DViewer.jsx'
+import PlannerReportPage from './PlannerReportPage.jsx'
 
 import {
   DEFAULT_SFM_PARAMS,
@@ -437,6 +438,9 @@ export default function PlannerPage({ backendUrl = '' }) {
 
   // ── View Mode (2D Layout Editor vs 2.5D Isometric Venue Map) ───────────
   const [viewMode, setViewMode] = useState('2D')  // '2D' | '2.5D'
+
+  // ── Planner top-level tab: Simulation view vs Report Analysis view ──────
+  const [plannerView, setPlannerView] = useState('sim')  // 'sim' | 'report'
 
   // ── Drawing & Selection ──────────────────────────────────────────────────
   const [drawTool, setDrawTool] = useState(TOOLS.SELECT)
@@ -1198,26 +1202,14 @@ export default function PlannerPage({ backendUrl = '' }) {
       }
 
       // ── Incorporate dynamic Emergency Openings into physics ──────────────
+      // Closed: solid barrier obstacle wall segment (no one can pass)
+      // Open: passageway is clear (agents can cross through freely toward their destination without despawning)
       for (const op of lay.openings || []) {
         if (!op.isOpen) {
-          // Closed -> solid barrier wall
           wallSegs.push([
             { x: op.a.x / pxM, y: op.a.y / pxM },
             { x: op.b.x / pxM, y: op.b.y / pxM },
           ])
-        } else {
-          // Open -> active egress evacuation exit
-          exits_m.push({
-            id: op.id,
-            name: op.name || 'Emergency Opening',
-            a_m: { x: op.a.x / pxM, y: op.a.y / pxM },
-            b_m: { x: op.b.x / pxM, y: op.b.y / pxM },
-            center_m: {
-              x: (op.a.x + op.b.x) / 2 / pxM,
-              y: (op.a.y + op.b.y) / 2 / pxM,
-            },
-            isEmergencyOpening: true,
-          })
         }
       }
 
@@ -1865,19 +1857,6 @@ export default function PlannerPage({ backendUrl = '' }) {
     if (!lay) return
     const pxM = lay.scale?.px_per_meter || 25
     const exits_m = convertExitsToMeters(lay.exits, pxM)
-    // Also include currently open emergency gates in emergency evacuation destinations
-    for (const op of lay.openings || []) {
-      if (op.isOpen) {
-        exits_m.push({
-          id: op.id,
-          name: op.name || 'Emergency Opening',
-          a_m: { x: op.a.x / pxM, y: op.a.y / pxM },
-          b_m: { x: op.b.x / pxM, y: op.b.y / pxM },
-          center_m: { x: (op.a.x + op.b.x) / 2 / pxM, y: (op.a.y + op.b.y) / 2 / pxM },
-          isEmergencyOpening: true,
-        })
-      }
-    }
     sfmTriggerEmergency(agentsRef.current, exits_m, DEFAULT_SFM_PARAMS)
     setIsEmergency(true)
   }
@@ -2159,48 +2138,102 @@ export default function PlannerPage({ backendUrl = '' }) {
           )}
         </div>
 
-        {/* ── Centre: Simulation Canvas / 2.5D Venue Map ─────────────── */}
+        {/* ── Centre: Simulation Canvas / 2.5D Venue Map / Report Analysis ── */}
         <div className="flex flex-col gap-2 flex-1 min-w-0">
 
-          {/* View Mode Switcher Header */}
+          {/* ── Top-level Planner tab: SIM vs REPORT ─────────────────── */}
           <div className="flex items-center justify-between gap-2 px-1">
+            {/* Left: SIM / REPORT tab */}
             <div
               className="flex items-center gap-1 p-1 rounded-xl border shadow-sm"
               style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
             >
               <button
-                onClick={() => setViewMode('2D')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === '2D'
-                  ? 'bg-sky-600 text-white shadow-sm'
-                  : 'hover:bg-slate-100 dark:hover:bg-slate-800'
-                  }`}
-                style={viewMode !== '2D' ? { color: 'var(--color-muted)' } : {}}
+                id="planner-tab-sim"
+                onClick={() => setPlannerView('sim')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                  plannerView === 'sim'
+                    ? 'bg-sky-600 text-white shadow-sm'
+                    : 'hover:bg-slate-100 dark:hover:bg-slate-800'
+                }`}
+                style={plannerView !== 'sim' ? { color: 'var(--color-muted)' } : {}}
               >
-                <span>🗺️ 2D Layout &amp; Sim</span>
+                🎮 Simulation
               </button>
               <button
-                onClick={() => setViewMode('2.5D')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === '2.5D'
-                  ? 'bg-indigo-600 text-white shadow-sm'
-                  : 'hover:bg-slate-100 dark:hover:bg-slate-800'
-                  }`}
-                style={viewMode !== '2.5D' ? { color: 'var(--color-muted)' } : {}}
+                id="planner-tab-report"
+                onClick={() => setPlannerView('report')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                  plannerView === 'report'
+                    ? 'bg-violet-600 text-white shadow-sm'
+                    : 'hover:bg-slate-100 dark:hover:bg-slate-800'
+                }`}
+                style={plannerView !== 'report' ? { color: 'var(--color-muted)' } : {}}
               >
-                <span>🏛️ 2.5D Isometric Map</span>
-                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-400/20 text-amber-500 dark:text-amber-300 font-extrabold uppercase">
-                  3D Extrusion
+                🔬 Report Analysis
+                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-violet-400/20 text-violet-400 dark:text-violet-300 font-extrabold uppercase">
+                  NEW
                 </span>
               </button>
             </div>
 
-            {viewMode === '2.5D' && (
-              <span className="text-[10px] font-mono-num" style={{ color: 'var(--color-muted)' }}>
-                Architectural Isometric Projection · {layout?.walls?.length || 0} Structures Extruded
-              </span>
+            {/* Right: view-mode switcher (only visible in SIM tab) */}
+            {plannerView === 'sim' && (
+              <div className="flex items-center gap-2">
+                <div
+                  className="flex items-center gap-1 p-1 rounded-xl border shadow-sm"
+                  style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
+                >
+                  <button
+                    onClick={() => setViewMode('2D')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === '2D'
+                      ? 'bg-sky-600 text-white shadow-sm'
+                      : 'hover:bg-slate-100 dark:hover:bg-slate-800'
+                      }`}
+                    style={viewMode !== '2D' ? { color: 'var(--color-muted)' } : {}}
+                  >
+                    <span>🗺️ 2D Layout &amp; Sim</span>
+                  </button>
+                  <button
+                    onClick={() => setViewMode('2.5D')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === '2.5D'
+                      ? 'bg-indigo-600 text-white shadow-sm'
+                      : 'hover:bg-slate-100 dark:hover:bg-slate-800'
+                      }`}
+                    style={viewMode !== '2.5D' ? { color: 'var(--color-muted)' } : {}}
+                  >
+                    <span>🏛️ 2.5D Isometric Map</span>
+                    <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-400/20 text-amber-500 dark:text-amber-300 font-extrabold uppercase">
+                      3D Extrusion
+                    </span>
+                  </button>
+                </div>
+                {viewMode === '2.5D' && (
+                  <span className="text-[10px] font-mono-num" style={{ color: 'var(--color-muted)' }}>
+                    Architectural Isometric Projection · {layout?.walls?.length || 0} Structures Extruded
+                  </span>
+                )}
+              </div>
             )}
           </div>
 
-          {/* Render 2.5D Isometric Viewer or 2D Interactive Canvas */}
+          {/* ── Report Analysis view ───────────────────────────────── */}
+          {plannerView === 'report' && (
+            <div
+              className="rounded-xl border overflow-auto"
+              style={{
+                borderColor: 'var(--color-border)',
+                background: 'var(--color-bg)',
+                minHeight: 600,
+                maxHeight: '80vh',
+              }}
+            >
+              <PlannerReportPage layout={layout} backendUrl={backendUrl} />
+            </div>
+          )}
+
+          {/* Render 2.5D Isometric Viewer or 2D Interactive Canvas (SIM tab only) */}
+          {plannerView === 'sim' && <>
           {viewMode === '2.5D' ? (
             <Venue25DViewer
               layout={layout}
@@ -2297,9 +2330,14 @@ export default function PlannerPage({ backendUrl = '' }) {
               </div>
             </>
           )}
+          {/* end viewMode ternary */}
+          </>
+          }
+          {/* end plannerView === 'sim' */}
         </div>
 
-        {/* ── Right Panel: Simulation Controls ──────────────────────── */}
+        {/* ── Right Panel: Simulation Controls (SIM tab only) ────────── */}
+        {plannerView === 'sim' && (
         <div
           className="w-56 shrink-0 rounded-xl border p-3 overflow-y-auto"
           style={{
@@ -2359,6 +2397,8 @@ export default function PlannerPage({ backendUrl = '' }) {
             hasVenue={!!layout}
           />
         </div>
+        )}
+        {/* end plannerView === 'sim' right panel */}
       </div>
 
       {/* ── Scale Dialog ───────────────────────────────────────────── */}
