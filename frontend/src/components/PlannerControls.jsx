@@ -17,6 +17,14 @@ export default function PlannerControls({
   onReset,
   onTriggerEmergency,
 
+  // Focus mode
+  focusPoint,
+  isFocusMode,
+  onToggleFocusMode,
+  focusCondition,          // 'normal' | 'rushed'
+  onFocusConditionChange,
+  onSelectFocusTool,
+
   // Spawn controls
   spawnRate,
   onSpawnRateChange,
@@ -92,12 +100,79 @@ export default function PlannerControls({
         </button>
       </div>
 
+      {/* ── Focus Point & Crowd Attraction ────────────────────────────── */}
+      <div
+        className="rounded-xl p-3 border flex flex-col gap-2.5 transition-all"
+        style={{
+          background: isFocusMode ? 'rgba(168,85,247,0.06)' : 'var(--color-bg)',
+          borderColor: isFocusMode ? '#c084fc' : 'var(--color-border)',
+        }}
+      >
+        <div className="flex justify-between items-center">
+          <span className="font-bold uppercase tracking-wider text-[10px] flex items-center gap-1.5" style={{ color: isFocusMode ? '#a855f7' : 'var(--color-muted)' }}>
+            <span>🎯</span> Focus Mode
+          </span>
+          <button
+            onClick={() => onToggleFocusMode()}
+            className={`px-2.5 py-1 rounded-md text-[10px] font-extrabold transition-all ${
+              isFocusMode
+                ? 'bg-purple-600 hover:bg-purple-500 text-white shadow-sm'
+                : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-300'
+            }`}
+          >
+            {isFocusMode ? '✓ ACTIVE' : 'ENABLE'}
+          </button>
+        </div>
+
+        {/* Movement condition selector */}
+        <div className="flex flex-col gap-1">
+          <label className="text-[9px] uppercase font-semibold text-slate-500">
+            Movement Condition
+          </label>
+          <div className="grid grid-cols-2 gap-1.5">
+            <button
+              onClick={() => onFocusConditionChange('normal')}
+              className={`py-1.5 px-2 rounded-lg text-[10px] font-bold border flex items-center justify-center gap-1 transition-all ${
+                focusCondition === 'normal'
+                  ? 'bg-purple-100 dark:bg-purple-950/60 border-purple-500 text-purple-700 dark:text-purple-300'
+                  : 'border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+            >
+              <span>🚶</span> Normal
+            </button>
+            <button
+              onClick={() => onFocusConditionChange('rushed')}
+              className={`py-1.5 px-2 rounded-lg text-[10px] font-bold border flex items-center justify-center gap-1 transition-all ${
+                focusCondition === 'rushed'
+                  ? 'bg-red-100 dark:bg-red-950/60 border-red-500 text-red-600 dark:text-red-300 animate-pulse'
+                  : 'border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+            >
+              <span>⚡</span> Rushed / Surge
+            </button>
+          </div>
+        </div>
+
+        {/* Focus coordinates & Target button */}
+        <div className="flex items-center justify-between pt-1 border-t border-slate-200 dark:border-slate-800 text-[9px]">
+          <span style={{ color: 'var(--color-muted)' }}>
+            {focusPoint ? `Target: (${Math.round(focusPoint.x)}, ${Math.round(focusPoint.y)})` : 'No point set'}
+          </span>
+          <button
+            onClick={onSelectFocusTool}
+            className="text-purple-600 dark:text-purple-400 font-bold hover:underline"
+          >
+            📍 Place Target on Canvas
+          </button>
+        </div>
+      </div>
+
       {/* ── Emergency Trigger ─────────────────────────────────────────── */}
       <button
         id="planner-btn-emergency"
         onClick={onTriggerEmergency}
         disabled={!isActive}
-        className={`w-full py-3 rounded-xl font-extrabold text-sm tracking-wider transition-all touch-target ${
+        className={`w-full py-2.5 rounded-xl font-extrabold text-xs tracking-wider transition-all touch-target ${
           isEmergency
             ? 'bg-red-700 text-white animate-panic border-2 border-red-400 shadow-lg'
             : isActive

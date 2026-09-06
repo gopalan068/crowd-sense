@@ -21,6 +21,7 @@ import {
   DEFAULT_SFM_PARAMS,
   spawnAgent,
   triggerEmergency as sfmTriggerEmergency,
+  setFocusTarget,
   step as sfmStep,
   extractWallSegments,
   convertExitsToMeters,
@@ -44,6 +45,7 @@ const TOOLS = {
   WALL:  'WALL',
   EXIT:  'EXIT',
   SPAWN: 'SPAWN',
+  FOCUS: 'FOCUS',
   SCALE: 'SCALE',
   SELECT:'SELECT',
 }
@@ -256,6 +258,11 @@ export default function PlannerPage({ backendUrl = '' }) {
   const [maxDensity, setMaxDensity]     = useState(0)
   const [fps, setFps]                   = useState(0)
 
+  // ── Focus mode state ─────────────────────────────────────────────────────
+  const [focusPoint, setFocusPoint]             = useState({ x: 355, y: 195 })
+  const [isFocusMode, setIsFocusMode]           = useState(false)
+  const [focusCondition, setFocusCondition]     = useState('normal') // 'normal' | 'rushed'
+
   // ── Sim params ───────────────────────────────────────────────────────────
   const [spawnRate, setSpawnRate]       = useState(5)
   const [maxAgents, setMaxAgents]       = useState(800)
@@ -273,6 +280,9 @@ export default function PlannerPage({ backendUrl = '' }) {
   const layoutRef        = useRef(null)
   const simModeRef       = useRef('edit')
   const isEmergencyRef   = useRef(false)
+  const focusPointRef    = useRef({ x: 355, y: 195 })
+  const isFocusModeRef   = useRef(false)
+  const focusConditionRef = useRef('normal')
   const spawnRateRef     = useRef(5)
   const maxAgentsRef     = useRef(800)
   const heatmapOpacityRef = useRef(0.45)
@@ -284,6 +294,9 @@ export default function PlannerPage({ backendUrl = '' }) {
   // Keep refs in sync with state
   useEffect(() => { simModeRef.current = simMode }, [simMode])
   useEffect(() => { isEmergencyRef.current = isEmergency }, [isEmergency])
+  useEffect(() => { focusPointRef.current = focusPoint }, [focusPoint])
+  useEffect(() => { isFocusModeRef.current = isFocusMode }, [isFocusMode])
+  useEffect(() => { focusConditionRef.current = focusCondition }, [focusCondition])
   useEffect(() => { spawnRateRef.current = spawnRate }, [spawnRate])
   useEffect(() => { maxAgentsRef.current = maxAgents }, [maxAgents])
   useEffect(() => { heatmapOpacityRef.current = heatmapOpacity }, [heatmapOpacity])
@@ -470,12 +483,86 @@ export default function PlannerPage({ backendUrl = '' }) {
       ctx.fillText(sp.name || sp.id, sp.x + 12, sp.y + 3)
     }
 
+    // ── Focus Point Target & Radar Rings ──────────────────────────────────
+    if (focusPoint) {
+      const fx = focusPoint.x
+      const fy = focusPoint.y
+      const isActive = isFocusModeRef.current
+      const isRushed = isActive && focusConditionRef.current === 'rushed'
+      const themeColor = isActive ? (isRushed ? '#ef4444' : '#a855f7') : '#94a3b8'
+
+      // Pulsing concentric radar rings when active
+      if (isActive) {
+        const pulse = (Date.now() % 1600) / 1600
+        const pulseRadius1 = 10 + pulse * 32
+        const pulseAlpha1 = Math.max(0, 1 - pulse)
+        const pulse2 = ((Date.now() + 800) % 1600) / 1600
+        const pulseRadius2 = 10 + pulse2 * 32
+        const pulseAlpha2 = Math.max(0, 1 - pulse2)
+
+        ctx.save()
+        ctx.strokeStyle = themeColor
+        ctx.lineWidth = 1.8
+
+        ctx.globalAlpha = pulseAlpha1 * 0.7
+        ctx.beginPath(); ctx.arc(fx, fy, pulseRadius1, 0, Math.PI * 2); ctx.stroke()
+
+        ctx.globalAlpha = pulseAlpha2 * 0.7
+        ctx.beginPath(); ctx.arc(fx, fy, pulseRadius2, 0, Math.PI * 2); ctx.stroke()
+        ctx.restore()
+      }
+
+      // Outer bullseye ring
+      ctx.save()
+      ctx.strokeStyle = themeColor
+      ctx.lineWidth = 2
+      ctx.beginPath()
+      ctx.arc(fx, fy, 11, 0, Math.PI * 2)
+      ctx.stroke()
+
+      // Target core
+      ctx.fillStyle = themeColor
+      ctx.beginPath()
+      ctx.arc(fx, fy, 6, 0, Math.PI * 2)
+      ctx.fill()
+
+      ctx.fillStyle = '#ffffff'
+      ctx.beginPath()
+      ctx.arc(fx, fy, 2.5, 0, Math.PI * 2)
+      ctx.fill()
+
+      // Crosshairs
+      ctx.strokeStyle = themeColor
+      ctx.lineWidth = 1.5
+      ctx.beginPath()
+      ctx.moveTo(fx - 15, fy); ctx.lineTo(fx - 8, fy)
+      ctx.moveTo(fx + 8, fy); ctx.lineTo(fx + 15, fy)
+      ctx.moveTo(fx, fy - 15); ctx.lineTo(fx, fy - 8)
+      ctx.moveTo(fx, fy + 8); ctx.lineTo(fx, fy + 15)
+      ctx.stroke()
+
+      // Badge Label
+      ctx.fillStyle = themeColor
+      ctx.font = 'bold 9px ui-monospace, monospace'
+      ctx.textAlign = 'center'
+      const labelText = isActive
+        ? (isRushed ? '⚡ RUSHED FOCUS' : '🎯 FOCUS POINT')
+        : '📍 FOCUS (OFF)'
+      ctx.fillText(labelText, fx, fy - 14)
+      ctx.textAlign = 'left'
+      ctx.restore()
+    }
+
     // ── Agents ────────────────────────────────────────────────────────────
     for (const agent of agentsRef.current) {
       if (agent.reachedExit) continue
       const px = agent.pos.x * pxM
       const py = agent.pos.y * pxM
-      ctx.fillStyle = agent.isPanic ? DRAW_COLORS.agentPanic : DRAW_COLORS.agent
+      ctx.fillStyle = agent.isPanic
+        ? DRAW_COLORS.agentPanic
+        : agent.isFocus
+        ? '#c084fc'
+        : DRAW_COLORS.agent
       ctx.beginPath()
       ctx.arc(px, py, Math.max(2.5, pxM * 0.22), 0, Math.PI * 2)
       ctx.fill()
@@ -513,6 +600,19 @@ export default function PlannerPage({ backendUrl = '' }) {
       ctx.setLineDash([])
     }
 
+    if (drawTool === TOOLS.FOCUS && hovered) {
+      ctx.save()
+      ctx.strokeStyle = '#a855f7'
+      ctx.lineWidth = 1.5
+      ctx.setLineDash([3, 3])
+      ctx.beginPath(); ctx.arc(mousePos.x, mousePos.y, 14, 0, Math.PI * 2); ctx.stroke()
+      ctx.fillStyle = '#a855f7'
+      ctx.font = 'bold 9px ui-monospace, monospace'
+      ctx.textAlign = 'center'
+      ctx.fillText('CLICK TO SET FOCUS', mousePos.x, mousePos.y - 18)
+      ctx.restore()
+    }
+
     if (drawTool === TOOLS.SCALE && scalePoints.length > 0) {
       ctx.strokeStyle = DRAW_COLORS.scale
       ctx.lineWidth = 2
@@ -527,7 +627,7 @@ export default function PlannerPage({ backendUrl = '' }) {
         ctx.beginPath(); ctx.arc(pt.x, pt.y, 5, 0, Math.PI * 2); ctx.fill()
       }
     }
-  }, [currentPoly, exitLine, scalePoints, mousePos, hovered, drawTool])
+  }, [currentPoly, exitLine, scalePoints, mousePos, hovered, drawTool, focusPoint])
 
   // ── Simulation animation loop ─────────────────────────────────────────────
   const runSimLoop = useCallback(() => {
@@ -646,8 +746,19 @@ export default function PlannerPage({ backendUrl = '' }) {
   }
 
   const handleCanvasClick = (e) => {
-    if (simMode !== 'edit') return
     const pos = getCanvasPos(e)
+
+    if (drawTool === TOOLS.FOCUS) {
+      setFocusPoint(pos)
+      setIsFocusMode(true)
+      const pxM = layout?.scale?.px_per_meter || 25
+      if (agentsRef.current.length > 0) {
+        setFocusTarget(agentsRef.current, { x: pos.x / pxM, y: pos.y / pxM }, focusCondition)
+      }
+      return
+    }
+
+    if (simMode !== 'edit') return
 
     if (drawTool === TOOLS.WALL) {
       // Close polygon if clicking near first point
@@ -688,6 +799,43 @@ export default function PlannerPage({ backendUrl = '' }) {
         setScalePoints(updated)
         if (updated.length === 2) setShowScaleDialog(true)
       }
+    }
+  }
+
+  const toggleFocusMode = (active) => {
+    const newActive = typeof active === 'boolean' ? active : !isFocusMode
+    setIsFocusMode(newActive)
+    const lay = layoutRef.current
+    if (newActive && focusPointRef.current && lay?.scale?.px_per_meter) {
+      const pxM = lay.scale.px_per_meter
+      setFocusTarget(
+        agentsRef.current,
+        { x: focusPointRef.current.x / pxM, y: focusPointRef.current.y / pxM },
+        focusConditionRef.current
+      )
+    } else if (!newActive && lay) {
+      const pxM = lay.scale?.px_per_meter || 25
+      const exits_m = convertExitsToMeters(lay.exits, pxM)
+      for (const a of agentsRef.current) {
+        a.isFocus = false
+        a.isPanic = false
+        a.desiredSpeed = DEFAULT_SFM_PARAMS.desiredSpeed * (0.85 + Math.random() * 0.3)
+        if (exits_m.length > 0) {
+          a.goal = { ...exits_m[Math.floor(Math.random() * exits_m.length)].center_m }
+        }
+      }
+    }
+  }
+
+  const handleFocusConditionChange = (cond) => {
+    setFocusCondition(cond)
+    if (isFocusMode && focusPointRef.current && layoutRef.current?.scale?.px_per_meter) {
+      const pxM = layoutRef.current.scale.px_per_meter
+      setFocusTarget(
+        agentsRef.current,
+        { x: focusPointRef.current.x / pxM, y: focusPointRef.current.y / pxM },
+        cond
+      )
     }
   }
 
@@ -890,6 +1038,7 @@ export default function PlannerPage({ backendUrl = '' }) {
     { id: TOOLS.WALL,   label: '⬛ WALL',   tip: 'Click to place polygon points; double-click or click near start to close' },
     { id: TOOLS.EXIT,   label: '🚪 EXIT',   tip: 'Click point A then point B to draw an exit line' },
     { id: TOOLS.SPAWN,  label: '📍 SPAWN',  tip: 'Click to place an agent spawn / entry point' },
+    { id: TOOLS.FOCUS,  label: '🎯 FOCUS',  tip: 'Click canvas to set crowd attraction / focus point target' },
     { id: TOOLS.SCALE,  label: '📏 SCALE',  tip: 'Click two points then enter real-world distance to set px/m scale' },
   ]
 
@@ -1160,6 +1309,17 @@ export default function PlannerPage({ backendUrl = '' }) {
             onPause={handlePause}
             onReset={handleReset}
             onTriggerEmergency={handleTriggerEmergency}
+            focusPoint={focusPoint}
+            isFocusMode={isFocusMode}
+            onToggleFocusMode={toggleFocusMode}
+            focusCondition={focusCondition}
+            onFocusConditionChange={handleFocusConditionChange}
+            onSelectFocusTool={() => {
+              setDrawTool(TOOLS.FOCUS)
+              setCurrentPoly([])
+              setExitLine(null)
+              setScalePoints([])
+            }}
             spawnRate={spawnRate}
             onSpawnRateChange={setSpawnRate}
             maxAgents={maxAgents}

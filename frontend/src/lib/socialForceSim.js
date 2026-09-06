@@ -18,6 +18,7 @@
 export const DEFAULT_SFM_PARAMS = {
   desiredSpeed: 1.3,            // m/s — typical comfortable walking speed
   panicSpeedMultiplier: 2.0,    // ×desiredSpeed when isPanic = true
+  rushedMultiplier: 2.0,        // ×desiredSpeed when rushed focus mode is active
   relaxationTime: 0.5,          // s — τ in Helbing eq. (how fast agent reaches v0)
   agentRepulsionA: 2000,        // N — social repulsion magnitude (paper: A_ij)
   agentRepulsionB: 0.3,         // m — social repulsion range   (paper: B_ij, paper=0.08 — wider here for visual clarity)
@@ -58,9 +59,10 @@ function dist(a, b) {
 export function closestPointOnSegment(p, segA, segB) {
   const dx = segB.x - segA.x
   const dy = segB.y - segA.y
-  const lenSq = dx * dx + dy * dy
-  if (lenSq < 1e-12) return { x: segA.x, y: segA.y }
-  const t = Math.max(0, Math.min(1, ((p.x - segA.x) * dx + (p.y - segA.y) * dy) / lenSq))
+  const len2 = dx * dx + dy * dy
+  if (len2 < 1e-8) return { x: segA.x, y: segA.y }
+
+  const t = Math.max(0, Math.min(1, ((p.x - segA.x) * dx + (p.y - segA.y) * dy) / len2))
   return { x: segA.x + t * dx, y: segA.y + t * dy }
 }
 
@@ -68,34 +70,38 @@ export function closestPointOnSegment(p, segA, segB) {
  * Distance from point p to segment [segA, segB].
  */
 export function distToSegment(p, segA, segB) {
-  const closest = closestPointOnSegment(p, segA, segB)
-  return dist(p, closest)
+  const cp = closestPointOnSegment(p, segA, segB)
+  return dist(p, cp)
 }
 
+// ─── Coordinate conversions ──────────────────────────────────────────────────
+
 /**
- * Extract all wall edges (as [ptA, ptB] pairs) from a walls array.
- * walls: Array of { points: [{x,y},...], closed: bool }
- * Returns array of [ptA_m, ptB_m] pairs where coordinates are in meters.
+ * Convert pixel wall polylines into an array of meter segments [[ptA, ptB], ...].
  */
 export function extractWallSegments(walls, pxPerMeter) {
   const segments = []
   for (const wall of walls) {
-    const pts = wall.points.map(p => ({ x: p.x / pxPerMeter, y: p.y / pxPerMeter }))
-    for (let i = 0; i < pts.length - 1; i++) {
-      segments.push([pts[i], pts[i + 1]])
-    }
-    if (wall.closed && pts.length > 2) {
-      segments.push([pts[pts.length - 1], pts[0]])
+    const pts = wall.points
+    if (!pts || pts.length < 2) continue
+    const count = wall.closed ? pts.length : pts.length - 1
+    for (let i = 0; i < count; i++) {
+      const a = pts[i]
+      const b = pts[(i + 1) % pts.length]
+      segments.push([
+        { x: a.x / pxPerMeter, y: a.y / pxPerMeter },
+        { x: b.x / pxPerMeter, y: b.y / pxPerMeter },
+      ])
     }
   }
   return segments
 }
 
 /**
- * Convert exit pixel coords to meter coords, including midpoint.
+ * Convert exit pixel coords to meter coords.
  */
 export function convertExitsToMeters(exits, pxPerMeter) {
-  return exits.map(e => ({
+  return (exits || []).map(e => ({
     ...e,
     a_m: { x: e.a.x / pxPerMeter, y: e.a.y / pxPerMeter },
     b_m: { x: e.b.x / pxPerMeter, y: e.b.y / pxPerMeter },
@@ -110,7 +116,7 @@ export function convertExitsToMeters(exits, pxPerMeter) {
  * Convert spawn pixel coords to meter coords.
  */
 export function convertSpawnsToMeters(spawns, pxPerMeter) {
-  return spawns.map(s => ({
+  return (spawns || []).map(s => ({
     ...s,
     x_m: s.x / pxPerMeter,
     y_m: s.y / pxPerMeter,
@@ -122,16 +128,27 @@ export function convertSpawnsToMeters(spawns, pxPerMeter) {
 let _agentIdCounter = 0
 
 /**
- * Create a new agent at a spawn point heading toward a goal exit.
+ * Create a new agent at a spawn point heading toward a goal exit or focus target.
  *
  * @param {object} spawnPoint_m — { x_m, y_m } in meters
- * @param {object} goalExit_m   — { center_m: {x,y} } in meters
+ * @param {object} goalExit_m   — { center_m: {x,y} } in meters (optional if focus mode)
  * @param {object} params       — SFM param object (uses desiredSpeed)
+ * @param {object} focusOptions — { active: boolean, target_m: {x,y}, condition: 'normal'|'rushed' }
  * @returns {object} agent
  */
-export function spawnAgent(spawnPoint_m, goalExit_m, params = DEFAULT_SFM_PARAMS) {
-  // Small random jitter so agents don't all stack at exact same point
+export function spawnAgent(spawnPoint_m, goalExit_m, params = DEFAULT_SFM_PARAMS, focusOptions = null) {
   const jitter = 0.6 // m
+  const isFocus = focusOptions && focusOptions.active && focusOptions.target_m
+  const isRushed = isFocus && focusOptions.condition === 'rushed'
+
+  const desiredSpeed = isRushed
+    ? params.desiredSpeed * (params.rushedMultiplier || 2.0)
+    : params.desiredSpeed * (0.85 + Math.random() * 0.3)
+
+  const goal = isFocus
+    ? { x: focusOptions.target_m.x, y: focusOptions.target_m.y }
+    : (goalExit_m?.center_m ? { ...goalExit_m.center_m } : { x: spawnPoint_m.x_m, y: spawnPoint_m.y_m })
+
   return {
     id: ++_agentIdCounter,
     pos: {
@@ -139,10 +156,10 @@ export function spawnAgent(spawnPoint_m, goalExit_m, params = DEFAULT_SFM_PARAMS
       y: spawnPoint_m.y_m + (Math.random() - 0.5) * jitter,
     },
     vel: { x: 0, y: 0 },
-    // Slight speed variation across agents (±15%)
-    desiredSpeed: params.desiredSpeed * (0.85 + Math.random() * 0.3),
-    goal: { ...goalExit_m.center_m },
-    isPanic: false,
+    desiredSpeed,
+    goal,
+    isPanic: isRushed,
+    isFocus: !!isFocus,
     reachedExit: false,
     spawnId: spawnPoint_m.id,
   }
@@ -150,20 +167,15 @@ export function spawnAgent(spawnPoint_m, goalExit_m, params = DEFAULT_SFM_PARAMS
 
 /**
  * Switch all active agents to panic mode: highest-priority nearest-exit goal.
- * Uses straight-line distance to exit center — reactive local avoidance (SFM
- * wall forces) handles deflection around obstacles. No pathfinding.
- *
- * @param {Array}  agents      — live agent array (mutated in-place)
- * @param {Array}  exits_m     — exits with center_m in meters
- * @param {object} params      — SFM params (for panic speed multiplier)
  */
 export function triggerEmergency(agents, exits_m, params = DEFAULT_SFM_PARAMS) {
+  if (!exits_m || exits_m.length === 0) return
   for (const agent of agents) {
     if (agent.reachedExit) continue
     agent.isPanic = true
+    agent.isFocus = false
     agent.desiredSpeed = params.desiredSpeed * params.panicSpeedMultiplier
 
-    // Find nearest exit by straight-line distance — NO pathfinding
     let nearestExit = exits_m[0]
     let minDist = Infinity
     for (const exit of exits_m) {
@@ -177,26 +189,30 @@ export function triggerEmergency(agents, exits_m, params = DEFAULT_SFM_PARAMS) {
   }
 }
 
+/**
+ * Switch all active agents to focus on a designated point of interest.
+ *
+ * @param {Array}  agents        — live agent array
+ * @param {object} focusPoint_m  — { x: number, y: number } in meters
+ * @param {string} condition     — 'normal' | 'rushed'
+ * @param {object} params        — SFM params
+ */
+export function setFocusTarget(agents, focusPoint_m, condition = 'normal', params = DEFAULT_SFM_PARAMS) {
+  if (!focusPoint_m) return
+  const isRushed = condition === 'rushed'
+  for (const agent of agents) {
+    if (agent.reachedExit) continue
+    agent.isFocus = true
+    agent.isPanic = isRushed
+    agent.desiredSpeed = isRushed
+      ? params.desiredSpeed * (params.rushedMultiplier || 2.0)
+      : params.desiredSpeed * (0.85 + Math.random() * 0.3)
+    agent.goal = { x: focusPoint_m.x, y: focusPoint_m.y }
+  }
+}
+
 // ─── Core simulation step ────────────────────────────────────────────────────
 
-/**
- * Advance the simulation by one timestep dt (seconds).
- *
- * Implements the standard Social Force Model:
- *   F_i = f_drive + Σ f_agent_repulsion + Σ f_wall_repulsion
- *   a_i = F_i / mass
- *   v_i += a_i · dt  (Euler integration)
- *   x_i += v_i · dt
- *
- * Agents that reach an exit segment are marked reachedExit=true.
- * The caller should filter them out after this call.
- *
- * @param {Array}  agents       — array of agent objects (mutated in-place)
- * @param {Array}  wallSegs     — [[ptA_m, ptB_m], ...] wall segments in meters
- * @param {Array}  exits_m      — exits with a_m, b_m in meters
- * @param {number} dt           — timestep in seconds (keep ≤ 0.033 for stability)
- * @param {object} params       — SFM params (default: DEFAULT_SFM_PARAMS)
- */
 export function step(agents, wallSegs, exits_m, dt, params = DEFAULT_SFM_PARAMS) {
   const {
     relaxationTime,
@@ -214,19 +230,20 @@ export function step(agents, wallSegs, exits_m, dt, params = DEFAULT_SFM_PARAMS)
     exitReachRadius,
   } = params
 
-  // Pre-divide by mass for acceleration (avoid per-force division)
-  const agentA = agentRepulsionA / agentMass   // m/s²
-  const wallA  = wallRepulsionA  / agentMass   // m/s²
+  const agentA = agentRepulsionA / agentMass
+  const wallA  = wallRepulsionA  / agentMass
 
   for (let i = 0; i < agents.length; i++) {
     const agent = agents[i]
     if (agent.reachedExit) continue
 
-    // ── Exit detection ────────────────────────────────────────────────────
-    for (const exit of exits_m) {
-      if (distToSegment(agent.pos, exit.a_m, exit.b_m) < exitReachRadius) {
-        agent.reachedExit = true
-        break
+    // ── Exit detection (only if agent is not in focus mode or explicitly at an exit) ──
+    if (exits_m && exits_m.length > 0 && !agent.isFocus) {
+      for (const exit of exits_m) {
+        if (distToSegment(agent.pos, exit.a_m, exit.b_m) < exitReachRadius) {
+          agent.reachedExit = true
+          break
+        }
       }
     }
     if (agent.reachedExit) continue
@@ -239,7 +256,12 @@ export function step(agents, wallSegs, exits_m, dt, params = DEFAULT_SFM_PARAMS)
     const ex = gDist > 0.001 ? gx / gDist : 0
     const ey = gDist > 0.001 ? gy / gDist : 0
 
-    const vDesired = agent.desiredSpeed
+    // When near a focus point, decelerate smoothly to cluster without jitter
+    let vDesired = agent.desiredSpeed
+    if (agent.isFocus && gDist < 2.5) {
+      vDesired = Math.max(0.15, agent.desiredSpeed * (gDist / 2.5))
+    }
+
     // a_drive = (v0·e - v) / τ
     let fx = (vDesired * ex - agent.vel.x) / relaxationTime
     let fy = (vDesired * ey - agent.vel.y) / relaxationTime
