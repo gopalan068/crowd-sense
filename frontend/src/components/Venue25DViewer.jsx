@@ -11,11 +11,10 @@
  * - Tight, balanced baseplane pedestal with exact 2-grid-square margin
  * - Embedded 3D simulation controls toolbar (Play, Pause, Reset, Emergency)
  */
-import React, { useEffect, useRef, useState, useCallback } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
-import { getDensityBand } from '../lib/fruinDensity.js'
 
 /**
  * Deterministic pseudo-random number generator for consistent rooftop details
@@ -146,9 +145,6 @@ export default function Venue25DViewer({
   const mouseVecRef = useRef(new THREE.Vector2())
   const onToggleEmergencyGateRef = useRef(onToggleEmergencyGate)
 
-  const [structureCount, setStructureCount] = useState(0)
-  const [gateStats, setGateStats] = useState({ open: 0, closed: 0 })
-  const [activeCameraPreset, setActiveCameraPreset] = useState('isometric')
   const [sceneReady, setSceneReady] = useState(0)
 
   useEffect(() => {
@@ -185,8 +181,12 @@ export default function Venue25DViewer({
     camera.position.set(0, 700, 840)
     cameraRef.current = camera
 
-    // 3. Renderer
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false })
+    // 3. Renderer with preserved drawing buffer for instant PNG image export
+    const renderer = new THREE.WebGLRenderer({
+      antialias: true,
+      alpha: false,
+      preserveDrawingBuffer: true,
+    })
     renderer.setSize(containerW, containerH)
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     renderer.shadowMap.enabled = true
@@ -391,19 +391,34 @@ export default function Venue25DViewer({
     }
     animate()
 
-    // 8. Resize Handler
+    // 8. Trigger 3D Layout Geometry Generation
+    setSceneReady(prev => prev + 1)
+
+    // 9. Resize Handler & ResizeObserver for dynamic tab switching
     const handleResize = () => {
       if (!mountRef.current || !rendererRef.current || !cameraRef.current) return
       const nw = mountRef.current.clientWidth || width
       const nh = Math.min(window.innerHeight * 0.78, height)
-      cameraRef.current.aspect = nw / nh
-      cameraRef.current.updateProjectionMatrix()
-      rendererRef.current.setSize(nw, nh)
+      if (nw > 0 && nh > 0) {
+        cameraRef.current.aspect = nw / nh
+        cameraRef.current.updateProjectionMatrix()
+        rendererRef.current.setSize(nw, nh)
+      }
     }
     window.addEventListener('resize', handleResize)
 
+    let ro = null
+    try {
+      ro = new ResizeObserver(() => handleResize())
+      ro.observe(mount)
+    } catch { /* ignore */ }
+
+    // Initial size sync after layout mount
+    requestAnimationFrame(() => handleResize())
+
     return () => {
       cancelAnimationFrame(animId)
+      if (ro) ro.disconnect()
       window.removeEventListener('resize', handleResize)
       dom.removeEventListener('pointerdown', handlePointerDown)
       dom.removeEventListener('pointerup', handlePointerUp)
@@ -608,10 +623,6 @@ export default function Venue25DViewer({
       new THREE.LineBasicMaterial({ color: 0x334155, transparent: true, opacity: 0.45 })
     )
     dynamicGroup.add(exteriorHatchLines)
-
-    let builtCount = 0
-    let openGates = 0
-    let closedGates = 0
 
     // ── Reusable Materials for Rooftop Elements ─────────────────────────────
     const hvacMat = new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.5, metalness: 0.3 })
@@ -1001,10 +1012,7 @@ export default function Venue25DViewer({
       }
 
       dynamicGroup.add(mesh)
-      builtCount++
     }
-
-    setStructureCount(builtCount)
 
     // ── 2. Barricades (Low 3D Crowd Barriers) ──────────────────────────────
     const barricadeMat = new THREE.MeshStandardMaterial({
@@ -1061,9 +1069,6 @@ export default function Venue25DViewer({
       if (len < 1) continue
 
       const isOpen = Boolean(gate.isOpen)
-      if (isOpen) openGates++
-      else closedGates++
-
       const gateMat = isOpen ? openGateMat : closedGateMat
       const angle = Math.atan2(dz, dx)
 
@@ -1145,7 +1150,6 @@ export default function Venue25DViewer({
     }
 
     interactiveGateMeshesRef.current = interactiveGates
-    setGateStats({ open: openGates, closed: closedGates })
 
     // ── 4. Exits (3D Ground Portals) ────────────────────────────────────────
     const exitMat = new THREE.MeshStandardMaterial({
@@ -1201,299 +1205,16 @@ export default function Venue25DViewer({
     }
   }, [layout, focusPoint, isFocusMode, sceneReady])
 
-  // ─── Camera Presets Handler ──────────────────────────────────────────────
-  const setCameraPreset = useCallback((preset) => {
-    setActiveCameraPreset(preset)
-    if (!cameraRef.current || !controlsRef.current) return
-    const camera = cameraRef.current
-    const controls = controlsRef.current
-
-    if (preset === 'isometric') {
-      camera.position.set(0, 700, 840)
-      controls.target.set(0, 0, 0)
-    } else if (preset === 'topdown') {
-      camera.position.set(0, 960, 30)
-      controls.target.set(0, 0, 0)
-    } else if (preset === 'north') {
-      camera.position.set(-260, 420, -320)
-      controls.target.set(0, 0, -180)
-    } else if (preset === 'south') {
-      camera.position.set(240, 380, 280)
-      controls.target.set(0, 0, 160)
-    }
-    controls.update()
-  }, [])
-
-  const densityBand = getDensityBand(maxDensityPpm2 || 0)
-
   return (
-    <div className="flex flex-col items-center justify-center p-2 bg-slate-950/90 rounded-xl border border-slate-800 shadow-2xl">
-      {/* ── 3D Toolbar Header with Live Simulation Controls & Stats ────── */}
-      <div className="w-full flex flex-wrap items-center justify-between gap-2 px-3 py-2 border-b border-slate-800/80 mb-2 text-xs">
-        <div className="flex items-center gap-2">
-          <span className="font-bold text-slate-200 flex items-center gap-1.5">
-            <span>🏛️</span>
-            <span>3D Venue Visualizer</span>
-          </span>
-          <span className="px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 font-mono text-[10px]">
-            Three.js WebGL + SFM Sim
-          </span>
-        </div>
-
-        {/* Live Simulation Controls & Metrics */}
-        <div className="flex items-center gap-2 bg-slate-900/90 px-3 py-1 rounded-lg border border-slate-800">
-          <div className="flex items-center gap-1.5 font-mono text-[11px]">
-            <span
-              className={`w-2.5 h-2.5 rounded-full ${simMode === 'running' ? 'pulse-dot bg-emerald-400' : simMode === 'paused' ? 'bg-amber-400' : 'bg-slate-500'}`}
-            />
-            <span className="font-bold text-slate-200 uppercase">{simMode}</span>
-            <span className="text-slate-400">·</span>
-            <span className="font-bold text-sky-400">🚶 {agentCount}</span>
-            <span className="text-slate-500 text-[10px]">agents</span>
-            <span className="text-slate-400">·</span>
-            <span className="text-slate-300 font-mono text-[10px]">{simTimeSec.toFixed(1)}s</span>
-
-            {maxDensityPpm2 > 0 && (
-              <>
-                <span className="text-slate-400">·</span>
-                <span
-                  className="px-1.5 py-0.5 rounded font-mono text-[10px] font-bold"
-                  style={{
-                    backgroundColor: densityBand.rgba ? `${densityBand.rgba.slice(0, -5)}, 0.2)` : 'rgba(16,185,129,0.2)',
-                    color: densityBand.cssVar ? densityBand.cssVar : '#10b981',
-                  }}
-                  title={`Max local crowd density: ${maxDensityPpm2.toFixed(2)} ped/m² (${densityBand.label})`}
-                >
-                  {maxDensityPpm2.toFixed(1)} p/m² · {densityBand.shortLabel}
-                </span>
-              </>
-            )}
-
-            {fps > 0 && (
-              <>
-                <span className="text-slate-400">·</span>
-                <span className="text-slate-400 font-mono text-[10px]">{fps} FPS</span>
-              </>
-            )}
-          </div>
-
-          {/* Direct Simulation Action Buttons */}
-          <div className="flex items-center gap-1 ml-2 border-l border-slate-800 pl-2">
-            {simMode !== 'running' ? (
-              <button
-                onClick={onStart}
-                className="px-2 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] transition flex items-center gap-1 shadow-sm"
-                title="Start 3D SFM Simulation"
-              >
-                <span>▶</span>
-                <span>Run</span>
-              </button>
-            ) : (
-              <button
-                onClick={onPause}
-                className="px-2 py-0.5 rounded bg-amber-600 hover:bg-amber-500 text-white font-bold text-[10px] transition flex items-center gap-1 shadow-sm"
-                title="Pause Simulation"
-              >
-                <span>⏸</span>
-                <span>Pause</span>
-              </button>
-            )}
-
-            <button
-              onClick={onReset}
-              className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 font-bold text-[10px] transition"
-              title="Reset Simulation"
-            >
-              <span>↺</span>
-            </button>
-
-            {onTriggerEmergency && (
-              <button
-                onClick={onTriggerEmergency}
-                disabled={simMode !== 'running'}
-                className={`px-2 py-0.5 rounded font-bold text-[10px] transition flex items-center gap-1 ${
-                  isEmergency
-                    ? 'bg-red-600 text-white animate-pulse'
-                    : 'bg-red-500/20 text-red-300 hover:bg-red-500/30 border border-red-500/40 disabled:opacity-40'
-                }`}
-                title="Trigger Immediate Panic Evacuation"
-              >
-                <span>🚨</span>
-                <span>{isEmergency ? 'ACTIVE' : 'Evac'}</span>
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Camera Preset Quick Buttons & Reset */}
-        <div className="flex items-center gap-1.5">
-          <div className="flex items-center gap-1 bg-slate-900/80 p-0.5 rounded-lg border border-slate-800">
-            <button
-              onClick={() => setCameraPreset('isometric')}
-              className={`px-2 py-0.5 rounded text-[10px] font-medium transition ${
-                activeCameraPreset === 'isometric'
-                  ? 'bg-indigo-600 text-white font-bold shadow'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-              title="3D Oblique Isometric View"
-            >
-              🏛️ 3D Iso
-            </button>
-            <button
-              onClick={() => setCameraPreset('topdown')}
-              className={`px-2 py-0.5 rounded text-[10px] font-medium transition ${
-                activeCameraPreset === 'topdown'
-                  ? 'bg-indigo-600 text-white font-bold shadow'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-              title="Overhead 2.5D Architectural Plan View"
-            >
-              🦅 Top-Down
-            </button>
-            <button
-              onClick={() => setCameraPreset('north')}
-              className={`px-2 py-0.5 rounded text-[10px] font-medium transition ${
-                activeCameraPreset === 'north'
-                  ? 'bg-indigo-600 text-white font-bold shadow'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-              title="Focus on North Gopuram Entrance"
-            >
-              🚪 North
-            </button>
-            <button
-              onClick={() => setCameraPreset('south')}
-              className={`px-2 py-0.5 rounded text-[10px] font-medium transition ${
-                activeCameraPreset === 'south'
-                  ? 'bg-indigo-600 text-white font-bold shadow'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-              title="Focus on South Emergency Gates"
-            >
-              🚨 South
-            </button>
-          </div>
-
-          {onResetToDemo && (
-            <button
-              onClick={onResetToDemo}
-              className="px-2 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 transition flex items-center gap-1 font-medium text-[10px]"
-              title="Reset venue to clean 100% solid standalone layout"
-            >
-              <span>🔄</span>
-              <span>Clean Layout</span>
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* ── Emergency Gates Interactive Status Bar ─────────────────────── */}
-      {(layout?.openings?.length || 0) > 0 && (
-        <div className="w-full flex flex-wrap items-center justify-between gap-2 px-3 py-1.5 bg-slate-900/60 rounded-lg border border-slate-800/80 mb-2 text-xs">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-bold text-slate-300 text-[11px] flex items-center gap-1">
-              <span>🚨</span>
-              <span>Emergency Gates:</span>
-            </span>
-            {layout.openings.map((gate) => (
-              <button
-                key={gate.id}
-                onClick={() => onToggleEmergencyGate && onToggleEmergencyGate(gate.id)}
-                className={`px-2 py-0.5 rounded-full text-[10px] font-bold border transition flex items-center gap-1 shadow-sm ${
-                  gate.isOpen
-                    ? 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border-emerald-500/40'
-                    : 'bg-red-500/20 hover:bg-red-500/30 text-red-300 border-red-500/40'
-                }`}
-                title="Click to toggle gate open/closed in real-time"
-              >
-                <span>{gate.isOpen ? '🟢 🔓' : '🔴 🔒'}</span>
-                <span>{gate.name || 'Gate'}</span>
-                <span className="font-mono text-[9px] uppercase">
-                  {gate.isOpen ? 'OPEN' : 'CLOSED'}
-                </span>
-              </button>
-            ))}
-          </div>
-
-          <div className="flex items-center gap-1.5">
-            {onOpenAllOpenings && (
-              <button
-                onClick={onOpenAllOpenings}
-                className="px-2 py-0.5 rounded bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-200 border border-emerald-500/40 text-[10px] font-bold transition"
-                title="Open all emergency gates simultaneously"
-              >
-                🔓 Open All
-              </button>
-            )}
-            {onCloseAllOpenings && (
-              <button
-                onClick={onCloseAllOpenings}
-                className="px-2 py-0.5 rounded bg-red-600/30 hover:bg-red-600/50 text-red-200 border border-red-500/40 text-[10px] font-bold transition"
-                title="Close all emergency gates simultaneously"
-              >
-                🔒 Close All
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* ── Three.js Canvas Container ─────────────────────────────────── */}
-      <div
-        ref={mountRef}
-        className="w-full relative rounded-lg overflow-hidden border border-slate-800 cursor-grab active:cursor-grabbing"
-        style={{
-          minHeight: '600px',
-          maxHeight: '76vh',
-          background: '#0a0f1d',
-        }}
-      />
-
-      {/* ── Legend & Navigation Tips Footer ───────────────────────────── */}
-      <div className="w-full flex flex-wrap items-center justify-between gap-2 px-3 py-2 mt-2 text-[11px] text-slate-400 border-t border-slate-800/80">
-        <div className="flex items-center gap-3.5 flex-wrap">
-          <span className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-sky-400 inline-block shadow-sm"></span>
-            <span>Pedestrians (Normal)</span>
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block shadow-sm"></span>
-            <span>Panicked / High Speed</span>
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block shadow-sm"></span>
-            <span>Evacuating</span>
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-purple-400 inline-block shadow-sm"></span>
-            <span>Attracted (Focus)</span>
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded bg-yellow-500 inline-block"></span>
-            <span>Barricades</span>
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded bg-emerald-500 inline-block"></span>
-            <span>Open Gate (Click 3D)</span>
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block"></span>
-            <span>Closed Gate (Click 3D)</span>
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-sm border border-sky-400 bg-sky-400/20 inline-block"></span>
-            <span>Virtual Venue Boundary</span>
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-sm bg-slate-800 border border-slate-700 inline-block"></span>
-            <span>Exterior Buffer (2 Squares)</span>
-          </span>
-        </div>
-
-        <div className="font-mono text-[10px] text-slate-500">
-          Left Drag: Orbit · Right Drag: Pan · Scroll: Zoom · Click Gates to Toggle
-        </div>
-      </div>
-    </div>
+    <div
+      ref={mountRef}
+      className="w-full relative rounded-xl overflow-hidden border border-slate-800 shadow-2xl cursor-grab active:cursor-grabbing"
+      style={{
+        minHeight: '650px',
+        maxHeight: '78vh',
+        height: '78vh',
+        background: '#0a0f1d',
+      }}
+    />
   )
 }

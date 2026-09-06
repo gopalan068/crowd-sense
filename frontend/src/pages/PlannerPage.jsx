@@ -1794,6 +1794,24 @@ export default function PlannerPage({ backendUrl = '' }) {
     setTimeout(() => setSaveStatus(''), 2000)
   }
 
+  const export2DImage = () => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    try {
+      const dataUrl = canvas.toDataURL('image/png', 1.0)
+      const link = document.createElement('a')
+      const cleanName = (venueName || 'venue-2d-layout').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+      link.download = `${cleanName || 'venue'}-2d-map-${timestamp}.png`
+      link.href = dataUrl
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+    } catch (err) {
+      console.error('Failed to export 2D canvas image:', err)
+    }
+  }
+
   const resetToDemoVenue = () => {
     if (window.confirm('Reset map to original reference venue? Any unsaved custom tweaks will be replaced.')) {
       try { localStorage.removeItem('planner_active_draft') } catch { /* ignore */ }
@@ -1915,21 +1933,6 @@ export default function PlannerPage({ backendUrl = '' }) {
     <div className="flex flex-col gap-0" style={{ minHeight: 0 }}>
 
       {/* ── Persistent Disclaimer Banner ──────────────────────────────── */}
-      <div
-        className="flex items-start gap-2.5 px-4 py-2.5 border-b border-amber-300/60 dark:border-amber-800/60 text-xs"
-        style={{ background: 'rgba(217,119,6,0.08)', color: 'var(--risk-yellow)' }}
-        role="status"
-        aria-label="Planning tool disclaimer"
-      >
-        <span className="text-base shrink-0 mt-px">⚠️</span>
-        <span className="font-semibold leading-relaxed">
-          <strong>Illustrative planning aid</strong> — simplified Social Force Model simulation (Helbing &amp; Molnár, 1995).{' '}
-          <strong>Not a certified evacuation-engineering tool.</strong>{' '}
-          Parameters are not empirically calibrated against real crowd data for this venue.
-          All outputs show <em>simulated</em> bottleneck locations and relative density buildup under stated assumptions only —
-          not predicted casualties or guaranteed evacuation times.
-        </span>
-      </div>
 
       {/* ── Main Layout: Editor Left + Sim Right ──────────────────────── */}
       <div className="flex gap-4 p-4" style={{ minHeight: 0 }}>
@@ -2001,6 +2004,15 @@ export default function PlannerPage({ backendUrl = '' }) {
                 🔄 Reset
               </button>
             </div>
+            <button
+              onClick={export2DImage}
+              disabled={!layout}
+              className="w-full text-[10px] font-bold py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-all flex items-center justify-center gap-1.5"
+              title="Download high-resolution 2D layout PNG image"
+            >
+              <span>📸</span>
+              <span>Export 2D Layout PNG</span>
+            </button>
           </div>
 
           {/* Selected element action card */}
