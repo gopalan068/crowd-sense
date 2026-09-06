@@ -56,7 +56,6 @@ const DEMO_VENUE = {
   name: 'Temple Chariot Procession & Broadway Network (Demo)',
   canvasWidth:  CANVAS_W,
   canvasHeight: CANVAS_H,
-  backgroundImageUrl: '/venue_sketch.png',
   scale: {
     px_per_meter: 25,
     reference_distance_m: 15.0,
@@ -208,7 +207,7 @@ const DEMO_VENUE = {
 // ─── Colour constants for drawing ────────────────────────────────────────────
 const DRAW_COLORS = {
   wall:       '#6366f1',   // indigo
-  wallFill:   'rgba(99,102,241,0.12)',
+  wallFill:   'rgba(99,102,241,0.18)',
   exit:       '#10b981',   // emerald
   spawn:      '#f59e0b',   // amber
   scale:      '#e879f9',   // fuchsia
@@ -234,11 +233,6 @@ export default function PlannerPage({ backendUrl = '' }) {
   const [venueName, setVenueName]     = useState('Untitled Venue')
   const [venueId, setVenueId]         = useState(null)
   const [saveStatus, setSaveStatus]   = useState('')      // '', 'saving', 'saved', 'error'
-
-  // ── Background image ─────────────────────────────────────────────────────
-  const [bgImage, setBgImage]     = useState(null)        // HTMLImageElement
-  const [bgOpacity, setBgOpacity] = useState(0.38)
-  const bgImageRef = useRef(null)
 
   // ── Drawing ──────────────────────────────────────────────────────────────
   const [drawTool, setDrawTool]         = useState(TOOLS.SELECT)
@@ -288,7 +282,6 @@ export default function PlannerPage({ backendUrl = '' }) {
   const heatmapOpacityRef = useRef(0.45)
   const showGridRef      = useRef(false)
   const activeSpawnIdsRef = useRef(new Set(['spawn_north', 'spawn_south']))
-  const bgOpacityRef     = useRef(0.38)
   const fpsCounterRef    = useRef({ frames: 0, lastTs: 0 })
 
   // Keep refs in sync with state
@@ -302,7 +295,6 @@ export default function PlannerPage({ backendUrl = '' }) {
   useEffect(() => { heatmapOpacityRef.current = heatmapOpacity }, [heatmapOpacity])
   useEffect(() => { showGridRef.current = showGrid }, [showGrid])
   useEffect(() => { activeSpawnIdsRef.current = activeSpawnIds }, [activeSpawnIds])
-  useEffect(() => { bgOpacityRef.current = bgOpacity }, [bgOpacity])
   useEffect(() => { layoutRef.current = layout }, [layout])
 
   // ── Auto-restore / initial load on mount ──────────────────────────────────
@@ -344,15 +336,6 @@ export default function PlannerPage({ backendUrl = '' }) {
     }
   }, [layout, venueName, venueId])
 
-  // ── Load background image when layout changes ─────────────────────────────
-  useEffect(() => {
-    if (!layout?.backgroundImageUrl) { setBgImage(null); bgImageRef.current = null; return }
-    const img = new Image()
-    img.onload = () => { setBgImage(img); bgImageRef.current = img }
-    img.onerror = () => { setBgImage(null); bgImageRef.current = null }
-    img.src = layout.backgroundImageUrl
-  }, [layout?.backgroundImageUrl])
-
   // ── Canvas render loop ───────────────────────────────────────────────────
   const drawCanvas = useCallback(() => {
     const canvas = canvasRef.current
@@ -360,21 +343,9 @@ export default function PlannerPage({ backendUrl = '' }) {
     const ctx = canvas.getContext('2d')
     const lay = layoutRef.current
 
-    // Clear
-    ctx.clearRect(0, 0, CANVAS_W, CANVAS_H)
-
-    // Checkerboard background for canvas area when no venue image
-    ctx.fillStyle = '#0f172a'
+    // Clear & fill with solid plain black background
+    ctx.fillStyle = '#000000'
     ctx.fillRect(0, 0, CANVAS_W, CANVAS_H)
-
-    // ── Background image ──────────────────────────────────────────────────
-    if (bgImageRef.current) {
-      ctx.save()
-      ctx.globalAlpha = bgOpacityRef.current
-      ctx.drawImage(bgImageRef.current, 0, 0, CANVAS_W, CANVAS_H)
-      ctx.globalAlpha = 1.0
-      ctx.restore()
-    }
 
     if (!lay) {
       // Empty state prompt
@@ -951,18 +922,10 @@ export default function PlannerPage({ backendUrl = '' }) {
     try { localStorage.removeItem('planner_active_draft') } catch { /* ignore */ }
     setLayout({
       walls: [], exits: [], spawns: [],
-      backgroundImageUrl: '/venue_sketch.png',
       scale: { px_per_meter: 25, reference_distance_m: 15, scale_is_estimated: true },
     })
     setVenueName('Untitled Custom Venue')
     setVenueId(null)
-  }
-
-  const handleBgImageUpload = (e) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    const url = URL.createObjectURL(file)
-    setLayout(prev => ({ ...(prev || { walls:[], exits:[], spawns:[], scale:{px_per_meter:25,scale_is_estimated:true} }), backgroundImageUrl: url }))
   }
 
   // ── Simulation controls ───────────────────────────────────────────────────
@@ -1132,35 +1095,6 @@ export default function PlannerPage({ backendUrl = '' }) {
                 🔄 Reset
               </button>
             </div>
-          </div>
-
-          {/* Background image */}
-          <div
-            className="rounded-xl p-3 border"
-            style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
-          >
-            <p className="font-bold uppercase text-[10px] tracking-wider mb-2" style={{ color: 'var(--color-muted)' }}>
-              Background Image
-            </p>
-            <label
-              htmlFor="planner-bg-upload"
-              className="block text-center text-[10px] font-bold py-1.5 rounded-lg border cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition-all"
-              style={{ borderColor: 'var(--color-border)', color: 'var(--color-muted)' }}
-            >
-              📂 Upload Reference
-            </label>
-            <input
-              id="planner-bg-upload"
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={handleBgImageUpload}
-            />
-            {layout?.backgroundImageUrl && (
-              <p className="text-[9px] mt-1 text-center" style={{ color: 'var(--color-muted)' }}>
-                ✓ Image loaded
-              </p>
-            )}
           </div>
 
           {/* Drawing tools */}
@@ -1335,8 +1269,6 @@ export default function PlannerPage({ backendUrl = '' }) {
             }
             heatmapOpacity={heatmapOpacity}
             onHeatmapOpacityChange={setHeatmapOpacity}
-            bgOpacity={bgOpacity}
-            onBgOpacityChange={setBgOpacity}
             showGrid={showGrid}
             onShowGridChange={setShowGrid}
             agentCount={agentCount}

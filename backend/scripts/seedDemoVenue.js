@@ -22,7 +22,6 @@ const DEMO_VENUE_ID = 'demo-temple-procession';
 const DEMO_LAYOUT = {
   canvasWidth:  800,
   canvasHeight: 580,
-  backgroundImageUrl: '/venue_sketch.png',
   scale: {
     px_per_meter:          25,
     reference_distance_m:  15.0,

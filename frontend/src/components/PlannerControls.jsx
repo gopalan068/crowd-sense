@@ -37,8 +37,6 @@ export default function PlannerControls({
   // Display controls
   heatmapOpacity,
   onHeatmapOpacityChange,
-  bgOpacity,
-  onBgOpacityChange,
   showGrid,
   onShowGridChange,
 
@@ -309,18 +307,6 @@ export default function PlannerControls({
           type="range" min={0} max={1} step={0.05}
           value={heatmapOpacity}
           onChange={e => onHeatmapOpacityChange(Number(e.target.value))}
-          className="w-full accent-sky-600 mb-3"
-        />
-
-        <div className="flex justify-between items-center mb-1">
-          <label className="text-[10px]" style={{ color: 'var(--color-muted)' }}>Background Opacity</label>
-          <span className="font-bold" style={{ color: 'var(--color-text)' }}>{Math.round(bgOpacity * 100)}%</span>
-        </div>
-        <input
-          id="planner-bg-opacity"
-          type="range" min={0} max={1} step={0.05}
-          value={bgOpacity}
-          onChange={e => onBgOpacityChange(Number(e.target.value))}
           className="w-full accent-sky-600 mb-3"
         />
 
