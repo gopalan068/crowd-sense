@@ -18,6 +18,8 @@ const { router: respondersRouter } = require('./routes/responders');
 const citizenReportsRouter = require('./routes/citizenReports');
 const conditionsRouter = require('./routes/conditions');
 const reportsRouter = require('./routes/reports');
+const venuesRouter = require('./routes/venues');
+const { seedDemoVenue } = require('../scripts/seedDemoVenue');
 const { sendEmergencyNotification } = require('./services/notifications');
 
 const PORT = process.env.PORT || 4000;
@@ -71,6 +73,7 @@ app.use('/api', respondersRouter);
 app.use('/api', citizenReportsRouter);
 app.use('/api', conditionsRouter);
 app.use('/api', reportsRouter);
+app.use('/api', venuesRouter);
 
 // --- Socket.io ---
 const io = setupSockets(server);
@@ -89,4 +92,7 @@ server.listen(PORT, () => {
   console.log(`[Backend] WeatherConditions → GET http://localhost:${PORT}/api/conditions/current | POST http://localhost:${PORT}/api/conditions/set`);
   console.log(`[Backend] ReportsGenerate   → POST http://localhost:${PORT}/api/reports/generate`);
   console.log(`[Backend] ReportsLatest     → GET http://localhost:${PORT}/api/reports/latest`);
+  console.log(`[Backend] Venues            → GET/POST http://localhost:${PORT}/api/venues`);
+  // Seed demo venue after a short delay to let DB initialize tables
+  setTimeout(seedDemoVenue, 500);
 });

@@ -92,7 +92,49 @@ db.serialize(() => {
     )
   `);
   db.run(`CREATE INDEX IF NOT EXISTS idx_playbook_step_alert ON playbook_step_log (alert_id, step_index)`, () => {});
+
+  // ── CrowdSense Planner: Venue Layout Persistence ────────────────────────────
+  db.run(`
+    CREATE TABLE IF NOT EXISTS venues (
+      venue_id   TEXT PRIMARY KEY,
+      name       TEXT NOT NULL,
+      layout_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
 });
+
+// ─── Venue CRUD helpers (callback-style, consistent with rest of module) ─────
+
+function getVenues(callback) {
+  db.all(
+    'SELECT venue_id, name, created_at, updated_at FROM venues ORDER BY updated_at DESC',
+    [],
+    callback,
+  );
+}
+
+function getVenueById(venueId, callback) {
+  db.get('SELECT * FROM venues WHERE venue_id = ?', [venueId], callback);
+}
+
+function upsertVenue({ venue_id, name, layout_json, created_at, updated_at }, callback) {
+  db.run(
+    `INSERT INTO venues (venue_id, name, layout_json, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(venue_id) DO UPDATE SET
+       name        = excluded.name,
+       layout_json = excluded.layout_json,
+       updated_at  = excluded.updated_at`,
+    [venue_id, name, layout_json, created_at, updated_at],
+    callback,
+  );
+}
+
+function deleteVenue(venueId, callback) {
+  db.run('DELETE FROM venues WHERE venue_id = ?', [venueId], callback);
+}
 
 /**
  * Insert a new alert record into the audit log.
@@ -554,4 +596,9 @@ module.exports = {
   recordPlaybookStepInDb,
   getPlaybookStepsForAlertInDb,
   getAllPlaybookStepLogsInDb,
+  // CrowdSense Planner venue persistence
+  getVenues,
+  getVenueById,
+  upsertVenue,
+  deleteVenue,
 };

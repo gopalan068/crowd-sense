@@ -15,6 +15,7 @@ import ResponderDashboard from './components/ResponderDashboard'
 import CitizenReportView from './components/CitizenReportView'
 import DualPhoneSimulator from './components/DualPhoneSimulator'
 import WeatherControlPanel from './components/WeatherControlPanel'
+import PlannerPage from './pages/PlannerPage'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || ''
 
@@ -258,6 +259,7 @@ export default function App() {
             { id: 'EVENT_ANALYSIS', label: '📊 EVENT ANALYSIS' },
             { id: 'VENUE_MAP', label: '🗺️ VENUE MAP & EGRESS' },
             { id: 'DUAL_SIM', label: '📱 DUAL PHONE SIMULATOR' },
+            { id: 'PLANNER', label: '🏗️ CROWD PLANNER' },
           ].map((tab) => (
             <button
               key={tab.id}
@@ -303,10 +305,16 @@ export default function App() {
       </header>
 
       {/* Main Operations Shell */}
-      <main className="flex-1 p-6 space-y-6 max-w-7xl 2xl:max-w-[1600px] mx-auto w-full">
+      <main className={`flex-1 space-y-6 w-full ${
+        activeTab === 'PLANNER'
+          ? 'p-0'                              // Planner uses its own internal padding
+          : 'p-6 max-w-7xl 2xl:max-w-[1600px] mx-auto'
+      }`}>
 
-        {/* Environmental Conditions & Presenter Control Strip */}
-        <WeatherControlPanel weatherState={weatherState} backendUrl={BACKEND_URL} />
+        {/* Environmental Conditions & Presenter Control Strip (not shown in Planner) */}
+        {activeTab !== 'PLANNER' && (
+          <WeatherControlPanel weatherState={weatherState} backendUrl={BACKEND_URL} />
+        )}
 
         {/* Tab 1: Live Operations */}
         {activeTab === 'LIVE' && (
@@ -387,6 +395,11 @@ export default function App() {
             activeAlerts={activeAlerts}
             onAcknowledge={handleAcknowledgeAlert}
           />
+        )}
+
+        {/* CrowdSense Planner — Pre-Event Venue Simulation (standalone) */}
+        {activeTab === 'PLANNER' && (
+          <PlannerPage backendUrl={BACKEND_URL} />
         )}
 
 
