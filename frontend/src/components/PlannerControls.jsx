@@ -17,6 +17,12 @@ export default function PlannerControls({
   onReset,
   onTriggerEmergency,
 
+  // Emergency Openings / Gates
+  openings,               // array of emergency openings { id, name, a, b, isOpen }
+  onToggleOpening,        // (id) => void
+  onOpenAllOpenings,      // () => void
+  onCloseAllOpenings,     // () => void
+
   // Focus mode
   focusPoint,
   isFocusMode,
@@ -185,6 +191,73 @@ export default function PlannerControls({
         <p className="text-center text-amber-600 dark:text-amber-300 text-[10px] font-bold uppercase tracking-wider animate-pulse">
           All agents redirecting to nearest exit
         </p>
+      )}
+
+      {/* ── Emergency Openings / Dynamic Gates ─────────────────────────── */}
+      {openings && openings.length > 0 && (
+        <div
+          className="rounded-xl p-3 border flex flex-col gap-2 transition-all shadow-sm"
+          style={{
+            background: 'rgba(239, 68, 68, 0.04)',
+            borderColor: 'rgba(239, 68, 68, 0.25)',
+          }}
+        >
+          <div className="flex justify-between items-center">
+            <span className="font-extrabold uppercase tracking-wider text-[10px] text-red-500 dark:text-red-400 flex items-center gap-1">
+              <span>🚨</span> Emergency Gates
+            </span>
+            <div className="flex gap-1">
+              <button
+                onClick={onOpenAllOpenings}
+                className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white transition-all"
+                title="Open all emergency gates"
+              >
+                Open All
+              </button>
+              <button
+                onClick={onCloseAllOpenings}
+                className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-600 hover:bg-slate-500 text-white transition-all"
+                title="Close all emergency gates"
+              >
+                Close All
+              </button>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            {openings.map(op => (
+              <div
+                key={op.id}
+                className="flex items-center justify-between p-1.5 rounded-lg border text-[10px] transition-all"
+                style={{
+                  background: op.isOpen ? 'rgba(34, 197, 94, 0.08)' : 'rgba(239, 68, 68, 0.08)',
+                  borderColor: op.isOpen ? 'rgba(34, 197, 94, 0.3)' : 'rgba(239, 68, 68, 0.3)',
+                }}
+              >
+                <div className="flex items-center gap-1.5 min-w-0 pr-1">
+                  <span className="text-xs">{op.isOpen ? '🔓' : '🔒'}</span>
+                  <span className="font-bold truncate text-slate-800 dark:text-slate-200">
+                    {op.name || op.id}
+                  </span>
+                </div>
+                <button
+                  onClick={() => onToggleOpening(op.id)}
+                  className={`px-2 py-1 rounded text-[9px] font-extrabold uppercase transition-all shadow-sm shrink-0 ${
+                    op.isOpen
+                      ? 'bg-emerald-600 hover:bg-emerald-500 text-white animate-pulse'
+                      : 'bg-red-600 hover:bg-red-500 text-white'
+                  }`}
+                  title={op.isOpen ? 'Click to close gate (barrier)' : 'Click to open gate (egress exit)'}
+                >
+                  {op.isOpen ? 'OPEN' : 'CLOSED'}
+                </button>
+              </div>
+            ))}
+          </div>
+          <p className="text-[9px] leading-tight text-slate-500">
+            Closed gates act as solid walls. Open gates allow crowd evacuation flow.
+          </p>
+        </div>
       )}
 
       {/* ── Live Statistics ────────────────────────────────────────────── */}

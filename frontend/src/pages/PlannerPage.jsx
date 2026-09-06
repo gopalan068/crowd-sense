@@ -16,6 +16,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 
 import PlannerControls from '../components/PlannerControls.jsx'
+import Venue25DViewer from '../components/Venue25DViewer.jsx'
 
 import {
   DEFAULT_SFM_PARAMS,
@@ -38,23 +39,25 @@ import {
 
 // ─── Canvas dimensions ────────────────────────────────────────────────────────
 const CANVAS_W = 800
-const CANVAS_H = 580
+const CANVAS_H = 850
 
 // ─── Drawing tool IDs ─────────────────────────────────────────────────────────
 const TOOLS = {
-  WALL:  'WALL',
-  EXIT:  'EXIT',
+  WALL: 'WALL',
+  BARRICADE: 'BARRICADE',
+  EXIT: 'EXIT',
+  OPENING: 'OPENING',
   SPAWN: 'SPAWN',
   FOCUS: 'FOCUS',
   SCALE: 'SCALE',
-  SELECT:'SELECT',
+  SELECT: 'SELECT',
 }
 
 // ─── Demo venue: Temple Chariot Procession & Broadway Network (Demo) ─────────
 const DEMO_VENUE = {
-  id:   'demo-temple-procession',
+  id: 'demo-temple-procession',
   name: 'Temple Chariot Procession & Broadway Network (Demo)',
-  canvasWidth:  CANVAS_W,
+  canvasWidth: CANVAS_W,
   canvasHeight: CANVAS_H,
   scale: {
     px_per_meter: 25,
@@ -63,9 +66,24 @@ const DEMO_VENUE = {
     scale_is_estimated: true,          // ← honesty field per spec
   },
   walls: [
-    // ── South-West Broadway building facade ──────────────────────────────
+    // ── 1. North-West Building Block (Top-Left) ──────────────────────────
     {
-      id: 'w_sw_buildings',
+      id: 'w_nw_block',
+      label: 'North-West Building Block',
+      points: [
+        { x: 0, y: 0 },
+        { x: 311, y: 2 },
+        { x: 282, y: 21 },
+        { x: 220, y: 55 },
+        { x: 100, y: 50 },
+        { x: 0, y: 45 },
+      ],
+      closed: true,
+    },
+
+    // ── 2. South-West Broadway Buildings (Middle-Left) ───────────────────
+    {
+      id: 'w_sw_block',
       label: 'South-West Broadway Buildings',
       points: [
         { x: 0, y: 83 },
@@ -74,58 +92,69 @@ const DEMO_VENUE = {
         { x: 180, y: 360 },
         { x: 160, y: 480 },
         { x: 115, y: 580 },
+        { x: 0, y: 580 },
       ],
-      closed: false,
+      closed: true,
     },
 
-    // ── North-West Avenue building facade ────────────────────────────────
+    // ── 3. Lower South-West Building Block (Bottom-Left) ─────────────────
     {
-      id: 'w_nw_buildings',
-      label: 'North-West Avenue Buildings',
+      id: 'w_lsw_block',
+      label: 'Lower South-West Building Block',
       points: [
-        { x: 0, y: 45 },
-        { x: 100, y: 50 },
-        { x: 220, y: 55 },
-        { x: 280, y: 20 },
-        { x: 300, y: 0 },
+        { x: 0, y: 639 },
+        { x: 146, y: 641 },
+        { x: 165, y: 708 },
+        { x: 163, y: 777 },
+        { x: 160, y: 849 },
+        { x: 0, y: 849 },
       ],
-      closed: false,
+      closed: true,
     },
 
-    // ── Central-East Broadway curved building facade ─────────────────────
+    // ── 4. Central-East Building Complex (Single Unified Full-Height) ────
     {
-      id: 'w_ce_buildings',
-      label: 'Central-East Broadway Buildings',
+      id: 'w_ce_complex',
+      label: 'Central-East Building Complex',
       points: [
         { x: 405, y: 0 },
-        { x: 415, y: 55 },
-        { x: 450, y: 135 },
-        { x: 510, y: 135 },
-        { x: 550, y: 190 },
-        { x: 555, y: 240 },
-        { x: 478, y: 255 },
-        { x: 475, y: 300 },
+        { x: 517, y: 1 },
+        { x: 623, y: 233 },
+        { x: 629, y: 359 },
+        { x: 618, y: 462 },
+        { x: 597, y: 560 },
+        { x: 589, y: 577 },
+        { x: 579, y: 847 },
+        { x: 472, y: 849 },
+        { x: 490, y: 577 },
         { x: 500, y: 420 },
-        { x: 490, y: 580 },
+        { x: 475, y: 300 },
+        { x: 478, y: 255 },
+        { x: 555, y: 240 },
+        { x: 550, y: 190 },
+        { x: 510, y: 135 },
+        { x: 450, y: 135 },
+        { x: 415, y: 55 },
       ],
-      closed: false,
+      closed: true,
     },
 
-    // ── North-East Building Block ────────────────────────────────────────
+    // ── 5. North-East Building Block (Top-Right) ─────────────────────────
     {
       id: 'w_ne_block',
       label: 'North-East Building Block',
       points: [
         { x: 600, y: 0 },
-        { x: 605, y: 40 },
-        { x: 660, y: 75 },
-        { x: 740, y: 80 },
+        { x: 800, y: 0 },
         { x: 800, y: 75 },
+        { x: 740, y: 80 },
+        { x: 660, y: 75 },
+        { x: 605, y: 40 },
       ],
-      closed: false,
+      closed: true,
     },
 
-    // ── Middle-East Building Island ──────────────────────────────────────
+    // ── 6. East Side Building Island ─────────────────────────────────────
     {
       id: 'w_me_island',
       label: 'East Side Building Island',
@@ -140,80 +169,150 @@ const DEMO_VENUE = {
       closed: true,
     },
 
-    // ── South-East Building Block ────────────────────────────────────────
+    // ── 7. South-East Building Block (Bottom-Right) ──────────────────────
     {
       id: 'w_se_block',
       label: 'South-East Building Block',
       points: [
-        { x: 650, y: 580 },
-        { x: 675, y: 460 },
-        { x: 700, y: 360 },
-        { x: 675, y: 245 },
-        { x: 730, y: 220 },
         { x: 800, y: 230 },
+        { x: 730, y: 220 },
+        { x: 675, y: 245 },
+        { x: 700, y: 360 },
+        { x: 675, y: 460 },
+        { x: 650, y: 580 },
+        { x: 657, y: 636 },
+        { x: 653, y: 687 },
+        { x: 648, y: 717 },
+        { x: 630, y: 834 },
+        { x: 628, y: 847 },
+        { x: 800, y: 847 },
       ],
-      closed: false,
+      closed: true,
     },
 
-    // ── Temple Gateway & Chariot Compound Enclosure ───────────────────────
+    // ── 8. Temple Gateway (Central Gopuram Tower Landmark) ───────────────
+    {
+      id: 'w_temple_gate',
+      label: 'Temple Gateway (Gopuram)',
+      points: [
+        { x: 311, y: 108 },
+        { x: 405, y: 108 },
+        { x: 405, y: 171 },
+        { x: 311, y: 171 },
+      ],
+      closed: true,
+    },
+
+    // ── 9. Temple Compound Wall (Courtyard Enclosure) ─────────────────────
     {
       id: 'w_compound',
       label: 'Temple Compound Wall',
       points: [
-        { x: 312, y: 70 },
-        { x: 406, y: 70 },
-        { x: 406, y: 135 },
-        { x: 382, y: 145 },
-        { x: 383, y: 210 },
-        { x: 372, y: 238 },
-        { x: 345, y: 242 },
-        { x: 320, y: 232 },
-        { x: 320, y: 135 },
-        { x: 312, y: 135 },
+        { x: 312, y: 106 },
+        { x: 406, y: 106 },
+        { x: 406, y: 171 },
+        { x: 382, y: 181 },
+        { x: 383, y: 246 },
+        { x: 372, y: 274 },
+        { x: 345, y: 278 },
+        { x: 320, y: 268 },
+        { x: 320, y: 171 },
+        { x: 312, y: 171 },
       ],
       closed: true,
     },
 
-    // ── Temple Gateway (Central Gopuram Structure) ───────────────────────
-    {
-      id: 'w_temple_gate',
-      label: 'Temple Gateway',
-      points: [
-        { x: 312, y: 72 },
-        { x: 406, y: 72 },
-        { x: 406, y: 135 },
-        { x: 312, y: 135 },
-      ],
-      closed: true,
-    },
-
-    // ── Procession Chariot Obstacle (Rath) ───────────────────────────────
+    // ── 10. Procession Chariot Obstacle (Rath) ───────────────────────────
     {
       id: 'w_chariot',
-      label: 'Chariot Obstacle',
+      label: 'Chariot Obstacle (Rath)',
       points: [
-        { x: 328, y: 180 },
-        { x: 380, y: 180 },
-        { x: 380, y: 215 },
-        { x: 328, y: 215 },
+        { x: 323, y: 230 },
+        { x: 375, y: 230 },
+        { x: 375, y: 265 },
+        { x: 323, y: 265 },
       ],
       closed: true,
     },
   ],
-  exits: [],
-  spawns: [],
+  exits: [
+    {
+      id: 'exit_west',
+      name: 'Exit 1 (West)',
+      a: { x: 4, y: 37 },
+      b: { x: 4, y: 103 },
+    },
+    {
+      id: 'exit_north',
+      name: 'Exit 2 (North)',
+      a: { x: 313, y: 6 },
+      b: { x: 407, y: 6 },
+    },
+  ],
+  spawns: [
+    {
+      id: 'spawn_nw',
+      name: 'Entry 1 (North-West)',
+      x: 45,
+      y: 61,
+    },
+    {
+      id: 'spawn_south',
+      name: 'Entry (South Broadway)',
+      x: 239,
+      y: 821,
+    },
+  ],
+  barricades: [
+    {
+      id: 'barricade_main',
+      name: 'Longitudinal Broadway Barricade',
+      a: { x: 284, y: 121 },
+      b: { x: 265, y: 824 },
+    },
+    {
+      id: 'barricade_north',
+      name: 'North Temple Barricade',
+      a: { x: 397, y: 65 },
+      b: { x: 296, y: 77 },
+    },
+    {
+      id: 'barricade_flank',
+      name: 'Temple NW Flank Barricade',
+      a: { x: 285, y: 123 },
+      b: { x: 295, y: 78 },
+    },
+  ],
+  openings: [
+    {
+      id: 'opening_gate_1',
+      name: 'Emergency Gate 1',
+      a: { x: 422, y: 70 },
+      b: { x: 397, y: 65 },
+      isOpen: true,
+    },
+    {
+      id: 'opening_gate_2',
+      name: 'Emergency Gate 2',
+      a: { x: 451, y: 137 },
+      b: { x: 408, y: 113 },
+      isOpen: false,
+    },
+  ],
 }
 
 // ─── Colour constants for drawing ────────────────────────────────────────────
 const DRAW_COLORS = {
-  wall:       '#6366f1',   // indigo
-  wallFill:   'rgba(99,102,241,0.18)',
-  exit:       '#10b981',   // emerald
-  spawn:      '#f59e0b',   // amber
-  scale:      '#e879f9',   // fuchsia
-  agent:      '#38bdf8',   // sky (normal)
+  wall: '#6366f1',   // indigo
+  wallFill: 'rgba(99,102,241,0.18)',
+  barricade: '#eab308',   // warning yellow
+  exit: '#10b981',   // emerald
+  spawn: '#f59e0b',   // amber
+  opening: '#ef4444',   // red
+  scale: '#e879f9',   // fuchsia
+  agent: '#38bdf8',   // sky (normal)
   agentPanic: '#f87171',   // red (panic)
-  grid:       'rgba(100,116,139,0.18)',
+  grid: 'rgba(100,116,139,0.18)',
 }
 
 // ─── Geometry helpers ─────────────────────────────────────────────────────────
@@ -225,64 +324,173 @@ function segMidpoint(a, b) {
   return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
 }
 
+function distToSegment(p, v, w) {
+  const l2 = (w.x - v.x) ** 2 + (w.y - v.y) ** 2
+  if (l2 === 0) return ptDist(p, v)
+  let t = ((p.x - v.x) * (w.x - v.x) + (p.y - v.y) * (w.y - v.y)) / l2
+  t = Math.max(0, Math.min(1, t))
+  return ptDist(p, { x: v.x + t * (w.x - v.x), y: v.y + t * (w.y - v.y) })
+}
+
+function findHit(pos, lay, selectedItem, focusPoint) {
+  if (!lay) return null
+
+  // 1. If a wall is currently selected, check its vertex handles first (priority for vertex editing)
+  if (selectedItem?.type === 'wall') {
+    const selWall = lay.walls?.find(w => w.id === selectedItem.id)
+    if (selWall && selWall.points) {
+      for (let i = 0; i < selWall.points.length; i++) {
+        if (ptDist(pos, selWall.points[i]) <= 14) {
+          return { type: 'wall', id: selWall.id, vertexIndex: i, name: selWall.label || 'Wall' }
+        }
+      }
+    }
+  }
+
+  // 2. Emergency Openings / Gates (endpoints first <= 14px, then line segment <= 12px)
+  for (const op of lay.openings || []) {
+    if (ptDist(pos, op.a) <= 14) {
+      return { type: 'opening', id: op.id, endpoint: 'a', name: op.name || op.id, isOpen: op.isOpen }
+    }
+    if (ptDist(pos, op.b) <= 14) {
+      return { type: 'opening', id: op.id, endpoint: 'b', name: op.name || op.id, isOpen: op.isOpen }
+    }
+    if (distToSegment(pos, op.a, op.b) <= 12) {
+      return { type: 'opening', id: op.id, name: op.name || op.id, isOpen: op.isOpen }
+    }
+  }
+
+  // 3. Barricades (endpoints first <= 14px, then line segment <= 12px)
+  for (const bar of lay.barricades || []) {
+    if (ptDist(pos, bar.a) <= 14) {
+      return { type: 'barricade', id: bar.id, endpoint: 'a', name: bar.name || bar.id }
+    }
+    if (ptDist(pos, bar.b) <= 14) {
+      return { type: 'barricade', id: bar.id, endpoint: 'b', name: bar.name || bar.id }
+    }
+    if (distToSegment(pos, bar.a, bar.b) <= 12) {
+      return { type: 'barricade', id: bar.id, name: bar.name || bar.id }
+    }
+  }
+
+  // 4. Spawn points (radius 14px)
+  for (const sp of lay.spawns || []) {
+    if (ptDist(pos, sp) <= 14) {
+      return { type: 'spawn', id: sp.id, name: sp.name || sp.id }
+    }
+  }
+
+  // 5. Exits (endpoints first <= 14px, then line segment <= 10px)
+  for (const ex of lay.exits || []) {
+    if (ptDist(pos, ex.a) <= 14) {
+      return { type: 'exit', id: ex.id, endpoint: 'a', name: ex.name || ex.id }
+    }
+    if (ptDist(pos, ex.b) <= 14) {
+      return { type: 'exit', id: ex.id, endpoint: 'b', name: ex.name || ex.id }
+    }
+    if (distToSegment(pos, ex.a, ex.b) <= 10) {
+      return { type: 'exit', id: ex.id, name: ex.name || ex.id }
+    }
+  }
+
+  // 6. Focus Point
+  if (focusPoint && ptDist(pos, focusPoint) <= 16) {
+    return { type: 'focus', name: 'Focus Point' }
+  }
+
+  // 7. Wall vertex points of all walls (radius 10px)
+  for (const w of lay.walls || []) {
+    for (let i = 0; i < w.points.length; i++) {
+      if (ptDist(pos, w.points[i]) <= 10) {
+        return { type: 'wall', id: w.id, vertexIndex: i, name: w.label || 'Wall' }
+      }
+    }
+  }
+
+  // 8. Wall segments (distToSegment <= 10px)
+  for (const w of lay.walls || []) {
+    if (!w.points || w.points.length < 2) continue
+    for (let i = 0; i < w.points.length - 1; i++) {
+      if (distToSegment(pos, w.points[i], w.points[i + 1]) <= 10) {
+        return { type: 'wall', id: w.id, name: w.label || 'Wall' }
+      }
+    }
+    if (w.closed && w.points.length > 2) {
+      if (distToSegment(pos, w.points[w.points.length - 1], w.points[0]) <= 10) {
+        return { type: 'wall', id: w.id, name: w.label || 'Wall' }
+      }
+    }
+  }
+
+  return null
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 export default function PlannerPage({ backendUrl = '' }) {
   // ── Venue ────────────────────────────────────────────────────────────────
-  const [layout, setLayout]           = useState(null)    // loaded venue layout
+  const [layout, setLayout] = useState(null)    // loaded venue layout
   const [savedVenues, setSavedVenues] = useState([])
-  const [venueName, setVenueName]     = useState('Untitled Venue')
-  const [venueId, setVenueId]         = useState(null)
-  const [saveStatus, setSaveStatus]   = useState('')      // '', 'saving', 'saved', 'error'
+  const [venueName, setVenueName] = useState('Untitled Venue')
+  const [venueId, setVenueId] = useState(null)
+  const [saveStatus, setSaveStatus] = useState('')      // '', 'saving', 'saved', 'error'
 
-  // ── Drawing ──────────────────────────────────────────────────────────────
-  const [drawTool, setDrawTool]         = useState(TOOLS.SELECT)
-  const [currentPoly, setCurrentPoly]   = useState([])    // in-progress wall polygon
-  const [exitLine, setExitLine]         = useState(null)  // first click of EXIT tool
-  const [scalePoints, setScalePoints]   = useState([])
+  // ── View Mode (2D Layout Editor vs 2.5D Isometric Venue Map) ───────────
+  const [viewMode, setViewMode] = useState('2D')  // '2D' | '2.5D'
+
+  // ── Drawing & Selection ──────────────────────────────────────────────────
+  const [drawTool, setDrawTool] = useState(TOOLS.SELECT)
+  const [selectedItem, setSelectedItem] = useState(null)  // { type: 'wall'|'barricade'|'spawn'|'exit'|'opening'|'focus', id, vertexIndex?, endpoint?, name?, isOpen? }
+  const [dragState, setDragState] = useState(null)  // active drag operation
+  const [hoveredHit, setHoveredHit] = useState(null)  // hit element under mouse
+  const [currentPoly, setCurrentPoly] = useState([])    // in-progress wall polygon
+  const [barricadeLine, setBarricadeLine] = useState(null) // first click of BARRICADE tool
+  const [exitLine, setExitLine] = useState(null)  // first click of EXIT tool
+  const [openingLine, setOpeningLine] = useState(null)  // first click of OPENING tool
+  const [scalePoints, setScalePoints] = useState([])
   const [scaleDistance, setScaleDistance] = useState('')
   const [showScaleDialog, setShowScaleDialog] = useState(false)
-  const [mousePos, setMousePos]         = useState({ x: 0, y: 0 })
-  const [hovered, setHovered]           = useState(false)
+  const [mousePos, setMousePos] = useState({ x: 0, y: 0 })
+  const [hovered, setHovered] = useState(false)
 
   // ── Simulation state ─────────────────────────────────────────────────────
-  const [simMode, setSimMode]           = useState('edit')   // 'edit'|'running'|'paused'
-  const [isEmergency, setIsEmergency]   = useState(false)
-  const [agentCount, setAgentCount]     = useState(0)
-  const [simTimeSec, setSimTimeSec]     = useState(0)
-  const [maxDensity, setMaxDensity]     = useState(0)
-  const [fps, setFps]                   = useState(0)
+  const [simMode, setSimMode] = useState('edit')   // 'edit'|'running'|'paused'
+  const [isEmergency, setIsEmergency] = useState(false)
+  const [agentCount, setAgentCount] = useState(0)
+  const [simTimeSec, setSimTimeSec] = useState(0)
+  const [maxDensity, setMaxDensity] = useState(0)
+  const [fps, setFps] = useState(0)
 
   // ── Focus mode state ─────────────────────────────────────────────────────
-  const [focusPoint, setFocusPoint]             = useState({ x: 355, y: 195 })
-  const [isFocusMode, setIsFocusMode]           = useState(false)
-  const [focusCondition, setFocusCondition]     = useState('normal') // 'normal' | 'rushed'
+  const [focusPoint, setFocusPoint] = useState({ x: 355, y: 195 })
+  const [isFocusMode, setIsFocusMode] = useState(false)
+  const [focusCondition, setFocusCondition] = useState('normal') // 'normal' | 'rushed'
 
   // ── Sim params ───────────────────────────────────────────────────────────
-  const [spawnRate, setSpawnRate]       = useState(5)
-  const [maxAgents, setMaxAgents]       = useState(800)
+  const [spawnRate, setSpawnRate] = useState(5)
+  const [maxAgents, setMaxAgents] = useState(800)
   const [heatmapOpacity, setHeatmapOpacity] = useState(0.45)
-  const [showGrid, setShowGrid]         = useState(false)
+  const [showGrid, setShowGrid] = useState(false)
   const [activeSpawnIds, setActiveSpawnIds] = useState(new Set(['spawn_north', 'spawn_south']))
 
   // ── Refs (mutable access inside rAF loop) ────────────────────────────────
-  const canvasRef        = useRef(null)
-  const animFrameRef     = useRef(null)
-  const agentsRef        = useRef([])
-  const lastTsRef        = useRef(null)
-  const simTimeRef       = useRef(0)
-  const spawnAccumRef    = useRef({})
-  const layoutRef        = useRef(null)
-  const simModeRef       = useRef('edit')
-  const isEmergencyRef   = useRef(false)
-  const focusPointRef    = useRef({ x: 355, y: 195 })
-  const isFocusModeRef   = useRef(false)
+  const canvasRef = useRef(null)
+  const animFrameRef = useRef(null)
+  const agentsRef = useRef([])
+  const lastTsRef = useRef(null)
+  const simTimeRef = useRef(0)
+  const spawnAccumRef = useRef({})
+  const layoutRef = useRef(null)
+  const simModeRef = useRef('edit')
+  const isEmergencyRef = useRef(false)
+  const focusPointRef = useRef({ x: 355, y: 195 })
+  const isFocusModeRef = useRef(false)
   const focusConditionRef = useRef('normal')
-  const spawnRateRef     = useRef(5)
-  const maxAgentsRef     = useRef(800)
+  const spawnRateRef = useRef(5)
+  const maxAgentsRef = useRef(800)
   const heatmapOpacityRef = useRef(0.45)
-  const showGridRef      = useRef(false)
+  const showGridRef = useRef(false)
   const activeSpawnIdsRef = useRef(new Set(['spawn_north', 'spawn_south']))
-  const fpsCounterRef    = useRef({ frames: 0, lastTs: 0 })
+  const fpsCounterRef = useRef({ frames: 0, lastTs: 0 })
 
   // Keep refs in sync with state
   useEffect(() => { simModeRef.current = simMode }, [simMode])
@@ -297,6 +505,137 @@ export default function PlannerPage({ backendUrl = '' }) {
   useEffect(() => { activeSpawnIdsRef.current = activeSpawnIds }, [activeSpawnIds])
   useEffect(() => { layoutRef.current = layout }, [layout])
 
+  // ── Deletion Actions ──────────────────────────────────────────────────────
+  const deleteSelectedItem = useCallback(() => {
+    if (!selectedItem) return
+
+    if (selectedItem.type === 'wall') {
+      setLayout(prev => {
+        if (!prev) return prev
+        return {
+          ...prev,
+          walls: (prev.walls || []).filter(w => w.id !== selectedItem.id),
+        }
+      })
+      setSelectedItem(null)
+    } else if (selectedItem.type === 'barricade') {
+      setLayout(prev => {
+        if (!prev) return prev
+        return {
+          ...prev,
+          barricades: (prev.barricades || []).filter(b => b.id !== selectedItem.id),
+        }
+      })
+      setSelectedItem(null)
+    } else if (selectedItem.type === 'opening') {
+      setLayout(prev => {
+        if (!prev) return prev
+        return {
+          ...prev,
+          openings: (prev.openings || []).filter(o => o.id !== selectedItem.id),
+        }
+      })
+      setSelectedItem(null)
+    } else if (selectedItem.type === 'spawn') {
+      setLayout(prev => {
+        if (!prev) return prev
+        return {
+          ...prev,
+          spawns: (prev.spawns || []).filter(s => s.id !== selectedItem.id),
+        }
+      })
+      setActiveSpawnIds(prev => {
+        const next = new Set(prev)
+        next.delete(selectedItem.id)
+        return next
+      })
+      setSelectedItem(null)
+    } else if (selectedItem.type === 'exit') {
+      setLayout(prev => {
+        if (!prev) return prev
+        return {
+          ...prev,
+          exits: (prev.exits || []).filter(e => e.id !== selectedItem.id),
+        }
+      })
+      setSelectedItem(null)
+    }
+  }, [selectedItem])
+
+  const deleteSelectedVertex = useCallback(() => {
+    if (selectedItem?.type === 'wall' && selectedItem.vertexIndex !== undefined) {
+      setLayout(prev => {
+        if (!prev) return prev
+        return {
+          ...prev,
+          walls: (prev.walls || []).map(w => {
+            if (w.id !== selectedItem.id) return w
+            if (w.points.length <= 2) return null
+            const newPoints = w.points.filter((_, idx) => idx !== selectedItem.vertexIndex)
+            return { ...w, points: newPoints }
+          }).filter(Boolean),
+        }
+      })
+      setSelectedItem(prev => ({ ...prev, vertexIndex: undefined }))
+    }
+  }, [selectedItem])
+
+  // ── Emergency Openings Toggle Actions ──────────────────────────────────────
+  const toggleOpening = useCallback((id, forceState) => {
+    setLayout(prev => {
+      if (!prev) return prev
+      const updated = (prev.openings || []).map(op => {
+        if (op.id !== id) return op
+        const newOpen = typeof forceState === 'boolean' ? forceState : !op.isOpen
+        return { ...op, isOpen: newOpen }
+      })
+      return { ...prev, openings: updated }
+    })
+    setSelectedItem(prev => (prev && prev.id === id ? { ...prev, isOpen: typeof forceState === 'boolean' ? forceState : !prev.isOpen } : prev))
+  }, [])
+
+  const openAllOpenings = useCallback(() => {
+    setLayout(prev => {
+      if (!prev) return prev
+      return {
+        ...prev,
+        openings: (prev.openings || []).map(op => ({ ...op, isOpen: true })),
+      }
+    })
+  }, [])
+
+  const closeAllOpenings = useCallback(() => {
+    setLayout(prev => {
+      if (!prev) return prev
+      return {
+        ...prev,
+        openings: (prev.openings || []).map(op => ({ ...op, isOpen: false })),
+      }
+    })
+  }, [])
+
+  // ── Keyboard shortcuts (Delete / Backspace / Escape) ──────────────────────
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        const tag = document.activeElement?.tagName
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+        if (selectedItem) {
+          e.preventDefault()
+          deleteSelectedItem()
+        }
+      } else if (e.key === 'Escape') {
+        setSelectedItem(null)
+        setCurrentPoly([])
+        setBarricadeLine(null)
+        setExitLine(null)
+        setOpeningLine(null)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [selectedItem, deleteSelectedItem])
+
   // ── Auto-restore / initial load on mount ──────────────────────────────────
   useEffect(() => {
     fetchSavedVenues()
@@ -306,7 +645,10 @@ export default function PlannerPage({ backendUrl = '' }) {
       const savedDraft = localStorage.getItem('planner_active_draft')
       if (savedDraft) {
         const { layout: dLayout, venueName: dName, venueId: dId } = JSON.parse(savedDraft)
-        if (dLayout && dLayout.walls) {
+        const isOldFragmentedDraft = dLayout?.walls?.some(
+          w => (w.id && String(w.id).startsWith('wall_')) || w.id === 'w_sw_buildings' || w.id === 'w_nw_buildings' || w.id === 'w_ce_buildings'
+        )
+        if (dLayout && dLayout.walls && !isOldFragmentedDraft && dLayout.walls.length <= 12) {
           setLayout(dLayout)
           if (dName) setVenueName(dName)
           if (dId) setVenueId(dId)
@@ -321,6 +663,12 @@ export default function PlannerPage({ backendUrl = '' }) {
     setVenueName(DEMO_VENUE.name)
     setVenueId(DEMO_VENUE.id)
     setActiveSpawnIds(new Set(DEMO_VENUE.spawns.map(s => s.id)))
+    try {
+      localStorage.setItem(
+        'planner_active_draft',
+        JSON.stringify({ layout: DEMO_VENUE, venueName: DEMO_VENUE.name, venueId: DEMO_VENUE.id })
+      )
+    } catch { /* ignore */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -383,11 +731,16 @@ export default function PlannerPage({ backendUrl = '' }) {
     }
 
     // ── Walls ─────────────────────────────────────────────────────────────
-    ctx.lineWidth = 3
-    ctx.strokeStyle = DRAW_COLORS.wall
-    ctx.fillStyle = DRAW_COLORS.wallFill
     for (const wall of lay.walls) {
       if (!wall.points || wall.points.length < 2) continue
+
+      const isWallSelected = selectedItem?.type === 'wall' && selectedItem.id === wall.id
+      const isWallHovered = hoveredHit?.type === 'wall' && hoveredHit.id === wall.id
+
+      ctx.lineWidth = isWallSelected ? 4 : isWallHovered ? 3.5 : 3
+      ctx.strokeStyle = isWallSelected ? '#38bdf8' : isWallHovered ? '#818cf8' : DRAW_COLORS.wall
+      ctx.fillStyle = DRAW_COLORS.wallFill
+
       ctx.beginPath()
       ctx.moveTo(wall.points[0].x, wall.points[0].y)
       for (let i = 1; i < wall.points.length; i++) {
@@ -399,24 +752,187 @@ export default function PlannerPage({ backendUrl = '' }) {
       }
       ctx.stroke()
 
+      // Vertex control handles if wall is selected
+      if (isWallSelected) {
+        for (let i = 0; i < wall.points.length; i++) {
+          const pt = wall.points[i]
+          const isVertexSelected = selectedItem.vertexIndex === i
+          ctx.beginPath()
+          ctx.arc(pt.x, pt.y, isVertexSelected ? 6.5 : 5, 0, Math.PI * 2)
+          ctx.fillStyle = isVertexSelected ? '#f59e0b' : '#ffffff'
+          ctx.fill()
+          ctx.strokeStyle = isVertexSelected ? '#ffffff' : '#38bdf8'
+          ctx.lineWidth = 2
+          ctx.stroke()
+        }
+      }
+
       // Label for named obstacles
       if (wall.label && wall.closed && wall.points.length > 2) {
         const cx = wall.points.reduce((s, p) => s + p.x, 0) / wall.points.length
         const cy = wall.points.reduce((s, p) => s + p.y, 0) / wall.points.length
-        ctx.fillStyle = 'rgba(165,180,252,0.9)'
+        ctx.fillStyle = isWallSelected ? '#38bdf8' : 'rgba(165,180,252,0.9)'
         ctx.font = 'bold 9px ui-monospace, monospace'
         ctx.textAlign = 'center'
         ctx.fillText(wall.label.toUpperCase(), cx, cy + 3)
         ctx.textAlign = 'left'
-        ctx.fillStyle = DRAW_COLORS.wallFill
+      }
+    }
+
+    // ── Emergency Openings / Dynamic Gates ────────────────────────────────
+    for (const op of lay.openings || []) {
+      const isOpSelected = selectedItem?.type === 'opening' && selectedItem.id === op.id
+      const isOpHovered = hoveredHit?.type === 'opening' && hoveredHit.id === op.id
+      const mid = segMidpoint(op.a, op.b)
+
+      if (!op.isOpen) {
+        // ── CLOSED: Solid barrier wall with red/amber hazard pattern ───────
+        ctx.save()
+        if (isOpSelected || isOpHovered) {
+          ctx.strokeStyle = isOpSelected ? '#38bdf8' : '#f87171'
+          ctx.lineWidth = isOpSelected ? 8 : 6
+          ctx.beginPath(); ctx.moveTo(op.a.x, op.a.y); ctx.lineTo(op.b.x, op.b.y); ctx.stroke()
+        }
+
+        // Main barrier line
+        ctx.strokeStyle = '#ef4444'
+        ctx.lineWidth = 4
+        ctx.beginPath(); ctx.moveTo(op.a.x, op.a.y); ctx.lineTo(op.b.x, op.b.y); ctx.stroke()
+
+        // Hazard stripes
+        ctx.strokeStyle = '#fbbf24'
+        ctx.lineWidth = 2.5
+        ctx.setLineDash([6, 6])
+        ctx.beginPath(); ctx.moveTo(op.a.x, op.a.y); ctx.lineTo(op.b.x, op.b.y); ctx.stroke()
+        ctx.setLineDash([])
+
+        // Posts at ends
+        ctx.fillStyle = '#ef4444'
+        ctx.beginPath(); ctx.arc(op.a.x, op.a.y, 5, 0, Math.PI * 2); ctx.fill()
+        ctx.beginPath(); ctx.arc(op.b.x, op.b.y, 5, 0, Math.PI * 2); ctx.fill()
+        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.5
+        ctx.beginPath(); ctx.arc(op.a.x, op.a.y, 5, 0, Math.PI * 2); ctx.stroke()
+        ctx.beginPath(); ctx.arc(op.b.x, op.b.y, 5, 0, Math.PI * 2); ctx.stroke()
+
+        // Label (Clean floating text without background box)
+        const labelText = `🔒 ${op.name || 'GATE'} (CLOSED)`
+        ctx.font = 'bold 8.5px ui-monospace, monospace'
+        ctx.fillStyle = isOpSelected ? '#38bdf8' : '#f87171'
+        ctx.textAlign = 'center'
+        ctx.fillText(labelText, mid.x, mid.y - 8)
+        ctx.textAlign = 'left'
+        ctx.restore()
+      } else {
+        // ── OPEN: Active egress exit route with emerald green glow ──────────
+        ctx.save()
+        if (isOpSelected || isOpHovered) {
+          ctx.strokeStyle = isOpSelected ? '#38bdf8' : '#86efac'
+          ctx.lineWidth = isOpSelected ? 8 : 6
+          ctx.beginPath(); ctx.moveTo(op.a.x, op.a.y); ctx.lineTo(op.b.x, op.b.y); ctx.stroke()
+        }
+
+        // Open dashed green line
+        ctx.strokeStyle = '#22c55e'
+        ctx.lineWidth = 4
+        ctx.setLineDash([5, 4])
+        ctx.beginPath(); ctx.moveTo(op.a.x, op.a.y); ctx.lineTo(op.b.x, op.b.y); ctx.stroke()
+        ctx.setLineDash([])
+
+        // Posts at ends
+        ctx.fillStyle = '#22c55e'
+        ctx.beginPath(); ctx.arc(op.a.x, op.a.y, 5, 0, Math.PI * 2); ctx.fill()
+        ctx.beginPath(); ctx.arc(op.b.x, op.b.y, 5, 0, Math.PI * 2); ctx.fill()
+        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.5
+        ctx.beginPath(); ctx.arc(op.a.x, op.a.y, 5, 0, Math.PI * 2); ctx.stroke()
+        ctx.beginPath(); ctx.arc(op.b.x, op.b.y, 5, 0, Math.PI * 2); ctx.stroke()
+
+        // Label (Clean floating text without background box)
+        const labelText = `🔓 ${op.name || 'GATE'} (OPEN)`
+        ctx.font = 'bold 8.5px ui-monospace, monospace'
+        ctx.fillStyle = isOpSelected ? '#38bdf8' : '#4ade80'
+        ctx.textAlign = 'center'
+        ctx.fillText(labelText, mid.x, mid.y - 8)
+        ctx.textAlign = 'left'
+        ctx.restore()
+      }
+
+      // Endpoints handles when selected
+      if (isOpSelected) {
+        ctx.fillStyle = selectedItem.endpoint === 'a' ? '#f59e0b' : '#38bdf8'
+        ctx.beginPath(); ctx.arc(op.a.x, op.a.y, 6.5, 0, Math.PI * 2); ctx.fill()
+        ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke()
+
+        ctx.fillStyle = selectedItem.endpoint === 'b' ? '#f59e0b' : '#38bdf8'
+        ctx.beginPath(); ctx.arc(op.b.x, op.b.y, 6.5, 0, Math.PI * 2); ctx.fill()
+        ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke()
+      }
+    }
+
+    // ── Barricades (Crowd Control / Police Barriers) ──────────────────────
+    for (const bar of lay.barricades || []) {
+      const isBarSelected = selectedItem?.type === 'barricade' && selectedItem.id === bar.id
+      const isBarHovered = hoveredHit?.type === 'barricade' && hoveredHit.id === bar.id
+      const mid = segMidpoint(bar.a, bar.b)
+
+      ctx.save()
+      // Selection / Hover highlight glow
+      if (isBarSelected || isBarHovered) {
+        ctx.strokeStyle = isBarSelected ? '#38bdf8' : '#fde047'
+        ctx.lineWidth = isBarSelected ? 8 : 6
+        ctx.beginPath(); ctx.moveTo(bar.a.x, bar.a.y); ctx.lineTo(bar.b.x, bar.b.y); ctx.stroke()
+      }
+
+      // Main heavy barricade rail (amber steel)
+      ctx.strokeStyle = '#f59e0b'
+      ctx.lineWidth = 5
+      ctx.beginPath(); ctx.moveTo(bar.a.x, bar.a.y); ctx.lineTo(bar.b.x, bar.b.y); ctx.stroke()
+
+      // High-visibility black/dark caution hazard stripes on barricade rail
+      ctx.strokeStyle = '#1e293b'
+      ctx.lineWidth = 3
+      ctx.setLineDash([5, 5])
+      ctx.beginPath(); ctx.moveTo(bar.a.x, bar.a.y); ctx.lineTo(bar.b.x, bar.b.y); ctx.stroke()
+      ctx.setLineDash([])
+
+      // Stanchion end posts / heavy steel feet
+      const drawPost = (pt) => {
+        ctx.fillStyle = '#f59e0b'
+        ctx.beginPath(); ctx.arc(pt.x, pt.y, 4.5, 0, Math.PI * 2); ctx.fill()
+        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.5
+        ctx.beginPath(); ctx.arc(pt.x, pt.y, 4.5, 0, Math.PI * 2); ctx.stroke()
+      }
+      drawPost(bar.a)
+      drawPost(bar.b)
+
+      // Label (Clean floating text without background box)
+      const labelText = `🚧 ${bar.name || 'BARRICADE'}`
+      ctx.font = 'bold 8.5px ui-monospace, monospace'
+      ctx.fillStyle = isBarSelected ? '#38bdf8' : '#fbbf24'
+      ctx.textAlign = 'center'
+      ctx.fillText(labelText, mid.x, mid.y - 8)
+      ctx.textAlign = 'left'
+      ctx.restore()
+
+      // Endpoint drag handles when selected
+      if (isBarSelected) {
+        ctx.fillStyle = selectedItem.endpoint === 'a' ? '#f59e0b' : '#38bdf8'
+        ctx.beginPath(); ctx.arc(bar.a.x, bar.a.y, 6.5, 0, Math.PI * 2); ctx.fill()
+        ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke()
+
+        ctx.fillStyle = selectedItem.endpoint === 'b' ? '#f59e0b' : '#38bdf8'
+        ctx.beginPath(); ctx.arc(bar.b.x, bar.b.y, 6.5, 0, Math.PI * 2); ctx.fill()
+        ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke()
       }
     }
 
     // ── Exits ─────────────────────────────────────────────────────────────
     for (const exit of lay.exits) {
+      const isExitSelected = selectedItem?.type === 'exit' && selectedItem.id === exit.id
+      const isExitHovered = hoveredHit?.type === 'exit' && hoveredHit.id === exit.id
+
       // Line
-      ctx.lineWidth = 4
-      ctx.strokeStyle = DRAW_COLORS.exit
+      ctx.lineWidth = isExitSelected ? 5 : isExitHovered ? 4.5 : 4
+      ctx.strokeStyle = isExitSelected ? '#38bdf8' : DRAW_COLORS.exit
       ctx.setLineDash([8, 4])
       ctx.beginPath()
       ctx.moveTo(exit.a.x, exit.a.y)
@@ -424,9 +940,20 @@ export default function PlannerPage({ backendUrl = '' }) {
       ctx.stroke()
       ctx.setLineDash([])
 
+      // Endpoints handles when selected
+      if (isExitSelected) {
+        ctx.fillStyle = selectedItem.endpoint === 'a' ? '#f59e0b' : '#38bdf8'
+        ctx.beginPath(); ctx.arc(exit.a.x, exit.a.y, 6, 0, Math.PI * 2); ctx.fill()
+        ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke()
+
+        ctx.fillStyle = selectedItem.endpoint === 'b' ? '#f59e0b' : '#38bdf8'
+        ctx.beginPath(); ctx.arc(exit.b.x, exit.b.y, 6, 0, Math.PI * 2); ctx.fill()
+        ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke()
+      }
+
       // Label
       const mid = segMidpoint(exit.a, exit.b)
-      ctx.fillStyle = DRAW_COLORS.exit
+      ctx.fillStyle = isExitSelected ? '#38bdf8' : DRAW_COLORS.exit
       ctx.font = 'bold 9px ui-monospace, monospace'
       ctx.textAlign = 'center'
       ctx.fillText(`🚪 ${exit.name || exit.id}`, mid.x, mid.y - 6)
@@ -436,20 +963,35 @@ export default function PlannerPage({ backendUrl = '' }) {
     // ── Spawn points ──────────────────────────────────────────────────────
     for (const sp of lay.spawns) {
       const isActive = activeSpawnIdsRef.current.has(sp.id)
+      const isSpawnSelected = selectedItem?.type === 'spawn' && selectedItem.id === sp.id
+      const isSpawnHovered = hoveredHit?.type === 'spawn' && hoveredHit.id === sp.id
+
+      // Selection / Hover halo ring
+      if (isSpawnSelected || isSpawnHovered) {
+        ctx.strokeStyle = isSpawnSelected ? '#38bdf8' : '#f59e0b'
+        ctx.lineWidth = 2.5
+        ctx.setLineDash([4, 3])
+        ctx.beginPath()
+        ctx.arc(sp.x, sp.y, 14, 0, Math.PI * 2)
+        ctx.stroke()
+        ctx.setLineDash([])
+      }
+
       ctx.fillStyle = isActive ? DRAW_COLORS.spawn : 'rgba(100,116,139,0.5)'
       ctx.beginPath()
       ctx.arc(sp.x, sp.y, 9, 0, Math.PI * 2)
       ctx.fill()
-      ctx.strokeStyle = '#fff'
-      ctx.lineWidth = 1.5
+      ctx.strokeStyle = isSpawnSelected ? '#38bdf8' : '#fff'
+      ctx.lineWidth = isSpawnSelected ? 2.5 : 1.5
       ctx.stroke()
       ctx.fillStyle = '#fff'
       ctx.font = 'bold 9px ui-monospace, monospace'
       ctx.textAlign = 'center'
       ctx.fillText('S', sp.x, sp.y + 3)
       ctx.textAlign = 'left'
+
       // Name
-      ctx.fillStyle = DRAW_COLORS.spawn
+      ctx.fillStyle = isSpawnSelected ? '#38bdf8' : DRAW_COLORS.spawn
       ctx.font = '9px ui-monospace, monospace'
       ctx.fillText(sp.name || sp.id, sp.x + 12, sp.y + 3)
     }
@@ -458,9 +1000,14 @@ export default function PlannerPage({ backendUrl = '' }) {
     if (focusPoint) {
       const fx = focusPoint.x
       const fy = focusPoint.y
+      const isFocusSelected = selectedItem?.type === 'focus'
       const isActive = isFocusModeRef.current
       const isRushed = isActive && focusConditionRef.current === 'rushed'
-      const themeColor = isActive ? (isRushed ? '#ef4444' : '#a855f7') : '#94a3b8'
+      const themeColor = isFocusSelected
+        ? '#38bdf8'
+        : isActive
+          ? (isRushed ? '#ef4444' : '#a855f7')
+          : '#94a3b8'
 
       // Pulsing concentric radar rings when active
       if (isActive) {
@@ -486,7 +1033,7 @@ export default function PlannerPage({ backendUrl = '' }) {
       // Outer bullseye ring
       ctx.save()
       ctx.strokeStyle = themeColor
-      ctx.lineWidth = 2
+      ctx.lineWidth = isFocusSelected ? 3 : 2
       ctx.beginPath()
       ctx.arc(fx, fy, 11, 0, Math.PI * 2)
       ctx.stroke()
@@ -516,9 +1063,11 @@ export default function PlannerPage({ backendUrl = '' }) {
       ctx.fillStyle = themeColor
       ctx.font = 'bold 9px ui-monospace, monospace'
       ctx.textAlign = 'center'
-      const labelText = isActive
-        ? (isRushed ? '⚡ RUSHED FOCUS' : '🎯 FOCUS POINT')
-        : '📍 FOCUS (OFF)'
+      const labelText = isFocusSelected
+        ? '🎯 FOCUS (SELECTED / DRAGGABLE)'
+        : isActive
+          ? (isRushed ? '⚡ RUSHED FOCUS' : '🎯 FOCUS POINT')
+          : '📍 FOCUS (OFF)'
       ctx.fillText(labelText, fx, fy - 14)
       ctx.textAlign = 'left'
       ctx.restore()
@@ -532,8 +1081,8 @@ export default function PlannerPage({ backendUrl = '' }) {
       ctx.fillStyle = agent.isPanic
         ? DRAW_COLORS.agentPanic
         : agent.isFocus
-        ? '#c084fc'
-        : DRAW_COLORS.agent
+          ? '#c084fc'
+          : DRAW_COLORS.agent
       ctx.beginPath()
       ctx.arc(px, py, Math.max(2.5, pxM * 0.22), 0, Math.PI * 2)
       ctx.fill()
@@ -563,12 +1112,34 @@ export default function PlannerPage({ backendUrl = '' }) {
       }
     }
 
+    if (drawTool === TOOLS.BARRICADE && barricadeLine) {
+      ctx.strokeStyle = '#f59e0b'
+      ctx.lineWidth = 4
+      ctx.setLineDash([6, 3])
+      ctx.beginPath(); ctx.moveTo(barricadeLine.x, barricadeLine.y); ctx.lineTo(mousePos.x, mousePos.y); ctx.stroke()
+      ctx.setLineDash([])
+      ctx.fillStyle = '#f59e0b'
+      ctx.font = 'bold 9px ui-monospace, monospace'
+      ctx.fillText('CLICK TO COMPLETE BARRICADE', mousePos.x + 10, mousePos.y)
+    }
+
     if (drawTool === TOOLS.EXIT && exitLine) {
       ctx.strokeStyle = DRAW_COLORS.exit
       ctx.lineWidth = 3
       ctx.setLineDash([6, 3])
       ctx.beginPath(); ctx.moveTo(exitLine.x, exitLine.y); ctx.lineTo(mousePos.x, mousePos.y); ctx.stroke()
       ctx.setLineDash([])
+    }
+
+    if (drawTool === TOOLS.OPENING && openingLine) {
+      ctx.strokeStyle = '#ef4444'
+      ctx.lineWidth = 3.5
+      ctx.setLineDash([6, 3])
+      ctx.beginPath(); ctx.moveTo(openingLine.x, openingLine.y); ctx.lineTo(mousePos.x, mousePos.y); ctx.stroke()
+      ctx.setLineDash([])
+      ctx.fillStyle = '#ef4444'
+      ctx.font = 'bold 9px ui-monospace, monospace'
+      ctx.fillText('CLICK TO COMPLETE EMERGENCY GATE', mousePos.x + 10, mousePos.y)
     }
 
     if (drawTool === TOOLS.FOCUS && hovered) {
@@ -598,7 +1169,7 @@ export default function PlannerPage({ backendUrl = '' }) {
         ctx.beginPath(); ctx.arc(pt.x, pt.y, 5, 0, Math.PI * 2); ctx.fill()
       }
     }
-  }, [currentPoly, exitLine, scalePoints, mousePos, hovered, drawTool, focusPoint])
+  }, [currentPoly, barricadeLine, exitLine, openingLine, scalePoints, mousePos, hovered, drawTool, focusPoint, selectedItem, hoveredHit])
 
   // ── Simulation animation loop ─────────────────────────────────────────────
   const runSimLoop = useCallback(() => {
@@ -613,9 +1184,41 @@ export default function PlannerPage({ backendUrl = '' }) {
       lastTsRef.current = timestamp
 
       const pxM = lay.scale?.px_per_meter || 25
-      const wallSegs  = extractWallSegments(lay.walls, pxM)
-      const exits_m   = convertExitsToMeters(lay.exits, pxM)
-      const spawns_m  = convertSpawnsToMeters(lay.spawns, pxM)
+      const wallSegs = extractWallSegments(lay.walls, pxM)
+      const exits_m = convertExitsToMeters(lay.exits, pxM)
+      const spawns_m = convertSpawnsToMeters(lay.spawns, pxM)
+
+      // ── Incorporate Barricades (act as solid obstacle walls in SFM physics) ──
+      for (const bar of lay.barricades || []) {
+        wallSegs.push([
+          { x: bar.a.x / pxM, y: bar.a.y / pxM },
+          { x: bar.b.x / pxM, y: bar.b.y / pxM },
+        ])
+      }
+
+      // ── Incorporate dynamic Emergency Openings into physics ──────────────
+      for (const op of lay.openings || []) {
+        if (!op.isOpen) {
+          // Closed -> solid barrier wall
+          wallSegs.push([
+            { x: op.a.x / pxM, y: op.a.y / pxM },
+            { x: op.b.x / pxM, y: op.b.y / pxM },
+          ])
+        } else {
+          // Open -> active egress evacuation exit
+          exits_m.push({
+            id: op.id,
+            name: op.name || 'Emergency Opening',
+            a_m: { x: op.a.x / pxM, y: op.a.y / pxM },
+            b_m: { x: op.b.x / pxM, y: op.b.y / pxM },
+            center_m: {
+              x: (op.a.x + op.b.x) / 2 / pxM,
+              y: (op.a.y + op.b.y) / 2 / pxM,
+            },
+            isEmergencyOpening: true,
+          })
+        }
+      }
 
       // ── Spawn agents ───────────────────────────────────────────────────
       if (
@@ -708,12 +1311,247 @@ export default function PlannerPage({ backendUrl = '' }) {
     const scaleY = CANVAS_H / rect.height
     return {
       x: Math.round((e.clientX - rect.left) * scaleX),
-      y: Math.round((e.clientY - rect.top)  * scaleY),
+      y: Math.round((e.clientY - rect.top) * scaleY),
+    }
+  }
+
+  const handleCanvasMouseDown = (e) => {
+    const pos = getCanvasPos(e)
+    if (simMode !== 'edit') return
+
+    if (drawTool === TOOLS.SELECT) {
+      const hit = findHit(pos, layout, selectedItem, focusPoint)
+      if (hit) {
+        setSelectedItem(hit)
+        if (hit.type === 'wall') {
+          const w = layout?.walls?.find(x => x.id === hit.id)
+          if (w) {
+            setDragState({
+              type: 'wall',
+              id: hit.id,
+              vertexIndex: hit.vertexIndex,
+              origPoints: w.points.map(p => ({ ...p })),
+              startPos: pos,
+            })
+          }
+        } else if (hit.type === 'barricade') {
+          const bar = layout?.barricades?.find(x => x.id === hit.id)
+          if (bar) {
+            setDragState({
+              type: 'barricade',
+              id: hit.id,
+              endpoint: hit.endpoint,
+              origA: { ...bar.a },
+              origB: { ...bar.b },
+              startPos: pos,
+            })
+          }
+        } else if (hit.type === 'opening') {
+          const op = layout?.openings?.find(x => x.id === hit.id)
+          if (op) {
+            setDragState({
+              type: 'opening',
+              id: hit.id,
+              endpoint: hit.endpoint,
+              origA: { ...op.a },
+              origB: { ...op.b },
+              startPos: pos,
+            })
+          }
+        } else if (hit.type === 'spawn') {
+          const s = layout?.spawns?.find(x => x.id === hit.id)
+          if (s) {
+            setDragState({
+              type: 'spawn',
+              id: hit.id,
+              origX: s.x,
+              origY: s.y,
+              startPos: pos,
+            })
+          }
+        } else if (hit.type === 'exit') {
+          const ex = layout?.exits?.find(x => x.id === hit.id)
+          if (ex) {
+            setDragState({
+              type: 'exit',
+              id: hit.id,
+              endpoint: hit.endpoint,
+              origA: { ...ex.a },
+              origB: { ...ex.b },
+              startPos: pos,
+            })
+          }
+        } else if (hit.type === 'focus') {
+          setDragState({
+            type: 'focus',
+            origX: focusPoint.x,
+            origY: focusPoint.y,
+            startPos: pos,
+          })
+        }
+      } else {
+        setSelectedItem(null)
+        setDragState(null)
+      }
     }
   }
 
   const handleCanvasMouseMove = (e) => {
-    setMousePos(getCanvasPos(e))
+    const pos = getCanvasPos(e)
+    setMousePos(pos)
+
+    if (dragState) {
+      const dx = pos.x - dragState.startPos.x
+      const dy = pos.y - dragState.startPos.y
+
+      if (dragState.type === 'wall') {
+        if (dragState.vertexIndex !== undefined) {
+          const vIdx = dragState.vertexIndex
+          const newPoints = dragState.origPoints.map((p, idx) =>
+            idx === vIdx
+              ? {
+                x: Math.max(0, Math.min(CANVAS_W, Math.round(p.x + dx))),
+                y: Math.max(0, Math.min(CANVAS_H, Math.round(p.y + dy))),
+              }
+              : p
+          )
+          setLayout(prev => prev ? ({
+            ...prev,
+            walls: (prev.walls || []).map(w => w.id === dragState.id ? { ...w, points: newPoints } : w)
+          }) : prev)
+        } else {
+          const newPoints = dragState.origPoints.map(p => ({
+            x: Math.max(0, Math.min(CANVAS_W, Math.round(p.x + dx))),
+            y: Math.max(0, Math.min(CANVAS_H, Math.round(p.y + dy))),
+          }))
+          setLayout(prev => prev ? ({
+            ...prev,
+            walls: (prev.walls || []).map(w => w.id === dragState.id ? { ...w, points: newPoints } : w)
+          }) : prev)
+        }
+      } else if (dragState.type === 'barricade') {
+        if (dragState.endpoint === 'a') {
+          const na = {
+            x: Math.max(0, Math.min(CANVAS_W, Math.round(dragState.origA.x + dx))),
+            y: Math.max(0, Math.min(CANVAS_H, Math.round(dragState.origA.y + dy))),
+          }
+          setLayout(prev => prev ? ({
+            ...prev,
+            barricades: (prev.barricades || []).map(b => b.id === dragState.id ? { ...b, a: na } : b)
+          }) : prev)
+        } else if (dragState.endpoint === 'b') {
+          const nb = {
+            x: Math.max(0, Math.min(CANVAS_W, Math.round(dragState.origB.x + dx))),
+            y: Math.max(0, Math.min(CANVAS_H, Math.round(dragState.origB.y + dy))),
+          }
+          setLayout(prev => prev ? ({
+            ...prev,
+            barricades: (prev.barricades || []).map(b => b.id === dragState.id ? { ...b, b: nb } : b)
+          }) : prev)
+        } else {
+          const na = {
+            x: Math.max(0, Math.min(CANVAS_W, Math.round(dragState.origA.x + dx))),
+            y: Math.max(0, Math.min(CANVAS_H, Math.round(dragState.origA.y + dy))),
+          }
+          const nb = {
+            x: Math.max(0, Math.min(CANVAS_W, Math.round(dragState.origB.x + dx))),
+            y: Math.max(0, Math.min(CANVAS_H, Math.round(dragState.origB.y + dy))),
+          }
+          setLayout(prev => prev ? ({
+            ...prev,
+            barricades: (prev.barricades || []).map(b => b.id === dragState.id ? { ...b, a: na, b: nb } : b)
+          }) : prev)
+        }
+      } else if (dragState.type === 'opening') {
+        if (dragState.endpoint === 'a') {
+          const na = {
+            x: Math.max(0, Math.min(CANVAS_W, Math.round(dragState.origA.x + dx))),
+            y: Math.max(0, Math.min(CANVAS_H, Math.round(dragState.origA.y + dy))),
+          }
+          setLayout(prev => prev ? ({
+            ...prev,
+            openings: (prev.openings || []).map(o => o.id === dragState.id ? { ...o, a: na } : o)
+          }) : prev)
+        } else if (dragState.endpoint === 'b') {
+          const nb = {
+            x: Math.max(0, Math.min(CANVAS_W, Math.round(dragState.origB.x + dx))),
+            y: Math.max(0, Math.min(CANVAS_H, Math.round(dragState.origB.y + dy))),
+          }
+          setLayout(prev => prev ? ({
+            ...prev,
+            openings: (prev.openings || []).map(o => o.id === dragState.id ? { ...o, b: nb } : o)
+          }) : prev)
+        } else {
+          const na = {
+            x: Math.max(0, Math.min(CANVAS_W, Math.round(dragState.origA.x + dx))),
+            y: Math.max(0, Math.min(CANVAS_H, Math.round(dragState.origA.y + dy))),
+          }
+          const nb = {
+            x: Math.max(0, Math.min(CANVAS_W, Math.round(dragState.origB.x + dx))),
+            y: Math.max(0, Math.min(CANVAS_H, Math.round(dragState.origB.y + dy))),
+          }
+          setLayout(prev => prev ? ({
+            ...prev,
+            openings: (prev.openings || []).map(o => o.id === dragState.id ? { ...o, a: na, b: nb } : o)
+          }) : prev)
+        }
+      } else if (dragState.type === 'spawn') {
+        const nx = Math.max(0, Math.min(CANVAS_W, Math.round(dragState.origX + dx)))
+        const ny = Math.max(0, Math.min(CANVAS_H, Math.round(dragState.origY + dy)))
+        setLayout(prev => prev ? ({
+          ...prev,
+          spawns: (prev.spawns || []).map(s => s.id === dragState.id ? { ...s, x: nx, y: ny } : s)
+        }) : prev)
+      } else if (dragState.type === 'exit') {
+        if (dragState.endpoint === 'a') {
+          const na = {
+            x: Math.max(0, Math.min(CANVAS_W, Math.round(dragState.origA.x + dx))),
+            y: Math.max(0, Math.min(CANVAS_H, Math.round(dragState.origA.y + dy))),
+          }
+          setLayout(prev => prev ? ({
+            ...prev,
+            exits: (prev.exits || []).map(ex => ex.id === dragState.id ? { ...ex, a: na } : ex)
+          }) : prev)
+        } else if (dragState.endpoint === 'b') {
+          const nb = {
+            x: Math.max(0, Math.min(CANVAS_W, Math.round(dragState.origB.x + dx))),
+            y: Math.max(0, Math.min(CANVAS_H, Math.round(dragState.origB.y + dy))),
+          }
+          setLayout(prev => prev ? ({
+            ...prev,
+            exits: (prev.exits || []).map(ex => ex.id === dragState.id ? { ...ex, b: nb } : ex)
+          }) : prev)
+        } else {
+          const na = {
+            x: Math.max(0, Math.min(CANVAS_W, Math.round(dragState.origA.x + dx))),
+            y: Math.max(0, Math.min(CANVAS_H, Math.round(dragState.origA.y + dy))),
+          }
+          const nb = {
+            x: Math.max(0, Math.min(CANVAS_W, Math.round(dragState.origB.x + dx))),
+            y: Math.max(0, Math.min(CANVAS_H, Math.round(dragState.origB.y + dy))),
+          }
+          setLayout(prev => prev ? ({
+            ...prev,
+            exits: (prev.exits || []).map(ex => ex.id === dragState.id ? { ...ex, a: na, b: nb } : ex)
+          }) : prev)
+        }
+      } else if (dragState.type === 'focus') {
+        const nfx = Math.max(0, Math.min(CANVAS_W, Math.round(dragState.origX + dx)))
+        const nfy = Math.max(0, Math.min(CANVAS_H, Math.round(dragState.origY + dy)))
+        setFocusPoint({ x: nfx, y: nfy })
+        const pxM = layout?.scale?.px_per_meter || 25
+        if (agentsRef.current.length > 0 && isFocusMode) {
+          setFocusTarget(agentsRef.current, { x: nfx / pxM, y: nfy / pxM }, focusCondition)
+        }
+      }
+    } else if (drawTool === TOOLS.SELECT && simMode === 'edit') {
+      const hit = findHit(pos, layout, selectedItem, focusPoint)
+      setHoveredHit(hit)
+    }
+  }
+
+  const handleCanvasMouseUp = () => {
+    setDragState(null)
   }
 
   const handleCanvasClick = (e) => {
@@ -747,6 +1585,16 @@ export default function PlannerPage({ backendUrl = '' }) {
         setCurrentPoly(prev => [...prev, pos])
       }
 
+    } else if (drawTool === TOOLS.BARRICADE) {
+      if (!barricadeLine) {
+        setBarricadeLine(pos)
+      } else {
+        const name = prompt('Barricade name:', `Barricade ${(layout?.barricades?.length || 0) + 1}`) || 'Barricade'
+        const newBar = { id: `barricade_${Date.now()}`, name, a: barricadeLine, b: pos }
+        setLayout(prev => ({ ...prev, barricades: [...(prev?.barricades || []), newBar] }))
+        setBarricadeLine(null)
+      }
+
     } else if (drawTool === TOOLS.EXIT) {
       if (!exitLine) {
         setExitLine(pos)
@@ -755,6 +1603,16 @@ export default function PlannerPage({ backendUrl = '' }) {
         const newExit = { id: `exit_${Date.now()}`, name, a: exitLine, b: pos }
         setLayout(prev => ({ ...prev, exits: [...(prev?.exits || []), newExit] }))
         setExitLine(null)
+      }
+
+    } else if (drawTool === TOOLS.OPENING) {
+      if (!openingLine) {
+        setOpeningLine(pos)
+      } else {
+        const name = prompt('Emergency Opening / Gate name:', `Emergency Gate ${(layout?.openings?.length || 0) + 1}`) || 'Emergency Gate'
+        const newOpening = { id: `opening_${Date.now()}`, name, a: openingLine, b: pos, isOpen: false }
+        setLayout(prev => ({ ...prev, openings: [...(prev?.openings || []), newOpening] }))
+        setOpeningLine(null)
       }
 
     } else if (drawTool === TOOLS.SPAWN) {
@@ -769,6 +1627,15 @@ export default function PlannerPage({ backendUrl = '' }) {
         const updated = [...scalePoints, pos]
         setScalePoints(updated)
         if (updated.length === 2) setShowScaleDialog(true)
+      }
+    } else if (drawTool === TOOLS.SELECT) {
+      // In select mode, check if clicking directly near the center badge of an emergency opening
+      for (const op of layout?.openings || []) {
+        const mid = segMidpoint(op.a, op.b)
+        if (ptDist(pos, mid) <= 24) {
+          toggleOpening(op.id)
+          break
+        }
       }
     }
   }
@@ -819,6 +1686,17 @@ export default function PlannerPage({ backendUrl = '' }) {
       setLayout(prev => ({ ...prev, walls: [...(prev?.walls || []), newWall] }))
       setCurrentPoly([])
     }
+  }
+
+  const getCanvasCursor = () => {
+    if (simMode !== 'edit') return 'default'
+    if (drawTool !== TOOLS.SELECT) return 'crosshair'
+    if (dragState) return 'grabbing'
+    if (hoveredHit) {
+      if (hoveredHit.vertexIndex !== undefined || hoveredHit.endpoint) return 'grab'
+      return 'move'
+    }
+    return 'default'
   }
 
   // ── Venue actions ─────────────────────────────────────────────────────────
@@ -921,7 +1799,7 @@ export default function PlannerPage({ backendUrl = '' }) {
     resetSimState()
     try { localStorage.removeItem('planner_active_draft') } catch { /* ignore */ }
     setLayout({
-      walls: [], exits: [], spawns: [],
+      walls: [], exits: [], spawns: [], openings: [], barricades: [],
       scale: { px_per_meter: 25, reference_distance_m: 15, scale_is_estimated: true },
     })
     setVenueName('Untitled Custom Venue')
@@ -959,6 +1837,19 @@ export default function PlannerPage({ backendUrl = '' }) {
     if (!lay) return
     const pxM = lay.scale?.px_per_meter || 25
     const exits_m = convertExitsToMeters(lay.exits, pxM)
+    // Also include currently open emergency gates in emergency evacuation destinations
+    for (const op of lay.openings || []) {
+      if (op.isOpen) {
+        exits_m.push({
+          id: op.id,
+          name: op.name || 'Emergency Opening',
+          a_m: { x: op.a.x / pxM, y: op.a.y / pxM },
+          b_m: { x: op.b.x / pxM, y: op.b.y / pxM },
+          center_m: { x: (op.a.x + op.b.x) / 2 / pxM, y: (op.a.y + op.b.y) / 2 / pxM },
+          isEmergencyOpening: true,
+        })
+      }
+    }
     sfmTriggerEmergency(agentsRef.current, exits_m, DEFAULT_SFM_PARAMS)
     setIsEmergency(true)
   }
@@ -970,7 +1861,7 @@ export default function PlannerPage({ backendUrl = '' }) {
     const pixelDist = ptDist(scalePoints[0], scalePoints[1])
     const pxPerMeter = pixelDist / d
     setLayout(prev => ({
-      ...(prev || { walls:[], exits:[], spawns:[] }),
+      ...(prev || { walls: [], exits: [], spawns: [], openings: [], barricades: [] }),
       scale: { px_per_meter: pxPerMeter, reference_distance_m: d, scale_is_estimated: false },
     }))
     setScalePoints([])
@@ -988,21 +1879,26 @@ export default function PlannerPage({ backendUrl = '' }) {
   }
 
   const handleClearAll = () => {
-    if (!window.confirm('Clear all walls, exits, and spawn points?')) return
-    setLayout(prev => prev ? { ...prev, walls: [], exits: [], spawns: [] } : prev)
+    if (!window.confirm('Clear all walls, barricades, exits, emergency openings, and spawn points?')) return
+    setLayout(prev => prev ? { ...prev, walls: [], exits: [], spawns: [], openings: [], barricades: [] } : prev)
     setCurrentPoly([])
+    setBarricadeLine(null)
     setExitLine(null)
+    setOpeningLine(null)
+    setSelectedItem(null)
     resetSimState()
   }
 
   // ─── Render ────────────────────────────────────────────────────────────────
   const toolDefs = [
-    { id: TOOLS.SELECT, label: '↖ SELECT',  tip: 'Pan / inspect (no drawing)' },
-    { id: TOOLS.WALL,   label: '⬛ WALL',   tip: 'Click to place polygon points; double-click or click near start to close' },
-    { id: TOOLS.EXIT,   label: '🚪 EXIT',   tip: 'Click point A then point B to draw an exit line' },
-    { id: TOOLS.SPAWN,  label: '📍 SPAWN',  tip: 'Click to place an agent spawn / entry point' },
-    { id: TOOLS.FOCUS,  label: '🎯 FOCUS',  tip: 'Click canvas to set crowd attraction / focus point target' },
-    { id: TOOLS.SCALE,  label: '📏 SCALE',  tip: 'Click two points then enter real-world distance to set px/m scale' },
+    { id: TOOLS.SELECT, label: '↖ SELECT / MOVE', tip: 'Click/drag walls, points, barricades, exits, gates, spawns. Del key to remove' },
+    { id: TOOLS.WALL, label: '⬛ WALL', tip: 'Click to place polygon points; double-click or click near start to finish' },
+    { id: TOOLS.BARRICADE, label: '🚧 BARRICADE', tip: 'Click point A then point B to place a crowd control barrier / barricade' },
+    { id: TOOLS.EXIT, label: '🚪 REGULAR EXIT', tip: 'Click point A then point B to draw a standard exit line' },
+    { id: TOOLS.OPENING, label: '🚨 EMERGENCY GATE', tip: 'Click point A then point B to draw an emergency gate. Toggle open/closed' },
+    { id: TOOLS.SPAWN, label: '📍 ENTRY / SPAWN', tip: 'Click to place an agent spawn / entry point' },
+    { id: TOOLS.FOCUS, label: '🎯 FOCUS POINT', tip: 'Click canvas to set crowd attraction / focus point target' },
+    { id: TOOLS.SCALE, label: '📏 SCALE', tip: 'Click two points then enter real-world distance to set px/m scale' },
   ]
 
   return (
@@ -1029,7 +1925,7 @@ export default function PlannerPage({ backendUrl = '' }) {
       <div className="flex gap-4 p-4" style={{ minHeight: 0 }}>
 
         {/* ── Left Panel: Venue Management + Drawing Tools ──────────── */}
-        <div className="flex flex-col gap-3 w-52 shrink-0">
+        <div className="flex flex-col gap-3 w-56 shrink-0">
 
           {/* Header */}
           <div>
@@ -1037,7 +1933,7 @@ export default function PlannerPage({ backendUrl = '' }) {
               🏗️ Venue Editor
             </h2>
             <p className="text-[10px] mt-0.5" style={{ color: 'var(--color-muted)' }}>
-              Draw walls, exits &amp; spawns
+              Draw &amp; edit walls, exits &amp; spawns
             </p>
           </div>
 
@@ -1097,6 +1993,80 @@ export default function PlannerPage({ backendUrl = '' }) {
             </div>
           </div>
 
+          {/* Selected element action card */}
+          {selectedItem && (
+            <div
+              className="rounded-xl p-3 border flex flex-col gap-2 shadow-sm"
+              style={{
+                borderColor: selectedItem.type === 'opening' ? 'rgba(239, 68, 68, 0.4)' : selectedItem.type === 'barricade' ? 'rgba(245, 158, 11, 0.4)' : 'rgba(56, 189, 248, 0.4)',
+                background: selectedItem.type === 'opening' ? 'rgba(239, 68, 68, 0.08)' : selectedItem.type === 'barricade' ? 'rgba(245, 158, 11, 0.08)' : 'rgba(56, 189, 248, 0.08)',
+              }}
+            >
+              <div className="flex items-center justify-between">
+                <span className={`text-[10px] font-extrabold uppercase tracking-wider ${selectedItem.type === 'opening'
+                  ? 'text-red-400'
+                  : selectedItem.type === 'barricade'
+                    ? 'text-amber-500 dark:text-amber-400'
+                    : 'text-sky-500 dark:text-sky-400'
+                  }`}>
+                  Selected {selectedItem.type === 'opening' ? 'EMERGENCY GATE' : selectedItem.type === 'barricade' ? 'BARRICADE' : selectedItem.type.toUpperCase()}
+                </span>
+                <button
+                  onClick={() => setSelectedItem(null)}
+                  className="text-[11px] text-slate-400 hover:text-white px-1"
+                  title="Deselect"
+                >
+                  ✕
+                </button>
+              </div>
+              <p className="text-[11px] font-mono-num font-semibold truncate" style={{ color: 'var(--color-text)' }}>
+                {selectedItem.name || selectedItem.id || selectedItem.type}
+                {selectedItem.vertexIndex !== undefined && (
+                  <span className="text-amber-500 dark:text-amber-400 ml-1 font-bold">
+                    (Point #{selectedItem.vertexIndex + 1})
+                  </span>
+                )}
+              </p>
+              <p className="text-[9px] leading-tight" style={{ color: 'var(--color-muted)' }}>
+                Drag on canvas to move. Press <strong>Del / Backspace</strong> to delete.
+              </p>
+
+              {/* Emergency opening specific toggle */}
+              {selectedItem.type === 'opening' && (
+                <div className="flex gap-1.5 mt-0.5">
+                  <button
+                    onClick={() => toggleOpening(selectedItem.id)}
+                    className={`flex-1 text-[10px] font-bold py-1.5 px-2 rounded-lg text-white transition-all shadow-sm ${(layout?.openings?.find(o => o.id === selectedItem.id)?.isOpen)
+                      ? 'bg-amber-600 hover:bg-amber-500'
+                      : 'bg-emerald-600 hover:bg-emerald-500'
+                      }`}
+                  >
+                    {(layout?.openings?.find(o => o.id === selectedItem.id)?.isOpen) ? '🔒 Close Gate' : '🔓 Open Gate'}
+                  </button>
+                </div>
+              )}
+
+              <div className="flex gap-1.5 mt-0.5">
+                <button
+                  onClick={deleteSelectedItem}
+                  className="flex-1 text-[10px] font-bold py-1.5 px-2 rounded-lg bg-red-600 hover:bg-red-500 text-white transition-all shadow-sm"
+                  title={`Delete this ${selectedItem.type}`}
+                >
+                  🗑 Delete {selectedItem.type === 'wall' ? 'Wall' : selectedItem.type === 'barricade' ? 'Barricade' : selectedItem.type === 'spawn' ? 'Entry' : selectedItem.type === 'opening' ? 'Gate' : selectedItem.type === 'exit' ? 'Exit' : 'Item'}
+                </button>
+                {selectedItem.type === 'wall' && selectedItem.vertexIndex !== undefined && (
+                  <button
+                    onClick={deleteSelectedVertex}
+                    className="text-[10px] font-bold py-1.5 px-2 rounded-lg border border-amber-500/50 hover:bg-amber-500/20 text-amber-500 dark:text-amber-300 transition-all"
+                    title="Delete selected point only"
+                  >
+                    Del Pt
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Drawing tools */}
           <div
             className="rounded-xl p-3 border"
@@ -1113,14 +2083,15 @@ export default function PlannerPage({ backendUrl = '' }) {
                 onClick={() => {
                   setDrawTool(t.id)
                   setCurrentPoly([])
+                  setBarricadeLine(null)
                   setExitLine(null)
+                  setOpeningLine(null)
                   setScalePoints([])
                 }}
-                className={`w-full text-left text-[10px] font-bold px-2 py-1.5 rounded-lg mb-1 transition-all ${
-                  drawTool === t.id
-                    ? 'bg-sky-600 text-white'
-                    : 'hover:bg-slate-100 dark:hover:bg-slate-700'
-                }`}
+                className={`w-full text-left text-[10px] font-bold px-2 py-1.5 rounded-lg mb-1 transition-all ${drawTool === t.id
+                  ? 'bg-sky-600 text-white shadow-sm'
+                  : 'hover:bg-slate-100 dark:hover:bg-slate-700'
+                  }`}
                 style={drawTool !== t.id ? { color: 'var(--color-text)' } : {}}
               >
                 {t.label}
@@ -1166,62 +2137,130 @@ export default function PlannerPage({ backendUrl = '' }) {
           )}
         </div>
 
-        {/* ── Centre: Simulation Canvas ─────────────────────────────── */}
+        {/* ── Centre: Simulation Canvas / 2.5D Venue Map ─────────────── */}
         <div className="flex flex-col gap-2 flex-1 min-w-0">
-          <div
-            className="relative rounded-xl overflow-hidden border shadow-inner"
-            style={{ borderColor: 'var(--color-border)', background: '#0f172a' }}
-          >
-            <canvas
-              ref={canvasRef}
-              id="planner-canvas"
-              width={CANVAS_W}
-              height={CANVAS_H}
-              className="block w-full"
-              style={{
-                cursor: simMode === 'edit' ? (drawTool === TOOLS.SELECT ? 'default' : 'crosshair') : 'default',
-                maxHeight: '68vh',
-                objectFit: 'contain',
-              }}
-              onClick={handleCanvasClick}
-              onDoubleClick={handleCanvasDoubleClick}
-              onMouseMove={handleCanvasMouseMove}
-              onMouseEnter={() => setHovered(true)}
-              onMouseLeave={() => { setHovered(false); setMousePos({ x: -999, y: -999 }) }}
-            />
 
-            {/* Sim mode badge overlay */}
-            <div className="absolute top-2 right-2 flex items-center gap-1.5 px-2 py-1 rounded-lg bg-black/70 backdrop-blur text-xs font-mono-num">
-              <span
-                className={`w-2 h-2 rounded-full ${simMode === 'running' ? 'pulse-dot' : ''}`}
-                style={{ background: simMode === 'running' ? '#10b981' : simMode === 'paused' ? '#f59e0b' : '#64748b' }}
-              />
-              <span className="text-white font-bold uppercase">{simMode}</span>
-              {isEmergency && (
-                <span className="ml-1 text-red-400 font-extrabold animate-pulse">🚨 EMERGENCY</span>
-              )}
+          {/* View Mode Switcher Header */}
+          <div className="flex items-center justify-between gap-2 px-1">
+            <div
+              className="flex items-center gap-1 p-1 rounded-xl border shadow-sm"
+              style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
+            >
+              <button
+                onClick={() => setViewMode('2D')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === '2D'
+                  ? 'bg-sky-600 text-white shadow-sm'
+                  : 'hover:bg-slate-100 dark:hover:bg-slate-800'
+                  }`}
+                style={viewMode !== '2D' ? { color: 'var(--color-muted)' } : {}}
+              >
+                <span>🗺️ 2D Layout &amp; Sim</span>
+              </button>
+              <button
+                onClick={() => setViewMode('2.5D')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === '2.5D'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'hover:bg-slate-100 dark:hover:bg-slate-800'
+                  }`}
+                style={viewMode !== '2.5D' ? { color: 'var(--color-muted)' } : {}}
+              >
+                <span>🏛️ 2.5D Isometric Map</span>
+                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-400/20 text-amber-500 dark:text-amber-300 font-extrabold uppercase">
+                  3D Extrusion
+                </span>
+              </button>
             </div>
 
-            {/* Mouse coordinate overlay (edit mode) */}
-            {simMode === 'edit' && hovered && (
-              <div className="absolute bottom-2 left-2 px-2 py-0.5 rounded bg-black/70 backdrop-blur text-[9px] font-mono-num text-slate-300">
-                {mousePos.x}, {mousePos.y} px
-                {layout?.scale?.px_per_meter
-                  ? ` · ${(mousePos.x / layout.scale.px_per_meter).toFixed(1)}, ${(mousePos.y / layout.scale.px_per_meter).toFixed(1)} m`
-                  : ''}
-              </div>
+            {viewMode === '2.5D' && (
+              <span className="text-[10px] font-mono-num" style={{ color: 'var(--color-muted)' }}>
+                Architectural Isometric Projection · {layout?.walls?.length || 0} Structures Extruded
+              </span>
             )}
           </div>
 
-          {/* Canvas legend */}
-          <div className="flex flex-wrap gap-3 text-[9px] font-mono-num px-1" style={{ color: 'var(--color-muted)' }}>
-            <span><span style={{ color: '#6366f1' }}>■</span> Walls/Obstacles</span>
-            <span><span style={{ color: '#10b981' }}>- -</span> Exits</span>
-            <span><span style={{ color: '#f59e0b' }}>●</span> Spawn points</span>
-            <span><span style={{ color: '#38bdf8' }}>●</span> Agents (normal)</span>
-            <span><span style={{ color: '#f87171' }}>●</span> Agents (panic)</span>
-            <span>Heatmap: Fruin LOS A→F bands</span>
-          </div>
+          {/* Render 2.5D Isometric Viewer or 2D Interactive Canvas */}
+          {viewMode === '2.5D' ? (
+            <Venue25DViewer
+              layout={layout}
+              focusPoint={focusPoint}
+              isFocusMode={isFocusMode}
+              width={CANVAS_W}
+              height={CANVAS_H}
+              onResetToDemo={resetToDemoVenue}
+            />
+          ) : (
+            <>
+              <div
+                className="relative rounded-xl overflow-auto border shadow-2xl flex justify-center"
+                style={{
+                  borderColor: 'rgba(255, 255, 255, 0.08)',
+                  background: '#000000',
+                  maxHeight: '78vh',
+                }}
+              >
+                <canvas
+                  ref={canvasRef}
+                  id="planner-canvas"
+                  width={CANVAS_W}
+                  height={CANVAS_H}
+                  className="block"
+                  style={{
+                    cursor: getCanvasCursor(),
+                    width: '100%',
+                    maxWidth: `${CANVAS_W}px`,
+                    aspectRatio: `${CANVAS_W} / ${CANVAS_H}`,
+                    display: 'block',
+                  }}
+                  onMouseDown={handleCanvasMouseDown}
+                  onMouseUp={handleCanvasMouseUp}
+                  onClick={handleCanvasClick}
+                  onDoubleClick={handleCanvasDoubleClick}
+                  onMouseMove={handleCanvasMouseMove}
+                  onMouseEnter={() => setHovered(true)}
+                  onMouseLeave={() => {
+                    setHovered(false)
+                    setHoveredHit(null)
+                    setDragState(null)
+                    setMousePos({ x: -999, y: -999 })
+                  }}
+                />
+
+                {/* Sim mode badge overlay */}
+                <div className="absolute top-2 right-2 flex items-center gap-1.5 px-2 py-1 rounded-lg bg-black/70 backdrop-blur text-xs font-mono-num">
+                  <span
+                    className={`w-2 h-2 rounded-full ${simMode === 'running' ? 'pulse-dot' : ''}`}
+                    style={{ background: simMode === 'running' ? '#10b981' : simMode === 'paused' ? '#f59e0b' : '#64748b' }}
+                  />
+                  <span className="text-white font-bold uppercase">{simMode}</span>
+                  {isEmergency && (
+                    <span className="ml-1 text-red-400 font-extrabold animate-pulse">🚨 EMERGENCY</span>
+                  )}
+                </div>
+
+                {/* Mouse coordinate overlay (edit mode) */}
+                {simMode === 'edit' && hovered && (
+                  <div className="absolute bottom-2 left-2 px-2 py-0.5 rounded bg-black/70 backdrop-blur text-[9px] font-mono-num text-slate-300">
+                    {mousePos.x}, {mousePos.y} px
+                    {layout?.scale?.px_per_meter
+                      ? ` · ${(mousePos.x / layout.scale.px_per_meter).toFixed(1)}, ${(mousePos.y / layout.scale.px_per_meter).toFixed(1)} m`
+                      : ''}
+                  </div>
+                )}
+              </div>
+
+              {/* Canvas legend */}
+              <div className="flex flex-wrap gap-3 text-[9px] font-mono-num px-1" style={{ color: 'var(--color-muted)' }}>
+                <span><span style={{ color: '#6366f1' }}>■</span> Walls/Obstacles</span>
+                <span><span style={{ color: '#f59e0b' }}>■</span> Barricades</span>
+                <span><span style={{ color: '#10b981' }}>- -</span> Exits</span>
+                <span><span style={{ color: '#ef4444' }}>■</span> Emergency Gates (🔒 Closed / 🔓 Open)</span>
+                <span><span style={{ color: '#f59e0b' }}>●</span> Spawn / Entry points</span>
+                <span><span style={{ color: '#38bdf8' }}>●</span> Agents (normal)</span>
+                <span><span style={{ color: '#f87171' }}>●</span> Agents (panic)</span>
+                <span>Heatmap: Fruin LOS A→F bands</span>
+              </div>
+            </>
+          )}
         </div>
 
         {/* ── Right Panel: Simulation Controls ──────────────────────── */}
@@ -1243,6 +2282,10 @@ export default function PlannerPage({ backendUrl = '' }) {
             onPause={handlePause}
             onReset={handleReset}
             onTriggerEmergency={handleTriggerEmergency}
+            openings={layout?.openings || []}
+            onToggleOpening={toggleOpening}
+            onOpenAllOpenings={openAllOpenings}
+            onCloseAllOpenings={closeAllOpenings}
             focusPoint={focusPoint}
             isFocusMode={isFocusMode}
             onToggleFocusMode={toggleFocusMode}
@@ -1251,7 +2294,9 @@ export default function PlannerPage({ backendUrl = '' }) {
             onSelectFocusTool={() => {
               setDrawTool(TOOLS.FOCUS)
               setCurrentPoly([])
+              setBarricadeLine(null)
               setExitLine(null)
+              setOpeningLine(null)
               setScalePoints([])
             }}
             spawnRate={spawnRate}
@@ -1329,3 +2374,4 @@ export default function PlannerPage({ backendUrl = '' }) {
     </div>
   )
 }
+

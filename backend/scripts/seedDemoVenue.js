@@ -6,13 +6,8 @@
  * Seeds the Temple Chariot Procession Corridor demo venue into the SQLite
  * venues table if it doesn't already exist. Run once on backend startup.
  *
- * This demo venue uses frame.png (served from frontend/public/frame.png)
- * as its background reference image. The corridor geometry is manually
- * traced from the aerial frame — ground plane only, rooftop areas excluded.
- *
- * Scale is ESTIMATED (scale_is_estimated: true). Corridor width assumed
- * ≈ 14.4 m based on typical temple procession street widths in India.
- * This is NOT a surveyed measurement.
+ * Standalone closed building blocks with full-height continuous structures,
+ * physical crowd control barricades, and interactive emergency gates.
  */
 
 const { upsertVenue, getVenueById } = require('../src/db/database');
@@ -21,7 +16,7 @@ const DEMO_VENUE_ID = 'demo-temple-procession';
 
 const DEMO_LAYOUT = {
   canvasWidth:  800,
-  canvasHeight: 580,
+  canvasHeight: 850,
   scale: {
     px_per_meter:          25,
     reference_distance_m:  15.0,
@@ -29,9 +24,24 @@ const DEMO_LAYOUT = {
     scale_is_estimated:    true,
   },
   walls: [
-    // ── South-West Broadway building facade ──────────────────────────────
+    // ── 1. North-West Building Block (Top-Left) ──────────────────────────
     {
-      id: 'w_sw_buildings',
+      id: 'w_nw_block',
+      label: 'North-West Building Block',
+      points: [
+        { x: 0, y: 0 },
+        { x: 311, y: 2 },
+        { x: 282, y: 21 },
+        { x: 220, y: 55 },
+        { x: 100, y: 50 },
+        { x: 0, y: 45 },
+      ],
+      closed: true,
+    },
+
+    // ── 2. South-West Broadway Buildings (Middle-Left) ───────────────────
+    {
+      id: 'w_sw_block',
       label: 'South-West Broadway Buildings',
       points: [
         { x: 0, y: 83 },
@@ -40,58 +50,69 @@ const DEMO_LAYOUT = {
         { x: 180, y: 360 },
         { x: 160, y: 480 },
         { x: 115, y: 580 },
+        { x: 0, y: 580 },
       ],
-      closed: false,
+      closed: true,
     },
 
-    // ── North-West Avenue building facade ────────────────────────────────
+    // ── 3. Lower South-West Building Block (Bottom-Left) ─────────────────
     {
-      id: 'w_nw_buildings',
-      label: 'North-West Avenue Buildings',
+      id: 'w_lsw_block',
+      label: 'Lower South-West Building Block',
       points: [
-        { x: 0, y: 45 },
-        { x: 100, y: 50 },
-        { x: 220, y: 55 },
-        { x: 280, y: 20 },
-        { x: 300, y: 0 },
+        { x: 0, y: 639 },
+        { x: 146, y: 641 },
+        { x: 165, y: 708 },
+        { x: 163, y: 777 },
+        { x: 160, y: 849 },
+        { x: 0, y: 849 },
       ],
-      closed: false,
+      closed: true,
     },
 
-    // ── Central-East Broadway curved building facade ─────────────────────
+    // ── 4. Central-East Building Complex (Single Unified Full-Height) ────
     {
-      id: 'w_ce_buildings',
-      label: 'Central-East Broadway Buildings',
+      id: 'w_ce_complex',
+      label: 'Central-East Building Complex',
       points: [
         { x: 405, y: 0 },
-        { x: 415, y: 55 },
-        { x: 450, y: 135 },
-        { x: 510, y: 135 },
-        { x: 550, y: 190 },
-        { x: 555, y: 240 },
-        { x: 478, y: 255 },
-        { x: 475, y: 300 },
+        { x: 517, y: 1 },
+        { x: 623, y: 233 },
+        { x: 629, y: 359 },
+        { x: 618, y: 462 },
+        { x: 597, y: 560 },
+        { x: 589, y: 577 },
+        { x: 579, y: 847 },
+        { x: 472, y: 849 },
+        { x: 490, y: 577 },
         { x: 500, y: 420 },
-        { x: 490, y: 580 },
+        { x: 475, y: 300 },
+        { x: 478, y: 255 },
+        { x: 555, y: 240 },
+        { x: 550, y: 190 },
+        { x: 510, y: 135 },
+        { x: 450, y: 135 },
+        { x: 415, y: 55 },
       ],
-      closed: false,
+      closed: true,
     },
 
-    // ── North-East Building Block ────────────────────────────────────────
+    // ── 5. North-East Building Block (Top-Right) ─────────────────────────
     {
       id: 'w_ne_block',
       label: 'North-East Building Block',
       points: [
         { x: 600, y: 0 },
-        { x: 605, y: 40 },
-        { x: 660, y: 75 },
-        { x: 740, y: 80 },
+        { x: 800, y: 0 },
         { x: 800, y: 75 },
+        { x: 740, y: 80 },
+        { x: 660, y: 75 },
+        { x: 605, y: 40 },
       ],
-      closed: false,
+      closed: true,
     },
 
-    // ── Middle-East Building Island ──────────────────────────────────────
+    // ── 6. East Side Building Island ─────────────────────────────────────
     {
       id: 'w_me_island',
       label: 'East Side Building Island',
@@ -106,68 +127,136 @@ const DEMO_LAYOUT = {
       closed: true,
     },
 
-    // ── South-East Building Block ────────────────────────────────────────
+    // ── 7. South-East Building Block (Bottom-Right) ──────────────────────
     {
       id: 'w_se_block',
       label: 'South-East Building Block',
       points: [
-        { x: 650, y: 580 },
-        { x: 675, y: 460 },
-        { x: 700, y: 360 },
-        { x: 675, y: 245 },
-        { x: 730, y: 220 },
         { x: 800, y: 230 },
+        { x: 730, y: 220 },
+        { x: 675, y: 245 },
+        { x: 700, y: 360 },
+        { x: 675, y: 460 },
+        { x: 650, y: 580 },
+        { x: 657, y: 636 },
+        { x: 653, y: 687 },
+        { x: 648, y: 717 },
+        { x: 630, y: 834 },
+        { x: 628, y: 847 },
+        { x: 800, y: 847 },
       ],
-      closed: false,
+      closed: true,
     },
 
-    // ── Temple Gateway & Chariot Compound Enclosure ───────────────────────
+    // ── 8. Temple Gateway (Central Gopuram Tower Landmark) ───────────────
+    {
+      id: 'w_temple_gate',
+      label: 'Temple Gateway (Gopuram)',
+      points: [
+        { x: 311, y: 108 },
+        { x: 405, y: 108 },
+        { x: 405, y: 171 },
+        { x: 311, y: 171 },
+      ],
+      closed: true,
+    },
+
+    // ── 9. Temple Compound Wall (Courtyard Enclosure) ─────────────────────
     {
       id: 'w_compound',
       label: 'Temple Compound Wall',
       points: [
-        { x: 312, y: 70 },
-        { x: 406, y: 70 },
-        { x: 406, y: 135 },
-        { x: 382, y: 145 },
-        { x: 383, y: 210 },
-        { x: 372, y: 238 },
-        { x: 345, y: 242 },
-        { x: 320, y: 232 },
-        { x: 320, y: 135 },
-        { x: 312, y: 135 },
+        { x: 312, y: 106 },
+        { x: 406, y: 106 },
+        { x: 406, y: 171 },
+        { x: 382, y: 181 },
+        { x: 383, y: 246 },
+        { x: 372, y: 274 },
+        { x: 345, y: 278 },
+        { x: 320, y: 268 },
+        { x: 320, y: 171 },
+        { x: 312, y: 171 },
       ],
       closed: true,
     },
 
-    // ── Temple Gateway (Central Gopuram Structure) ───────────────────────
-    {
-      id: 'w_temple_gate',
-      label: 'Temple Gateway',
-      points: [
-        { x: 312, y: 72 },
-        { x: 406, y: 72 },
-        { x: 406, y: 135 },
-        { x: 312, y: 135 },
-      ],
-      closed: true,
-    },
-
-    // ── Procession Chariot Obstacle (Rath) ───────────────────────────────
+    // ── 10. Procession Chariot Obstacle (Rath) ───────────────────────────
     {
       id: 'w_chariot',
-      label: 'Chariot Obstacle',
+      label: 'Chariot Obstacle (Rath)',
       points: [
-        { x: 328, y: 180 },
-        { x: 380, y: 180 },
-        { x: 380, y: 215 },
-        { x: 328, y: 215 },
+        { x: 323, y: 230 },
+        { x: 375, y: 230 },
+        { x: 375, y: 265 },
+        { x: 323, y: 265 },
       ],
       closed: true,
     },
   ],
-  exits: [],
-  spawns: [],
+  exits: [
+    {
+      id: 'exit_west',
+      name: 'Exit 1 (West)',
+      a: { x: 4, y: 37 },
+      b: { x: 4, y: 103 },
+    },
+    {
+      id: 'exit_north',
+      name: 'Exit 2 (North)',
+      a: { x: 313, y: 6 },
+      b: { x: 407, y: 6 },
+    },
+  ],
+  spawns: [
+    {
+      id: 'spawn_nw',
+      name: 'Entry 1 (North-West)',
+      x: 45,
+      y: 61,
+    },
+    {
+      id: 'spawn_south',
+      name: 'Entry (South Broadway)',
+      x: 239,
+      y: 821,
+    },
+  ],
+  barricades: [
+    {
+      id: 'barricade_main',
+      name: 'Longitudinal Broadway Barricade',
+      a: { x: 284, y: 121 },
+      b: { x: 265, y: 824 },
+    },
+    {
+      id: 'barricade_north',
+      name: 'North Temple Barricade',
+      a: { x: 397, y: 65 },
+      b: { x: 296, y: 77 },
+    },
+    {
+      id: 'barricade_flank',
+      name: 'Temple NW Flank Barricade',
+      a: { x: 285, y: 123 },
+      b: { x: 295, y: 78 },
+    },
+  ],
+  openings: [
+    {
+      id: 'opening_gate_1',
+      name: 'Emergency Gate 1',
+      a: { x: 422, y: 70 },
+      b: { x: 397, y: 65 },
+      isOpen: true,
+    },
+    {
+      id: 'opening_gate_2',
+      name: 'Emergency Gate 2',
+      a: { x: 451, y: 137 },
+      b: { x: 408, y: 113 },
+      isOpen: false,
+    },
+  ],
 };
 
 /**
