@@ -1,9 +1,10 @@
 FROM node:20-bookworm-slim
 
-# Install Python 3, pip, and essential multimedia libs on Debian 12 Bookworm
+# Install Python 3, pip, build tools (for native C++ modules), and essential multimedia libs
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3-pip \
+    build-essential \
     libglib2.0-0 \
     libsm6 \
     libxext6 \
@@ -12,12 +13,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# 1. Install Node backend & frontend dependencies
+# 1. Install Node backend & frontend dependencies (compiles sqlite3 natively against Debian GLIBC)
 COPY package.json ./
 COPY backend/package*.json ./backend/
 COPY frontend/package*.json ./frontend/
 
-RUN npm install --prefix backend && npm install --prefix frontend
+RUN npm install --prefix backend --build-from-source=sqlite3 && npm install --prefix frontend
 
 # 2. Install lightweight Python dependencies for cached CV & dual-stream playback
 RUN pip3 install --no-cache-dir --break-system-packages opencv-python-headless numpy requests python-dotenv
