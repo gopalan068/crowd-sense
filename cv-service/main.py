@@ -27,6 +27,7 @@ import numpy as np
 import math
 
 import cv2
+import requests
 
 import config
 from detector import PersonDetector
@@ -35,6 +36,24 @@ from flow_analyzer import FlowAnalyzer
 from stream_server import start_stream_server, update_zone_frame
 from saturation_detector import SaturationDetector
 from density_override import DensityOverrideEngine
+
+_pipeline_active = True
+_last_pipeline_poll = 0.0
+
+def check_pipeline_active(backend_url: str) -> bool:
+    global _pipeline_active, _last_pipeline_poll
+    now = time.monotonic()
+    if now - _last_pipeline_poll < 1.0:
+        return _pipeline_active
+    _last_pipeline_poll = now
+    try:
+        base = backend_url.rsplit("/api/", 1)[0]
+        resp = requests.get(f"{base}/api/pipeline/status", timeout=1.0)
+        if resp.status_code == 200:
+            _pipeline_active = resp.json().get("active", True)
+    except Exception:
+        pass
+    return _pipeline_active
 
 
 def load_zone_density_cache(cache_path: str = "zone_density_cache.json") -> dict:
@@ -165,7 +184,23 @@ def zone_loop(
         f"{'CCTV_Cache=[ENABLED]' if (camera_type == 'cctv' and cctv_cache_active) else 'OverrideMode=[' + override_mode.upper() + ']'}"
     )
 
+    paused_logged = False
+    last_annotated_frame = None
+
     while not stop_event.is_set():
+        # Pipeline execution toggle check (from backend /api/pipeline/status)
+        if not check_pipeline_active(config.BACKEND_URL):
+            if not paused_logged:
+                print(f"{log_tag} [PIPELINE PAUSED] Freezing stream to static snapshot and halting data pipeline.")
+                paused_logged = True
+            if last_annotated_frame is not None:
+                update_zone_frame(zone_id, last_annotated_frame)
+            time.sleep(0.5)
+            continue
+        elif paused_logged:
+            print(f"{log_tag} [PIPELINE RESUMED] Resuming live video stream and telemetry emission.")
+            paused_logged = False
+
         # 1. Read next video frame
         if cap and cap.isOpened():
             curr_frame_pos = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
@@ -247,6 +282,7 @@ def zone_loop(
             )
 
             # Update live stream server with synchronized annotated frame
+            last_annotated_frame = annotated
             update_zone_frame(zone_id, annotated)
 
             # Sequential frame cadence for drone presentation (exact 2 FPS / 0.5s per frame)
@@ -300,6 +336,7 @@ def zone_loop(
                     annotated = detector.annotate(frame, last_boxes)
                 else:
                     annotated = frame
+                last_annotated_frame = annotated
                 update_zone_frame(zone_id, annotated)
                 time.sleep(0.033)
 
@@ -337,6 +374,7 @@ def zone_loop(
                     annotated = detector.annotate(frame, last_boxes)
                 else:
                     annotated = frame
+                last_annotated_frame = annotated
                 update_zone_frame(zone_id, annotated)
 
                 # Smooth ~30 FPS loop pacing for CCTV mode

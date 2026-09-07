@@ -32,8 +32,9 @@ const PRESET_OPTIONS = [
   },
 ]
 
-export default function WeatherControlPanel({ weatherState, backendUrl }) {
+export default function WeatherControlPanel({ weatherState, backendUrl, pipelineActive = true, onTogglePipeline }) {
   const [loadingPreset, setLoadingPreset] = useState(null)
+  const [togglingPipeline, setTogglingPipeline] = useState(false)
 
   const currentCondition = weatherState?.condition || 'clear'
 
@@ -55,6 +56,21 @@ export default function WeatherControlPanel({ weatherState, backendUrl }) {
     } finally {
       setLoadingPreset(null)
     }
+  }
+
+  const handlePipelineToggle = async () => {
+    if (togglingPipeline) return
+    setTogglingPipeline(true)
+    if (onTogglePipeline) {
+      await onTogglePipeline()
+    } else {
+      try {
+        await fetch(`${backendUrl}/api/pipeline/toggle`, { method: 'POST' })
+      } catch (err) {
+        console.error('[WeatherControlPanel] Error toggling pipeline:', err)
+      }
+    }
+    setTogglingPipeline(false)
   }
 
   const activeOption = PRESET_OPTIONS.find((o) => o.id === currentCondition) || PRESET_OPTIONS[0]
@@ -84,18 +100,41 @@ export default function WeatherControlPanel({ weatherState, backendUrl }) {
           </div>
         </div>
 
-        {/* Mandatory Honesty Label */}
-        <div className="flex items-center gap-1.5 px-3 py-1 rounded-md bg-amber-500/15 border border-amber-500/30 text-amber-700 dark:text-amber-300 text-[11px] font-bold">
-          <span>⚠️ SIMULATED CONDITIONS — MANUALLY SET FOR DEMONSTRATION</span>
+        {/* Right Side: Mandatory Honesty Label + Pipeline Master Status Badge */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5 px-3 py-1 rounded-md bg-amber-500/15 border border-amber-500/30 text-amber-700 dark:text-amber-300 text-[11px] font-bold">
+            <span>⚠️ SIMULATED CONDITIONS — MANUALLY SET FOR DEMONSTRATION</span>
+          </div>
         </div>
       </div>
 
       {/* Presenter Demo Control Strip */}
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="text-[11px] font-bold uppercase tracking-wider opacity-70" style={{ color: 'var(--color-text)' }}>
-          PRESENTER CONTROLS (LIVE DEMO PRESETS):
-        </span>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] font-bold uppercase tracking-wider opacity-70" style={{ color: 'var(--color-text)' }}>
+            PRESENTER CONTROLS:
+          </span>
 
+          {/* Master CV Pipeline Power Toggle Button */}
+          <button
+            onClick={handlePipelineToggle}
+            disabled={togglingPipeline}
+            title={pipelineActive ? 'Pause continuous CV processing (Freezes to static snapshot)' : 'Resume continuous live CV processing and streaming'}
+            className={`px-3 py-1.5 rounded-lg border font-bold text-xs transition-all flex items-center gap-2 shadow-xs cursor-pointer ${
+              pipelineActive
+                ? 'bg-emerald-500/15 border-emerald-500/50 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/25'
+                : 'bg-amber-500/20 border-amber-500/50 text-amber-700 dark:text-amber-300 hover:bg-amber-500/30 animate-pulse'
+            } ${togglingPipeline ? 'opacity-50 cursor-not-allowed' : ''}`}
+          >
+            <span className={`w-2.5 h-2.5 rounded-full ${pipelineActive ? 'bg-emerald-500 shadow-xs shadow-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
+            <span>{pipelineActive ? '🟢 CV PIPELINE: LIVE' : '⏸️ CV PIPELINE: PAUSED'}</span>
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-black/10 dark:bg-black/40 font-normal">
+              {pipelineActive ? 'Click to Pause' : 'Click to Resume'}
+            </span>
+          </button>
+        </div>
+
+        {/* Environmental Presets */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 w-full sm:w-auto">
           {PRESET_OPTIONS.map((opt) => {
             const isActive = currentCondition === opt.id

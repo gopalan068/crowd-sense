@@ -8,7 +8,7 @@ import ZoneIntensityOverlay from './ZoneIntensityOverlay'
 
 const STREAM_BASE_URL = import.meta.env.VITE_CV_STREAM_URL || '/stream'
 
-export default function ZonePanel({ zoneData, zoneId = 'zone_1', panicConfirming = null }) {
+export default function ZonePanel({ zoneData, zoneId = 'zone_1', panicConfirming = null, pipelineActive = true }) {
   const videoRef = useRef(null)
   const canvasRef = useRef(null)
   const z1CanvasRef = useRef(null)
@@ -245,6 +245,16 @@ export default function ZonePanel({ zoneData, zoneId = 'zone_1', panicConfirming
           {weather_modifier && weather_modifier.condition !== 'clear' && (
             <span className="text-[10px] px-2 py-0.5 rounded font-mono-num font-bold bg-amber-500/20 text-amber-600 dark:text-amber-300 border border-amber-500/30">
               ⚡ MODIFIED: {weather_modifier.label}
+            </span>
+          )}
+
+          {/* Pipeline Paused / Static Snapshot Indicator Badge */}
+          {!pipelineActive && (
+            <span
+              className="text-[10px] px-2.5 py-1 rounded-lg font-mono-num font-bold uppercase tracking-wider bg-slate-500/20 text-slate-600 dark:text-slate-300 border border-slate-500/40 flex items-center gap-1.5 shadow-xs"
+              title="CV Pipeline is currently paused. Displaying static snapshot frame."
+            >
+              ⏸️ STATIC SNAPSHOT (PAUSED)
             </span>
           )}
         </div>

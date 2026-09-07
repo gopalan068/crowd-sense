@@ -38,6 +38,7 @@ export default function App() {
   const [showLimitations, setShowLimitations] = useState(false)
   const [socketInstance, setSocketInstance] = useState(null)
   const [weatherState, setWeatherState] = useState(null)
+  const [pipelineActive, setPipelineActive] = useState(true)
   // Per-zone panic confirmation build-up state (from 'panic_confirming' socket event)
   // Shape: { zone_id: { confirmedFrames, requiredFrames, trigger } | null }
   const [panicConfirming, setPanicConfirming] = useState({})
@@ -73,6 +74,30 @@ export default function App() {
     }
   }
 
+  const fetchPipelineStatus = async () => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/pipeline/status`)
+      if (res.ok) {
+        const data = await res.json()
+        setPipelineActive(Boolean(data.active))
+      }
+    } catch (err) {
+      console.error('[Frontend] Error fetching pipeline status:', err)
+    }
+  }
+
+  const handleTogglePipeline = async () => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/pipeline/toggle`, { method: 'POST' })
+      if (res.ok) {
+        const data = await res.json()
+        setPipelineActive(Boolean(data.active))
+      }
+    } catch (err) {
+      console.error('[Frontend] Error toggling pipeline:', err)
+    }
+  }
+
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', 'day')
 
@@ -89,6 +114,7 @@ export default function App() {
       setReconnectCount(0)
       fetchAuditLogs()
       fetchWeatherState()
+      fetchPipelineStatus()
     })
 
     socket.on('disconnect', () => {
@@ -103,6 +129,11 @@ export default function App() {
     socket.on('conditions_updated', (updatedWeather) => {
       console.log('[Socket.io] Received weather conditions_updated:', updatedWeather)
       setWeatherState(updatedWeather)
+    })
+
+    socket.on('pipeline_status_updated', (updatedPipeline) => {
+      console.log('[Socket.io] Received pipeline_status_updated:', updatedPipeline)
+      setPipelineActive(Boolean(updatedPipeline.active))
     })
 
     socket.on('density_update', (payload) => {
@@ -313,7 +344,12 @@ export default function App() {
 
         {/* Environmental Conditions & Presenter Control Strip (not shown in Planner) */}
         {activeTab !== 'PLANNER' && (
-          <WeatherControlPanel weatherState={weatherState} backendUrl={BACKEND_URL} />
+          <WeatherControlPanel
+            weatherState={weatherState}
+            backendUrl={BACKEND_URL}
+            pipelineActive={pipelineActive}
+            onTogglePipeline={handleTogglePipeline}
+          />
         )}
 
         {/* Tab 1: Live Operations */}
@@ -321,11 +357,21 @@ export default function App() {
           <div className="space-y-6">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <div className="space-y-3">
-                <ZonePanel zoneData={zoneMap.zone_1} zoneId="zone_1" panicConfirming={panicConfirming['zone_1'] ?? null} />
+                <ZonePanel
+                  zoneData={zoneMap.zone_1}
+                  zoneId="zone_1"
+                  panicConfirming={panicConfirming['zone_1'] ?? null}
+                  pipelineActive={pipelineActive}
+                />
                 <FlowMetricsDisplay zoneData={zoneMap.zone_1} />
               </div>
               <div className="space-y-3">
-                <ZonePanel zoneData={zoneMap.zone_2} zoneId="zone_2" panicConfirming={panicConfirming['zone_2'] ?? null} />
+                <ZonePanel
+                  zoneData={zoneMap.zone_2}
+                  zoneId="zone_2"
+                  panicConfirming={panicConfirming['zone_2'] ?? null}
+                  pipelineActive={pipelineActive}
+                />
                 <FlowMetricsDisplay zoneData={zoneMap.zone_2} />
               </div>
             </div>
