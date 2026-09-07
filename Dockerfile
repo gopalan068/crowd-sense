@@ -1,19 +1,13 @@
-# ==============================================================================
-# CrowdSense - Unified Production Dockerfile for Render Free Tier
-# Runs: React (Vite SPA) + Express Backend (Socket.io/SQLite) + Python Dual CV Streamer
-# Memory Footprint: ~150 MB (Well within Render's 512 MB Free Tier limit)
-# ==============================================================================
+FROM node:20-bookworm-slim
 
-FROM node:20-bullseye-slim
-
-# Install Python 3, pip, ffmpeg, and headless graphics libraries
+# Install Python 3, pip, and essential multimedia libs on Debian 12 Bookworm
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3-pip \
-    ffmpeg \
+    libglib2.0-0 \
     libsm6 \
     libxext6 \
-    libgl1 \
+    libxrender-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -26,7 +20,7 @@ COPY frontend/package*.json ./frontend/
 RUN npm install --prefix backend && npm install --prefix frontend
 
 # 2. Install lightweight Python dependencies for cached CV & dual-stream playback
-RUN pip3 install --no-cache-dir opencv-python-headless numpy requests python-dotenv
+RUN pip3 install --no-cache-dir --break-system-packages opencv-python-headless numpy requests python-dotenv
 
 # 3. Copy full project code and assets
 COPY . .
