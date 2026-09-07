@@ -34,7 +34,6 @@ ENV NODE_ENV=production
 ENV PORT=4000
 ENV CCTV_USE_CACHE=true
 ENV OVERRIDE_MODE=precomputed
-ENV BACKEND_URL=http://localhost:4000/api/density
 ENV ENABLE_OPTICAL_FLOW=true
 ENV VIDEO_SOURCE_Z1=videos/crowd_1.mp4
 ENV VIDEO_SOURCE_Z2=videos/crowd_5.mp4
@@ -45,5 +44,5 @@ ENV AREA_SQM_Z2=250.0
 
 EXPOSE 4000
 
-# 6. Start both CV dual-stream engine and Node.js Express server
-CMD sh -c "python3 cv-service/main.py & node backend/src/index.js"
+# 6. Start Node.js Express server, then start CV engine
+CMD sh -c "node backend/src/index.js & sleep 2 && python3 cv-service/main.py"

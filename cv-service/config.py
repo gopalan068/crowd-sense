@@ -60,7 +60,10 @@ SAHI_OVERLAP_RATIO: float = float(os.getenv("SAHI_OVERLAP_RATIO", "0.20"))
 NMS_IOU_THRESH: float = float(os.getenv("NMS_IOU_THRESH", "0.60"))
 INFERENCE_IMGSZ: int = int(os.getenv("INFERENCE_IMGSZ", "1280"))
 
-BACKEND_URL: str = os.getenv("BACKEND_URL", "http://localhost:4000/api/density")
+_backend_port = os.getenv("PORT", "4000")
+BACKEND_URL: str = os.getenv("BACKEND_URL", f"http://localhost:{_backend_port}/api/density")
+if "localhost:4000" in BACKEND_URL and _backend_port != "4000":
+    BACKEND_URL = BACKEND_URL.replace("localhost:4000", f"localhost:{_backend_port}")
 ZONE_ID: str = os.getenv("ZONE_ID", "zone_1")
 ZONE_TYPE: str = ZONE_TYPE_Z1
 AREA_SQM: float = AREA_SQM_Z1
