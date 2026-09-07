@@ -5,9 +5,15 @@
  */
 'use strict';
 
+const initialActive = process.env.PIPELINE_ACTIVE !== undefined
+  ? process.env.PIPELINE_ACTIVE.toLowerCase() === 'true'
+  : process.env.START_PIPELINE_PAUSED !== undefined
+  ? process.env.START_PIPELINE_PAUSED.toLowerCase() !== 'true'
+  : true;
+
 let pipelineState = {
-  active: true,
-  paused_at: null,
+  active: initialActive,
+  paused_at: initialActive ? null : new Date().toISOString(),
   last_updated: new Date().toISOString(),
 };
 

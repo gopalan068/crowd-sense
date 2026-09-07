@@ -37,7 +37,8 @@ from stream_server import start_stream_server, update_zone_frame
 from saturation_detector import SaturationDetector
 from density_override import DensityOverrideEngine
 
-_pipeline_active = True
+_init_paused = os.getenv("PIPELINE_ACTIVE", "true").lower() != "true" or os.getenv("START_PIPELINE_PAUSED", "false").lower() == "true"
+_pipeline_active = not _init_paused
 _last_pipeline_poll = 0.0
 
 def check_pipeline_active(backend_url: str) -> bool:
@@ -190,11 +191,52 @@ def zone_loop(
     while not stop_event.is_set():
         # Pipeline execution toggle check (from backend /api/pipeline/status)
         if not check_pipeline_active(config.BACKEND_URL):
-            if not paused_logged:
-                print(f"{log_tag} [PIPELINE PAUSED] Freezing stream to static snapshot and halting data pipeline.")
-                paused_logged = True
-            if last_annotated_frame is not None:
+            if last_annotated_frame is None:
+                # Prepare initial static snapshot for instant page load
+                init_frame = None
+                if cap and cap.isOpened():
+                    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                    ret, init_frame = cap.read()
+                if init_frame is None:
+                    init_frame = create_demo_crowd_frame(0)
+
+                h, w = init_frame.shape[:2]
+                if w > 1280:
+                    init_frame = cv2.resize(init_frame, (1280, int(1280 * (h / w))), interpolation=cv2.INTER_AREA)
+
+                if camera_type == "drone":
+                    annotated, init_count, init_den, _ = saturation_detector.process_standalone_drone_frame(
+                        frame=init_frame,
+                        area_sqm=area_sqm,
+                        max_density_scale=5.5,
+                        zone_id=zone_id,
+                    )
+                else:
+                    rec0 = zone_cctv_cache.get("0", {}) if zone_cctv_cache else {}
+                    boxes0 = [tuple(b) for b in rec0.get("boxes", [])]
+                    init_count = rec0.get("people_count", 5)
+                    annotated = detector.annotate(init_frame, boxes0) if detector else init_frame
+
+                last_annotated_frame = annotated
                 update_zone_frame(zone_id, last_annotated_frame)
+
+                try:
+                    emit(
+                        [init_count],
+                        zone_id=zone_id,
+                        zone_type=zone_type,
+                        area_sqm=area_sqm,
+                        feed_source=feed_source,
+                        camera_type=camera_type,
+                        density_source="cctv_cached" if camera_type == "cctv" else "override_cached",
+                    )
+                except Exception:
+                    pass
+
+            if not paused_logged:
+                print(f"{log_tag} [PIPELINE PAUSED] Holding static snapshot on startup. Live pipeline paused.")
+                paused_logged = True
+            update_zone_frame(zone_id, last_annotated_frame)
             time.sleep(0.5)
             continue
         elif paused_logged:
