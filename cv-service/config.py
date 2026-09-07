@@ -26,8 +26,8 @@ START_OFFSET_Z1_FRAMES: int = int(os.getenv("START_OFFSET_Z1_FRAMES", "0"))
 START_OFFSET_Z2_FRAMES: int = int(os.getenv("START_OFFSET_Z2_FRAMES", "140"))
 
 # Camera Perspective Modes: "drone" (overhead low-threshold + SAHI) vs "cctv" (angled high-threshold + full frame)
-CAMERA_TYPE_Z1: str = os.getenv("CAMERA_TYPE_Z1", os.getenv("CAMERA_TYPE", "drone" if "crowd_5" in VIDEO_SOURCE_Z1 or "crowd_2" in VIDEO_SOURCE_Z1 or "drone" in VIDEO_SOURCE_Z1 else "cctv" if "crowd_1" in VIDEO_SOURCE_Z1 else "drone")).lower()
-CAMERA_TYPE_Z2: str = os.getenv("CAMERA_TYPE_Z2", "cctv").lower()
+CAMERA_TYPE_Z1: str = os.getenv("CAMERA_TYPE_Z1", os.getenv("CAMERA_TYPE", "cctv" if "crowd_4" in VIDEO_SOURCE_Z1 or "crowd_1" in VIDEO_SOURCE_Z1 or "corridor" in VIDEO_SOURCE_Z1 else "drone")).lower()
+CAMERA_TYPE_Z2: str = os.getenv("CAMERA_TYPE_Z2", "drone" if "crowd_5" in os.getenv("VIDEO_SOURCE_Z2", "") or "crowd_2" in os.getenv("VIDEO_SOURCE_Z2", "") else "cctv").lower()
 
 # Per-Zone Infrastructure Type: "corridor" (enclosed passage, tight 2.0 p/m² red alarm) vs "general" (open plaza)
 ZONE_TYPE_Z1: str = os.getenv("ZONE_TYPE_Z1", os.getenv("ZONE_TYPE", "general" if CAMERA_TYPE_Z1 == "drone" else "corridor")).lower()
