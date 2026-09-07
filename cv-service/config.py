@@ -68,6 +68,11 @@ MODEL_PATH: str = os.getenv("MODEL_PATH", "models/yolov8n-visdrone.pt" if MODEL_
 
 ENABLE_OPTICAL_FLOW: bool = os.getenv("ENABLE_OPTICAL_FLOW", "true").lower() in ("true", "1", "yes")
 
+# CCTV Caching Configuration
+# Toggle CCTV_USE_CACHE=true to load precomputed detections & flow metrics (Zero CPU) or false for real-time live YOLO & Optical Flow
+CCTV_USE_CACHE: bool = os.getenv("CCTV_USE_CACHE", "false").lower() in ("true", "1", "yes")
+CCTV_CACHE_FILE: str = os.getenv("CCTV_CACHE_FILE", "cctv_cache.json")
+
 # Density Override & Saturation Configuration (Drone Perspective Only)
 # Modes: "auto" (check cache first, fall back to live proxy), "precomputed", "live_proxy", "off"
 OVERRIDE_MODE: str = os.getenv("OVERRIDE_MODE", "auto").lower()

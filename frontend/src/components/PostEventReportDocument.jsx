@@ -276,7 +276,7 @@ export default function PostEventReportDocument({ report, onRegenerate }) {
               </span>
             </div>
             <p className="text-xs text-slate-400">
-              Generated: {new Date(created_at).toLocaleString()} · Model: {model_name || 'llama-3.3-70b-versatile'}
+              Generated: {new Date(created_at).toLocaleString()} · Model: {model_name || 'gemini-3.7-flash'}
             </p>
           </div>
         </div>

@@ -257,19 +257,19 @@ export default function PlaybookPanel({
                 </div>
               </div>
 
-              {/* 4. Contextual Narrative Wrapper (Gemini LLM or Deterministic Fallback) */}
+              {/* 4. Contextual Narrative Wrapper (Groq LLM or Deterministic Fallback) */}
               {narrative?.text && (
-                <div className="p-3 rounded-lg border bg-sky-500/10 border-sky-500/30 space-y-1.5 shadow-xs">
+                <div className="p-3 rounded-lg border bg-amber-500/10 border-amber-500/30 space-y-1.5 shadow-xs">
                   <div
                     className="flex items-center justify-between text-[10px] font-extrabold uppercase tracking-wider"
-                    style={{ color: '#0369A1' }}
+                    style={{ color: '#b45309' }}
                   >
                     <span className="flex items-center gap-1">
-                      <span>💡</span> AI Contextual Prioritization Framing (Gemini Decision Support)
+                      <span>⚡</span> AI Contextual Prioritization Framing (Groq Decision Support)
                     </span>
                     <span className="font-mono-num font-bold">
-                      {narrative.source === 'gemini_llm' || narrative.source === 'groq_llm'
-                        ? `Model: ${narrative.model || 'Gemini 2.5 Flash'}`
+                      {narrative.source === 'groq_llm' || narrative.source === 'gemini_llm'
+                        ? `Model: ${narrative.model || 'qwen/qwen3.8-27b'}`
                         : 'Source: Deterministic Fallback'}
                     </span>
                   </div>

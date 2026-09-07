@@ -93,7 +93,7 @@ CrowdSense is built as a modular microservice architecture communicating across 
 | **Frontend Framework**| React / Vite | React 18.2 / Vite 5.4 | Ops Dashboard (5173) & Field Mobile Simulator (5174) |
 | **Styling & Icons** | TailwindCSS | 3.3.3 | Dark/light mode theme tokens, responsive layouts, HUD |
 | **Audio Subsystem** | Web Audio API | Native Browser | Synthetic siren oscillators (440Hz alert / 880Hz panic) |
-| **LLM Synthesis** | Google Gemini API | `gemini-2.5-flash` / `3.6` | 6-section post-incident report & playbook narrative notes |
+| **LLM Synthesis** | Google Gemini & Groq APIs | Gemini 3.7/3.6/3.5/3 Flash & Qwen 3.8/3.6 27B | Planner narration, post-incident report & playbook prioritization |
 | **Fallback Engine** | Node.js Deterministic | Custom Rule Engine | 100% offline fallback synthesis when API is offline |
 | **Tunneling** | ngrok / localtunnel | CLI wrapper | Public URL generation for multi-device field testing |
 
@@ -271,9 +271,9 @@ The crowd counting pipeline went through four distinct experimental iterations:
 * **How it works:**
   * **Static Protocol Table (`playbookData.js`):** Contains 11 hand-authored, immutable operational protocols. Protocols for critical crowd surge, medical emergencies, and exit blockages are adapted from published **National Disaster Management Authority (NDMA)** crowd management guidelines; non-disaster incident types use reasonable illustrative defaults (clearly tagged). Action steps and required resource quotas are 100% static and never generated or altered by an LLM.
   * **Live Resource Shortfall Evaluation:** Cross-references the protocol's required personnel against live checked-in responders in the alert zone (e.g., *Required: 6, Checked in: 4 $\to$ SHORTFALL: 2 needed*).
-  * **Google Gemini Contextual Narrative Wrapper:** Prompts Google Gemini LLM (`gemini-2.5-flash` / `3.6-flash`) with strict system constraints to generate a concise 2–3 sentence prioritization note highlighting which existing step to prioritize based on live weather and responder shortfall. If the API is offline, an honest deterministic local rules engine provides the fallback framing.
+  * **Groq API Contextual Narrative Wrapper (`groqPlaybookService.js`):** Prompts Groq LLM (`qwen/qwen3.8-27b`, `qwen/qwen3.6-27b`, `openai/gpt-oss-20b`) with strict system constraints to generate a concise 2–3 sentence prioritization note highlighting which existing step to prioritize based on live weather and responder shortfall. If the API is offline, an honest deterministic local rules engine provides the fallback framing.
   * **Interactive Step Checklist & Audit Persistence:** Responders check off executed steps; each checkmark logs to SQLite (`playbook_step_log`) and broadcasts live via Socket.io (`playbook_step_completed`).
-* **Where the code lives:** [backend/src/data/playbookData.js](file:///d:/crowd%20sense/backend/src/data/playbookData.js), [backend/src/services/playbookService.js](file:///d:/crowd%20sense/backend/src/services/playbookService.js), [backend/src/services/geminiPlaybookService.js](file:///d:/crowd%20sense/backend/src/services/geminiPlaybookService.js), [frontend/src/components/PlaybookPanel.jsx](file:///d:/crowd%20sense/frontend/src/components/PlaybookPanel.jsx), [frontend/src/components/ActiveIncidentResponseModal.jsx](file:///d:/crowd%20sense/frontend/src/components/ActiveIncidentResponseModal.jsx).
+* **Where the code lives:** [backend/src/data/playbookData.js](file:///d:/crowd%20sense/backend/src/data/playbookData.js), [backend/src/services/playbookService.js](file:///d:/crowd%20sense/backend/src/services/playbookService.js), [backend/src/services/groqPlaybookService.js](file:///d:/crowd%20sense/backend/src/services/groqPlaybookService.js), [frontend/src/components/PlaybookPanel.jsx](file:///d:/crowd%20sense/frontend/src/components/PlaybookPanel.jsx), [frontend/src/components/ActiveIncidentResponseModal.jsx](file:///d:/crowd%20sense/frontend/src/components/ActiveIncidentResponseModal.jsx).
 * **Real Status:** **Fully Real & Live-Demoable.**
 
 ---
@@ -283,7 +283,7 @@ The crowd counting pipeline went through four distinct experimental iterations:
 * **How it works:**
   * **Comprehensive Data Aggregation (`reportAggregationService.js`):** Compiles session density summaries (peak/average density per zone), complete SQLite incident audit logs, standout accountability metrics (Average Time-to-Acknowledge, auto-escalation counts, panic bypasses, citizen SOS resolution rates), and simulated weather transition timelines.
   * **Strict Metric Honesty:** Occupancy numbers are strictly labeled **"Estimated Peak Concurrent Occupancy"** (density $\times$ area at peak moment) and explicitly disclaimed as non-deduplicated cumulative footfall.
-  * **Google Gemini LLM Synthesis (`geminiReportService.js`):** Submits aggregated telemetry to Google Gemini API (`gemini-2.5-flash`, `gemini-3.6-flash`, `gemini-3.5-flash`) with structured prompts enforcing a 6-section administrative format:
+  * **Google Gemini LLM Synthesis (`geminiReportService.js`):** Submits aggregated telemetry to Google Gemini API (`gemini-3.7-flash`, `gemini-3.6-flash`, `gemini-3.5-flash`, `gemini-3-flash`) with structured prompts enforcing a 6-section administrative format:
     1. *Executive Summary*
     2. *Event Overview & Occupancy Analysis*
     3. *Crowd Density & Flow Dynamics Timeline*

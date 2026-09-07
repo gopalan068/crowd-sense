@@ -264,7 +264,77 @@ export function compareScenarios(scenarioResults) {
   return { persistentBottlenecks, conditionalBottlenecks, mitigationEffectiveness }
 }
 
-// ─── Cell index ↔ grid coordinate helpers ────────────────────────────────────
+// ─── Cell index ↔ grid coordinate & Zone helpers ────────────────────────────
+
+/**
+ * Default venue sectoring zones (8-subzone sectoring with longitudinal barrier split)
+ */
+export const DEFAULT_VENUE_ZONES = [
+  {
+    id: 'z1a_south_west',
+    code: 'Zone 1A',
+    name: 'South Broadway (West / Behind Barricade)',
+    color: '#0284c7',
+    bounds: { minX: 0, maxX: 275, minY: 580, maxY: 850 },
+    description: 'South arrival lane west of central barricade',
+  },
+  {
+    id: 'z1b_south_east',
+    code: 'Zone 1B',
+    name: 'South Broadway (East / Main Lane)',
+    color: '#0ea5e9',
+    bounds: { minX: 275, maxX: 600, minY: 580, maxY: 850 },
+    description: 'South arrival main thoroughfare east of central barricade',
+  },
+  {
+    id: 'z2a_mid_west',
+    code: 'Zone 2A',
+    name: 'Central Broadway (West / Behind Barricade)',
+    color: '#8b5cf6',
+    bounds: { minX: 0, maxX: 275, minY: 300, maxY: 580 },
+    description: 'Mid-avenue channelized lane west of central barrier',
+  },
+  {
+    id: 'z2b_mid_east',
+    code: 'Zone 2B',
+    name: 'Central Broadway (East / Main Avenue)',
+    color: '#a855f7',
+    bounds: { minX: 275, maxX: 600, minY: 300, maxY: 580 },
+    description: 'Mid-avenue main corridor approaching Temple Forecourt',
+  },
+  {
+    id: 'z3_temple',
+    code: 'Zone 3',
+    name: 'Temple Square & Chariot Basin',
+    color: '#f59e0b',
+    bounds: { minX: 180, maxX: 500, minY: 120, maxY: 300 },
+    description: 'Gopuram plaza, Courtyard gate, and Chariot (Rath) focal point',
+  },
+  {
+    id: 'z4_north',
+    code: 'Zone 4',
+    name: 'North Exit & Gate Concourse',
+    color: '#10b981',
+    bounds: { minX: 220, maxX: 580, minY: 0, maxY: 120 },
+    description: 'Northern exit concourse and Emergency Gates 1 & 2',
+  },
+  {
+    id: 'z5_west',
+    code: 'Zone 5',
+    name: 'North-West Feeder & West Exit',
+    color: '#ec4899',
+    bounds: { minX: 0, maxX: 220, minY: 0, maxY: 300 },
+    description: 'North-West entry spawn and West evacuation gate',
+  },
+  {
+    id: 'z6_east',
+    code: 'Zone 6',
+    name: 'East Flank Relief Corridor',
+    color: '#6366f1',
+    bounds: { minX: 500, maxX: 800, minY: 0, maxY: 580 },
+    description: 'Eastern perimeter bypass and relief channel',
+  },
+]
 
 /**
  * Convert a flat cell index to {col, row} grid coordinates.
@@ -288,11 +358,72 @@ export function cellIdxToPixelCenter(cellIdx, grid) {
 }
 
 /**
- * Get a human-readable zone label for a cell (e.g., "Zone A3").
+ * Identify which subzone a given pixel position belongs to.
  */
-export function cellLabel(cellIdx, grid) {
+export function getZoneForPosition(pos, layout) {
+  if (!pos) return null
+  const zones = layout?.zones && layout.zones.length > 0 ? layout.zones : DEFAULT_VENUE_ZONES
+
+  for (const zone of zones) {
+    if (zone.bounds) {
+      const { minX, maxX, minY, maxY } = zone.bounds
+      if (pos.x >= minX && pos.x <= maxX && pos.y >= minY && pos.y <= maxY) {
+        return zone
+      }
+    }
+  }
+
+  // Fallback to closest zone center
+  let best = zones[0]
+  let minD = Infinity
+  for (const zone of zones) {
+    if (zone.bounds) {
+      const cx = (zone.bounds.minX + zone.bounds.maxX) / 2
+      const cy = (zone.bounds.minY + zone.bounds.maxY) / 2
+      const d = Math.hypot(pos.x - cx, pos.y - cy)
+      if (d < minD) {
+        minD = d
+        best = zone
+      }
+    }
+  }
+  return best || null
+}
+
+/**
+ * Identify the subzone for a specific grid cell.
+ */
+export function getZoneForCell(cellIdx, grid, layout) {
+  const pixelPos = cellIdxToPixelCenter(cellIdx, grid)
+  const zone = getZoneForPosition(pixelPos, layout)
   const { col, row } = cellIdxToCoord(cellIdx, grid)
-  return `Cell [${col},${row}]`
+  if (!zone) {
+    return {
+      id: `cell_${col}_${row}`,
+      code: `Cell [${col},${row}]`,
+      name: `Cell [${col},${row}]`,
+      color: '#94a3b8',
+      label: `Cell [${col},${row}]`,
+      fullLabel: `Cell [${col},${row}]`,
+      col,
+      row,
+    }
+  }
+  return {
+    ...zone,
+    label: zone.code,
+    fullLabel: `${zone.code} [${col},${row}]`,
+    col,
+    row,
+  }
+}
+
+/**
+ * Get a human-readable zone code label for a cell.
+ */
+export function cellLabel(cellIdx, grid, layout) {
+  const info = getZoneForCell(cellIdx, grid, layout)
+  return info.fullLabel || info.code || `Cell [${cellIdxToCoord(cellIdx, grid).col},${cellIdxToCoord(cellIdx, grid).row}]`
 }
 
 /**

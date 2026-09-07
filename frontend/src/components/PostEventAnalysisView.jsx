@@ -88,7 +88,7 @@ export default function PostEventAnalysisView({ auditLogs = [], initialSubTab = 
       }, 600)
 
       setTimeout(() => {
-        setGenerationStep('Querying Google Gemini API (gemini-3.6-flash) for comprehensive post-incident synthesis...')
+        setGenerationStep('Querying Google Gemini API (gemini-3.7-flash) for comprehensive post-incident synthesis...')
       }, 1200)
 
       const response = await fetch(`${BACKEND_URL}/api/reports/generate`, {

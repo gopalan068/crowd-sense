@@ -17,6 +17,12 @@ os.environ["OPENCV_LOG_LEVEL"] = "OFF"
 import sys
 import threading
 import time
+
+try:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(line_buffering=True)
+except Exception:
+    pass
 import numpy as np
 import math
 
@@ -41,6 +47,19 @@ def load_zone_density_cache(cache_path: str = "zone_density_cache.json") -> dict
                 return frames_cache
         except Exception as err:
             print(f"[CV Cache] Warning: Could not read {cache_path} ({err})")
+    return {}
+
+
+def load_cctv_cache(cache_path: str = "cctv_cache.json") -> dict:
+    if os.path.exists(cache_path):
+        try:
+            with open(cache_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                frames_cache = data.get("frames", {})
+                print(f"[CV CCTV Cache] Loaded precomputed CCTV cache ({len(frames_cache)} zones) from {cache_path}")
+                return frames_cache
+        except Exception as err:
+            print(f"[CV CCTV Cache] Warning: Could not read {cache_path} ({err})")
     return {}
 
 
@@ -92,6 +111,8 @@ def zone_loop(
     saturation_detector: SaturationDetector,
     override_engine: DensityOverrideEngine,
     zone_density_cache: dict,
+    cctv_cache: dict,
+    cctv_use_cache: bool,
     zone_id: str,
     zone_type: str,
     area_sqm: float,
@@ -108,6 +129,7 @@ def zone_loop(
       - Independent start frame offset.
       - Independent analysis interval (1.0s for Drone, 1.0s for CCTV).
       - Independent video loop cycling.
+      - Support for either Real-Time YOLO/Optical Flow computation OR Precomputed CCTV Cache lookup.
     """
     analysis_interval_sec = config.DRONE_ANALYSIS_INTERVAL_SEC if camera_type == "drone" else config.CCTV_ANALYSIS_INTERVAL_SEC
     override_mode = config.OVERRIDE_MODE.lower()
@@ -134,9 +156,13 @@ def zone_loop(
             cap.set(cv2.CAP_PROP_POS_FRAMES, actual_offset)
             print(f"{log_tag} Applied independent start offset: Frame #{actual_offset}/{total_f}")
 
+    zone_cctv_cache = cctv_cache.get(zone_id, {}) if (cctv_use_cache and cctv_cache) else {}
+    cctv_cache_active = bool(cctv_use_cache and zone_cctv_cache)
+
     print(
         f"{log_tag} Started worker thread | Mode=[{camera_type.upper()}] | Type=[{zone_type.upper()}] | "
-        f"Area={area_sqm}m² | Interval={analysis_interval_sec}s | OverrideMode=[{override_mode.upper()}]"
+        f"Area={area_sqm}m² | Interval={analysis_interval_sec}s | "
+        f"{'CCTV_Cache=[ENABLED]' if (camera_type == 'cctv' and cctv_cache_active) else 'OverrideMode=[' + override_mode.upper() + ']'}"
     )
 
     while not stop_event.is_set():
@@ -230,43 +256,85 @@ def zone_loop(
             time.sleep(sleep_duration)
 
         else:
-            # CCTV Mode: Standard ground CCTV analysis (Zero override)
-            if now - last_analysis_time >= analysis_interval_sec and not is_loop_frame:
+            # CCTV Mode: Either Cached Lookup (Zero-CPU) or Real-Time YOLOv8 Inference
+            frame_key = str(curr_frame_pos)
+            has_cache_entry = cctv_cache_active and (frame_key in zone_cctv_cache)
+
+            if cctv_cache_active and has_cache_entry:
+                cached_rec = zone_cctv_cache[frame_key]
+                last_count = cached_rec.get("people_count", 0)
+                last_boxes = [tuple(b) for b in cached_rec.get("boxes", [])]
+                conv = cached_rec.get("flow_convergence", 0.0)
+                turb = cached_rec.get("flow_turbulence", 0.0)
+                panic = cached_rec.get("panic_signature", False)
+                exodus = cached_rec.get("exodus_signature", False)
+
+                if now - last_analysis_time >= analysis_interval_sec and not is_loop_frame:
+                    payload = emit(
+                        [last_count],
+                        zone_id=zone_id,
+                        zone_type=zone_type,
+                        area_sqm=area_sqm,
+                        feed_source=feed_source,
+                        camera_type=camera_type,
+                        flow_convergence=round(conv, 3),
+                        flow_turbulence=round(turb, 3),
+                        panic_signature=panic,
+                        exodus_signature=exodus,
+                        density_source="cctv_cached",
+                        saturated=False,
+                    )
+                    print(
+                        f"{log_tag} [CCTV Cached] Frame #{curr_frame_pos:03d} | count={last_count} den={payload['density']} p/m² "
+                        f"panic={panic} exodus={exodus} flow_turb={round(turb, 2)} (latency: 0.1ms)"
+                    )
+                    last_analysis_time = now
+
                 if detector:
-                    last_count, last_boxes, last_latency = detector.detect(frame)
-                cctv_density = round(last_count / area_sqm, 3) if area_sqm > 0 else 0.0
+                    annotated = detector.annotate(frame, last_boxes)
+                else:
+                    annotated = frame
+                update_zone_frame(zone_id, annotated)
+                time.sleep(0.033)
 
-                if flow_analyzer:
-                    conv, turb, panic, exodus = flow_analyzer.analyze(frame, cctv_density)
-
-                payload = emit(
-                    [last_count],
-                    zone_id=zone_id,
-                    zone_type=zone_type,
-                    area_sqm=area_sqm,
-                    feed_source=feed_source,
-                    camera_type=camera_type,
-                    flow_convergence=round(conv, 3),
-                    flow_turbulence=round(turb, 3),
-                    panic_signature=panic,
-                    exodus_signature=exodus,
-                    density_source="detection",
-                    saturated=False,
-                )
-                print(
-                    f"{log_tag} [AI Analyzed] count={last_count} den={payload['density']} p/m² "
-                    f"panic={panic} exodus={exodus} flow_turb={round(turb, 2)} (latency: {last_latency}ms)"
-                )
-                last_analysis_time = now
-
-            if detector:
-                annotated = detector.annotate(frame, last_boxes)
             else:
-                annotated = frame
-            update_zone_frame(zone_id, annotated)
+                # Standard Live Real-Time CCTV analysis
+                if now - last_analysis_time >= analysis_interval_sec and not is_loop_frame:
+                    if detector:
+                        last_count, last_boxes, last_latency = detector.detect(frame)
+                    cctv_density = round(last_count / area_sqm, 3) if area_sqm > 0 else 0.0
 
-            # Smooth ~30 FPS loop pacing for CCTV mode
-            time.sleep(0.033)
+                    if flow_analyzer:
+                        conv, turb, panic, exodus = flow_analyzer.analyze(frame, cctv_density)
+
+                    payload = emit(
+                        [last_count],
+                        zone_id=zone_id,
+                        zone_type=zone_type,
+                        area_sqm=area_sqm,
+                        feed_source=feed_source,
+                        camera_type=camera_type,
+                        flow_convergence=round(conv, 3),
+                        flow_turbulence=round(turb, 3),
+                        panic_signature=panic,
+                        exodus_signature=exodus,
+                        density_source="detection",
+                        saturated=False,
+                    )
+                    print(
+                        f"{log_tag} [AI Analyzed] count={last_count} den={payload['density']} p/m² "
+                        f"panic={panic} exodus={exodus} flow_turb={round(turb, 2)} (latency: {last_latency}ms)"
+                    )
+                    last_analysis_time = now
+
+                if detector:
+                    annotated = detector.annotate(frame, last_boxes)
+                else:
+                    annotated = frame
+                update_zone_frame(zone_id, annotated)
+
+                # Smooth ~30 FPS loop pacing for CCTV mode
+                time.sleep(0.033)
 
 
 def main() -> None:
@@ -278,10 +346,14 @@ def main() -> None:
     parser.add_argument("--offset1", type=int, default=None, help="Zone 1 initial start frame offset")
     parser.add_argument("--offset2", type=int, default=None, help="Zone 2 initial start frame offset")
     parser.add_argument("--override-mode", type=str, default=None, choices=["auto", "precomputed", "live_proxy", "off"])
+    parser.add_argument("--cctv-cache", dest="cctv_cache", action="store_true", default=None, help="Enable precomputed cache playback for CCTV input")
+    parser.add_argument("--no-cctv-cache", dest="cctv_cache", action="store_false", help="Disable cache and force live real-time YOLO calculation for CCTV")
     args = parser.parse_args()
 
     if args.override_mode:
         config.OVERRIDE_MODE = args.override_mode
+
+    cctv_use_cache = args.cctv_cache if args.cctv_cache is not None else config.CCTV_USE_CACHE
 
     z1_source_str = args.z1   or config.VIDEO_SOURCE_Z1
     z2_source_str = args.z2   or config.VIDEO_SOURCE_Z2
@@ -299,7 +371,8 @@ def main() -> None:
     print(
         f"\n[CV] Multi-Zone Engine Starting — Model: {config.MODEL_PATH}\n"
         f"     Model Type: {config.MODEL_TYPE.upper()} | SAHI Enabled: {config.USE_SAHI}\n"
-        f"     Override Mode: [{config.OVERRIDE_MODE.upper()}] (Active for Drone perspective)\n"
+        f"     Drone Override Mode: [{config.OVERRIDE_MODE.upper()}]\n"
+        f"     CCTV Cache Mode: [{'ENABLED (' + config.CCTV_CACHE_FILE + ')' if cctv_use_cache else 'DISABLED (Live Real-Time YOLOv8 Calculation)'}]\n"
         f"     Zone 1: 'zone_1' ({config.ZONE_TYPE_Z1}) Area={config.AREA_SQM_Z1}m² Source: {src_z1!r} Mode: [{type_z1.upper()}] Offset: {offset_z1} frames\n"
         f"     Zone 2: 'zone_2' ({config.ZONE_TYPE_Z2}) Area={config.AREA_SQM_Z2}m² Source: {src_z2!r} Mode: [{type_z2.upper()}] Offset: {offset_z2} frames\n"
     )
@@ -312,13 +385,14 @@ def main() -> None:
     flow_z1 = FlowAnalyzer(config.FOCAL_POINTS["zone_1"], camera_type=type_z1) if config.ENABLE_OPTICAL_FLOW else None
     flow_z2 = FlowAnalyzer(config.FOCAL_POINTS["zone_2"], camera_type=type_z2) if config.ENABLE_OPTICAL_FLOW else None
 
-    # Load Saturation Detector, Override Engine, and Precomputed Cache
+    # Load Saturation Detector, Override Engine, and Precomputed Caches
     saturation_detector = SaturationDetector(
         min_detection_density=config.SATURATION_MIN_DETECTION_DENSITY,
         saturation_edge_threshold=config.SATURATION_EDGE_THRESHOLD,
     )
     override_engine = DensityOverrideEngine(config.CALIBRATION_FILE)
     zone_density_cache = load_zone_density_cache(config.CACHE_FILE)
+    cctv_cache = load_cctv_cache(config.CCTV_CACHE_FILE) if cctv_use_cache else {}
 
     # Open Zone 1 Stream
     cap_z1 = cv2.VideoCapture(src_z1) if src_z1 is not None else None
@@ -342,6 +416,8 @@ def main() -> None:
             saturation_detector=saturation_detector,
             override_engine=override_engine,
             zone_density_cache=zone_density_cache,
+            cctv_cache=cctv_cache,
+            cctv_use_cache=cctv_use_cache,
             zone_id="zone_1",
             zone_type=config.ZONE_TYPE_Z1,
             area_sqm=config.AREA_SQM_Z1,
@@ -365,6 +441,8 @@ def main() -> None:
             saturation_detector=saturation_detector,
             override_engine=override_engine,
             zone_density_cache=zone_density_cache,
+            cctv_cache=cctv_cache,
+            cctv_use_cache=cctv_use_cache,
             zone_id="zone_2",
             zone_type=config.ZONE_TYPE_Z2,
             area_sqm=config.AREA_SQM_Z2,

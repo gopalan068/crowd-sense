@@ -23,9 +23,10 @@
 import React, { useState, useCallback, useRef } from 'react'
 import { SCENARIOS, SCENARIO_ORDER } from '../lib/scenarios.js'
 import { runScenariosSequential } from '../lib/scenarioRunner.js'
-import { analyzeSingleRun, compareScenarios, topNHottestCells, cellLabel } from '../lib/bottleneckAnalysis.js'
+import { analyzeSingleRun, compareScenarios, topNHottestCells, cellLabel, getZoneForCell } from '../lib/bottleneckAnalysis.js'
 import { matchRules } from '../lib/recommendationRules.js'
 import { getDensityBand, FRUIN_BANDS } from '../lib/fruinDensity.js'
+import StructuredNarrativeViewer from '../components/StructuredNarrativeViewer.jsx'
 
 // ─── Small helpers ─────────────────────────────────────────────────────────────
 
@@ -183,6 +184,7 @@ const RULE_COLORS = {
   fast_rise_rate:            { bg: '#fce7f3', border: '#f9a8d4', text: '#9d174d' },
   overcapacity_amplification:{ bg: '#fef9c3', border: '#fde047', text: '#713f12' },
   panic_red_amplification:   { bg: '#ede9fe', border: '#a78bfa', text: '#4c1d95' },
+  focus_point_convergence:   { bg: '#fef3c7', border: '#f59e0b', text: '#b45309' },
 }
 
 function RuleBadge({ ruleId }) {
@@ -234,8 +236,21 @@ function RecommendationCard({ rec, index }) {
           marginTop: 1,
         }}>{index + 1}</div>
         <div style={{ flex: 1 }}>
-          <div style={{ marginBottom: 5 }}>
+          <div style={{ marginBottom: 5, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
             <RuleBadge ruleId={rec.ruleId} />
+            {td?.zoneCode && (
+              <span style={{
+                fontSize: 9,
+                fontWeight: 700,
+                padding: '2px 6px',
+                borderRadius: 4,
+                background: `${td.zoneColor || '#6366f1'}20`,
+                color: td.zoneColor || 'var(--color-text)',
+                border: `1px solid ${td.zoneColor || '#6366f1'}50`,
+              }}>
+                📍 {td.zoneCode}: {td.zoneName}
+              </span>
+            )}
           </div>
           <p style={{
             fontSize: 13,
@@ -401,11 +416,41 @@ export default function PlannerReportPage({ layout, backendUrl = '' }) {
     setNarrationError(null)
 
     try {
-      // Strip non-serializable data (Float32Array densityGrids) before sending
+      const allPersistent = comparison.persistentBottlenecks || []
+      const allConditional = comparison.conditionalBottlenecks || []
+
+      // Strip non-serializable data and enrich with subzone labels (limit arrays sent to backend)
       const safeComparison = {
-        persistentBottlenecks:  comparison.persistentBottlenecks,
-        conditionalBottlenecks: comparison.conditionalBottlenecks,
-        mitigationEffectiveness: comparison.mitigationEffectiveness,
+        persistentBottleneckCount:  allPersistent.length,
+        conditionalBottleneckCount: allConditional.length,
+        persistentBottlenecks: allPersistent.slice(0, 15).map(b => {
+          const zoneInfo = refGrid ? getZoneForCell(b.cellIdx, refGrid, layout) : null
+          const code = zoneInfo?.code || `Cell ${b.cellIdx}`
+          return {
+            cellIdx:      b.cellIdx,
+            appearedIn:   b.appearedIn,
+            scenarioCount: b.scenarioCount || b.appearedIn?.length,
+            zoneId:       zoneInfo?.id,
+            zoneCode:     code,
+            zoneName:     code,
+            cellName:     zoneInfo?.fullLabel || code,
+          }
+        }),
+        conditionalBottlenecks: allConditional.slice(0, 20).map(b => {
+          const zoneInfo = refGrid ? getZoneForCell(b.cellIdx, refGrid, layout) : null
+          const code = zoneInfo?.code || `Cell ${b.cellIdx}`
+          return {
+            cellIdx:      b.cellIdx,
+            appearedIn:   b.appearedIn,
+            missingIn:    b.missingIn,
+            scenarioCount: b.appearedIn?.length,
+            zoneId:       zoneInfo?.id,
+            zoneCode:     code,
+            zoneName:     code,
+            cellName:     zoneInfo?.fullLabel || code,
+          }
+        }),
+        mitigationEffectiveness: comparison.mitigationEffectiveness || [],
       }
 
       const res = await fetch(`${backendUrl}/api/planner/narrate-report`, {
@@ -413,7 +458,26 @@ export default function PlannerReportPage({ layout, backendUrl = '' }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           bottleneckResults: safeComparison,
-          recommendations:   recommendations.map(r => ({ ruleId: r.ruleId, text: r.text })),
+          recommendations:   recommendations.map(r => ({
+            ruleId:   r.ruleId,
+            text:     r.text,
+            zoneName: r.triggerData?.zoneName,
+            zoneCode: r.triggerData?.zoneCode,
+            cellName: r.triggerData?.cellName,
+            triggerData: r.triggerData ? {
+              zoneName:       r.triggerData.zoneName,
+              zoneCode:       r.triggerData.zoneCode,
+              cellName:       r.triggerData.cellName,
+              firstRedTime:   r.triggerData.firstRedTime,
+              redDuration:    r.triggerData.redDuration,
+              peakDensity:    r.triggerData.peakDensity,
+              scenarioCount:  r.triggerData.scenarioCount,
+              totalScenarios: r.triggerData.totalScenarios,
+              label:          r.triggerData.label,
+              peakDensityDelta: r.triggerData.peakDensityDelta,
+              redDurationDelta: r.triggerData.redDurationDelta,
+            } : null,
+          })),
           venueName:         layout?.name || 'Unnamed Venue',
           scenarioLabels:    scenarioResults?.map(s => s.label) || [],
         }),
@@ -707,7 +771,7 @@ export default function PlannerReportPage({ layout, backendUrl = '' }) {
                 <tbody>
                   {(hottestCells || []).map((hc, idx) => {
                     const grid = refGrid
-                    const label = grid ? cellLabel(hc.cellIdx, grid) : `Cell ${hc.cellIdx}`
+                    const zoneInfo = grid ? getZoneForCell(hc.cellIdx, grid, layout) : null
                     const isPersistent = comparison.persistentBottlenecks.some(b => b.cellIdx === hc.cellIdx)
                     const isConditional = !isPersistent && comparison.conditionalBottlenecks.some(b => b.cellIdx === hc.cellIdx)
 
@@ -728,15 +792,67 @@ export default function PlannerReportPage({ layout, backendUrl = '' }) {
                         }}
                       >
                         <td style={{
-                          padding: '4px 8px',
-                          fontSize: 10,
-                          fontFamily: 'monospace',
+                          padding: '6px 8px',
                           color: 'var(--color-text)',
                           whiteSpace: 'nowrap',
                         }}>
-                          {label}
-                          {isPersistent && <span title="Persistent bottleneck" style={{ marginLeft: 4, fontSize: 9, color: '#dc2626' }}>●ALL</span>}
-                          {isConditional && <span title="Conditional bottleneck" style={{ marginLeft: 4, fontSize: 9, color: '#ea580c' }}>◐SOME</span>}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            {zoneInfo?.color ? (
+                              <span style={{
+                                padding: '2px 6px',
+                                borderRadius: 4,
+                                background: `${zoneInfo.color}22`,
+                                color: zoneInfo.color,
+                                border: `1px solid ${zoneInfo.color}55`,
+                                fontWeight: 800,
+                                fontSize: 10,
+                                fontFamily: 'monospace',
+                              }}>
+                                {zoneInfo.code}
+                              </span>
+                            ) : (
+                              <span style={{ fontWeight: 600, fontSize: 11 }}>
+                                {zoneInfo?.code || `Cell ${hc.cellIdx}`}
+                              </span>
+                            )}
+                            <span style={{ fontSize: 9, color: 'var(--color-muted)', fontFamily: 'monospace' }}>
+                              [{zoneInfo?.col ?? '?'}, {zoneInfo?.row ?? '?'}]
+                            </span>
+                            {isPersistent && (
+                              <span
+                                title="Persistent bottleneck in all scenarios"
+                                style={{
+                                  marginLeft: 4,
+                                  fontSize: 8,
+                                  fontWeight: 800,
+                                  color: '#dc2626',
+                                  background: 'rgba(220,38,38,0.1)',
+                                  padding: '1px 4px',
+                                  borderRadius: 3,
+                                  border: '1px solid rgba(220,38,38,0.25)',
+                                }}
+                              >
+                                ALL SCENARIOS
+                              </span>
+                            )}
+                            {isConditional && (
+                              <span
+                                title="Conditional bottleneck in specific scenarios"
+                                style={{
+                                  marginLeft: 4,
+                                  fontSize: 8,
+                                  fontWeight: 700,
+                                  color: '#ea580c',
+                                  background: 'rgba(234,88,12,0.1)',
+                                  padding: '1px 4px',
+                                  borderRadius: 3,
+                                  border: '1px solid rgba(234,88,12,0.25)',
+                                }}
+                              >
+                                CONDITIONAL
+                              </span>
+                            )}
+                          </div>
                         </td>
                         {scenarioResults.map(sr => {
                           // Find peak density for this cell in this scenario
@@ -1025,50 +1141,13 @@ export default function PlannerReportPage({ layout, backendUrl = '' }) {
             )}
 
             {narration && (
-              <div style={{
-                marginTop: 10,
-                padding: '14px 16px',
-                borderRadius: 8,
-                background: 'var(--color-bg)',
-                border: '1px solid var(--color-border)',
-                fontSize: 13,
-                lineHeight: 1.7,
-                color: 'var(--color-text)',
-                whiteSpace: 'pre-wrap',
-              }}>
-                {/* Pipeline Source Badge */}
-                <div style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  padding: '3px 9px',
-                  borderRadius: 6,
-                  fontSize: 11,
-                  fontWeight: 700,
-                  marginBottom: 12,
-                  background: narrationSource === 'gemini_llm' ? 'rgba(59,130,246,0.15)' : narrationSource === 'groq_llm' ? 'rgba(249,115,22,0.15)' : 'rgba(107,114,128,0.15)',
-                  color: narrationSource === 'gemini_llm' ? '#3b82f6' : narrationSource === 'groq_llm' ? '#f97316' : 'var(--color-muted)',
-                  border: `1px solid ${narrationSource === 'gemini_llm' ? 'rgba(59,130,246,0.3)' : narrationSource === 'groq_llm' ? 'rgba(249,115,22,0.3)' : 'var(--color-border)'}`,
-                }}>
-                  {narrationSource === 'gemini_llm' && `✨ Google Gemini (${narrationModel || 'gemini-3.5-flash'})`}
-                  {narrationSource === 'groq_llm' && `⚡ Groq LLM (${narrationModel || 'openai/gpt-oss-120b'})`}
-                  {narrationSource === 'deterministic_fallback' && `📋 Deterministic Local Synthesis`}
-                  {narrationSource !== 'gemini_llm' && narrationSource !== 'groq_llm' && narrationSource !== 'deterministic_fallback' && `AI Synthesis (${narrationModel || narrationSource})`}
-                </div>
-
-                <div>{narration}</div>
-
-                <div style={{
-                  marginTop: 12,
-                  fontSize: 10,
-                  color: 'var(--color-muted)',
-                  fontStyle: 'italic',
-                  borderTop: '1px solid var(--color-border)',
-                  paddingTop: 8,
-                }}>
-                  This narrative was generated by the CrowdSense LLM pipeline summarizing the above deterministic simulation findings.
-                  The tables and rules above are the authoritative ground truth.
-                </div>
+              <div style={{ marginTop: 12 }}>
+                <StructuredNarrativeViewer
+                  narration={narration}
+                  source={narrationSource}
+                  model={narrationModel}
+                  venueName={layout?.name}
+                />
               </div>
             )}
           </section>

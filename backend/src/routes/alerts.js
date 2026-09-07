@@ -14,7 +14,7 @@ const {
   recordPlaybookStep,
   getCompletedSteps,
 } = require('../services/playbookService');
-const { generateContextualNarrative } = require('../services/geminiPlaybookService');
+const { generateContextualNarrative } = require('../services/groqPlaybookService');
 const { getWeatherState } = require('../services/weatherService');
 
 /**

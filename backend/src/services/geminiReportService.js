@@ -2,8 +2,12 @@
  * backend/src/services/geminiReportService.js
  * Google Gemini API Integration & Deterministic Local Fallback Engine.
  *
- * Implements Capstone Part B:
- * - Calls Gemini generateContent REST API with models (gemini-2.5-flash, gemini-2.0-flash, gemini-1.5-flash)
+ * Task 2: Post-Incident Crowd Safety & Accountability Report generation via Google Gemini API:
+ * 1. gemini-3.7-flash (Default / Primary)
+ * 2. gemini-3.6-flash
+ * 3. gemini-3.5-flash
+ * 4. gemini-3-flash
+ *
  * - Enforces strict prompt grounding, 6-section structure, peak occupancy honesty, and deep comprehensive prose
  * - Generates high-token extensive reports without artificial prompt truncation
  * - Provides a fully honest local deterministic synthesis fallback with unmistakable labeling
@@ -13,57 +17,38 @@
 
 const { insertReport } = require('../db/database');
 
-const DEFAULT_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+const DEFAULT_MODEL = process.env.GEMINI_MODEL || 'gemini-3.7-flash';
 
-// Candidate models in preference order
+// Candidate models in preference order (including official aliases)
 const CANDIDATE_MODELS = [
   DEFAULT_MODEL,
+  'gemini-3.7-flash',
   'gemini-3.6-flash',
   'gemini-3.5-flash',
-  'gemini-3.1-flash',
+  'gemini-3-flash-preview',
+  'gemini-3-flash',
 ];
 
 /**
  * Construct system instructions for Gemini LLM
  */
 function buildSystemPrompt() {
-  return `You are the Official Lead Safety Analyst generating a formal, comprehensive, and exhaustive Post-Incident Crowd Safety & Accountability Report for a state district administration / disaster management authority review committee.
+  return `You are the Official Lead Safety Analyst generating a formal, comprehensive Post-Incident Crowd Safety & Accountability Report for a state disaster management review committee.
 
 CRITICAL INSTRUCTIONS & GROUNDING RULES:
 1. FACTUAL GROUNDING: Rely EXCLUSIVELY on the provided structured JSON input. Do not invent or hallucinate incidents, personnel names, or attendance counts not present in the payload.
 2. HONESTY ON OCCUPANCY: Always refer to crowd capacity numbers strictly as "Estimated Peak Concurrent Occupancy". Density-based camera measurements cannot deduplicate individuals who moved between zones or arrived/departed over time. NEVER describe these figures as "total unique attendees" or "total footfall". State this caveat plainly in Section 2.
-3. DISTINGUISH SIMULATED DATA: If the payload contains any field tagged "data_source": "simulated_reference" (e.g. expected ticketed attendance or weather simulation notes), explicitly label them in the text as "[SIMULATED REFERENCE DATA]". Never present simulated planning figures as measured live data.
-4. STANDOUT ACCOUNTABILITY METRICS: The core purpose of this report is demonstrating accountability by design. Feature the standout accountability numbers prominently in Section 5:
-   - Average Time-to-Acknowledge (overall and by severity)
-   - Count of Auto-Escalations (alerts where officials failed to acknowledge in time)
-   - Count of Panic-Signature Fast-Path alerts (where graduated timers were bypassed for immediate response)
-   - Citizen Emergency SOS handling status
-   - Field responder actions and resolution timelines
-5. FORMAL ADMINISTRATIVE TONE & DEPTH: Use an authoritative, thorough, analytical, and objective administrative tone suitable for an official public safety record. Produce deep, detailed narrative analysis across all sections.
+3. DISTINGUISH SIMULATED DATA: If the payload contains any field tagged "data_source": "simulated_reference", explicitly label them as "[SIMULATED REFERENCE DATA]".
+4. STANDOUT ACCOUNTABILITY METRICS: Feature the standout numbers prominently in Section 5 (Time-to-Acknowledge, Auto-Escalations count, Panic Fast-Path alerts, Citizen SOS status).
+5. CONCISE & DATA-DENSE: Provide thorough analysis across all 6 sections while remaining data-dense (aim for ~1,200 to 1,800 words total) to avoid exceeding token limits.
 
-MANDATORY REPORT STRUCTURE (Follow these 6 sections in order):
-# 1. Executive Summary
-Detailed executive summary of the event duration, overall safety status, total incidents recorded, and headline response efficiency.
-
-# 2. Event Overview & Occupancy Analysis
-Venue scope, zones analyzed, and Estimated Peak Concurrent Occupancy per zone. Explicitly include the "peak concurrent occupancy vs total footfall" caveat. Reference simulated capacity figures only if present, clearly marked.
-
-# 3. Crowd Density & Flow Dynamics Timeline
-Comprehensive narrative walkthrough of how crowd density, flow convergence, and turbulence evolved over time across all zones. Incorporate simulated weather condition shifts (e.g. extreme heat, heavy rain) and explain their impact on crowd behavior, physical bottlenecking, and camera vision confidence.
-
-# 4. Incidents & Alerts Log
-A structured, complete markdown table detailing the logged incidents from the audit trail: Alert ID, Zone, Severity, Trigger Time, Handling / Assigned Role, Acknowledgment Status, Response Time (seconds), and Responder Action.
-
-# 5. Accountability & Response Performance
-Prominently display and analyze the key accountability metrics:
-- Average Time-to-Acknowledge (overall & by severity)
-- Auto-escalations count and breakdown
-- Immediate panic-bypass activations
-- Field responder resolution metrics and citizen report outcomes
-Explain what these numbers prove regarding operational vigilance, whether any delays occurred, and how auto-escalation eliminated administrative discretion.
-
-# 6. Actionable Observations & Recommendations
-Specific, data-grounded administrative and physical layout recommendations (e.g., staging additional responders near gate throats, adjusting crowd diversion routes before corridor density spikes, thermal relief staging).`;
+MANDATORY REPORT STRUCTURE (Use these exact 6 markdown headings):
+## 1. Executive Summary
+## 2. Event Overview & Occupancy Analysis
+## 3. Crowd Density & Flow Dynamics Timeline
+## 4. Incidents & Alerts Log
+## 5. Accountability & Response Performance
+## 6. Actionable Observations & Recommendations`;
 }
 
 /**
@@ -95,7 +80,7 @@ async function callGeminiApi(aggregatedData) {
   }
 
   const systemPrompt = buildSystemPrompt();
-  const userMessage = `Here is the complete, verified system-collected data for this gathering:\n\n\`\`\`json\n${JSON.stringify(payloadToPrompt, null, 2)}\n\`\`\`\n\nPlease generate the comprehensive, exhaustive 6-section Post-Incident Crowd Safety & Accountability Report now:`;
+  const userMessage = `Here is the complete, verified system-collected data for this gathering:\n\n\`\`\`json\n${JSON.stringify(payloadToPrompt, null, 2)}\n\`\`\`\n\nPlease generate the formal 6-section Post-Incident Crowd Safety & Accountability Report now:`;
 
   const modelsToTry = [...new Set(CANDIDATE_MODELS)];
   let lastError = null;
@@ -140,7 +125,11 @@ async function callGeminiApi(aggregatedData) {
       }
 
       const data = await response.json();
-      const rawMarkdown = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      const candidate = data.candidates?.[0];
+      const finishReason = candidate?.finishReason;
+
+      // Extract all text parts across the entire parts array
+      const rawMarkdown = (candidate?.content?.parts || []).map((p) => p.text || '').join('');
       let markdown = rawMarkdown.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
       if (markdown.includes('<think>')) {
         markdown = markdown.replace(/<think>[\s\S]*/gi, '').trim();
@@ -152,16 +141,19 @@ async function callGeminiApi(aggregatedData) {
         continue;
       }
 
-      // Check completeness: Ensure Gemini didn't cut off early before writing all 6 sections
-      const hasKeySections = (markdown.includes('# 5.') || markdown.includes('Accountability')) &&
-                            (markdown.includes('# 6.') || markdown.includes('Actionable Observations') || markdown.includes('Recommendations'));
-      if (!hasKeySections) {
-        console.warn(`[GeminiReport] Model ${model} returned truncated report (missing sections 5 & 6).`);
-        lastError = new Error(`Model ${model} returned incomplete report truncated mid-generation.`);
+      // Check completeness: Section 5 and Section 6 present, or natural STOP with substantial length
+      const hasSec5 = /(?:#+\s*)?(?:5\.|section\s*5|accountability)/i.test(markdown);
+      const hasSec6 = /(?:#+\s*)?(?:6\.|section\s*6|recommendation|observation|actionable)/i.test(markdown);
+      const isComplete = (hasSec5 && hasSec6) || (finishReason === 'STOP' && markdown.length >= 600);
+
+      // Only reject if it truly lacks essential sections
+      if (!isComplete) {
+        console.warn(`[GeminiReport] Model ${model} returned incomplete report (missing sections 5/6, finishReason: ${finishReason}, length: ${markdown.length}). Retrying next candidate.`);
+        lastError = new Error(`Model ${model} returned incomplete report.`);
         continue;
       }
 
-      console.log(`[GeminiReport] ✓ Successfully generated full comprehensive report via Gemini (${model})`);
+      console.log(`[GeminiReport] ✓ Successfully generated full report via Gemini (${model}) [finishReason: ${finishReason}, length: ${markdown.length}]`);
       return {
         markdown,
         model: model,

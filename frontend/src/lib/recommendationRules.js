@@ -25,7 +25,7 @@
  */
 
 import { FRUIN_THRESHOLDS, getDensityBand } from './fruinDensity.js'
-import { cellLabel, cellIdxToPixelCenter } from './bottleneckAnalysis.js'
+import { cellLabel, cellIdxToPixelCenter, getZoneForCell } from './bottleneckAnalysis.js'
 
 /** p/m²/s — density rising faster than this in the 10s before first red = "fast spike" */
 export const THRESHOLD_FAST_RISE = 0.28
@@ -281,10 +281,15 @@ export function matchRules(analysisBundle, venueLayout) {
     const isConditional = !isPersistent && comparison.conditionalBottlenecks.some(b => b.cellIdx === ci)
     const appearedInSet = new Set(entry.appearedIn)
     const missingIn     = scenarioResults.map(sr => sr.scenarioId).filter(id => !appearedInSet.has(id))
+    const zoneInfo      = getZoneForCell(ci, refGrid, venueLayout)
 
     const ctx = {
       cellIdx:       ci,
-      cellName:      cellLabel(ci, refGrid),
+      cellName:      zoneInfo.fullLabel || cellLabel(ci, refGrid, venueLayout),
+      zoneId:        zoneInfo.id,
+      zoneCode:      zoneInfo.code,
+      zoneName:      zoneInfo.name,
+      zoneColor:     zoneInfo.color,
       firstRedTime:  Math.round(entry.earliestFirstRed * 10) / 10,
       firstRedRank:  rank,
       redDuration:   Math.round(entry.maxRedDuration * 10) / 10,
