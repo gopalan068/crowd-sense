@@ -257,7 +257,13 @@ def zone_loop(
 
         else:
             # CCTV Mode: Either Cached Lookup (Zero-CPU) or Real-Time YOLOv8 Inference
-            frame_key = str(curr_frame_pos)
+            num_cached = len(zone_cctv_cache) if zone_cctv_cache else 0
+            if cctv_cache_active and num_cached > 0:
+                frame_idx = curr_frame_pos % num_cached
+                frame_key = str(frame_idx)
+            else:
+                frame_key = str(curr_frame_pos)
+
             has_cache_entry = cctv_cache_active and (frame_key in zone_cctv_cache)
 
             if cctv_cache_active and has_cache_entry:

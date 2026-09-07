@@ -126,6 +126,9 @@ class PersonDetector:
         Mode-Aware Detection Pipeline with Strict Confidence Filtering.
         Pipeline: YOLO + SAHI (sliced tiling) -> Whole-Frame YOLO -> Spatial NMS Deduplication.
         """
+        if self.model is None:
+            return 0, [], 0.0
+
         start_time = time.monotonic()
         all_boxes: list[tuple[int, int, int, int, float]] = []
 

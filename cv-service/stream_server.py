@@ -89,5 +89,5 @@ def start_stream_server(host: str = "0.0.0.0", port: int = 5001) -> threading.Th
     server = ThreadedHTTPServer((host, port), MJPEGStreamHandler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
-    print(f"[StreamServer] Live HD Video Feeds active → http://localhost:{port}/stream/zone_1 & zone_2")
+    print(f"[StreamServer] Live HD Video Feeds active -> http://localhost:{port}/stream/zone_1 & zone_2")
     return thread
