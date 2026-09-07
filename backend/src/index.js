@@ -8,6 +8,8 @@ require('dotenv').config();
 
 const express = require('express');
 const http = require('http');
+const path = require('path');
+const fs = require('fs');
 const cors = require('cors');
 
 const { setupSockets } = require('./sockets');
@@ -77,6 +79,47 @@ app.use('/api', conditionsRouter);
 app.use('/api', reportsRouter);
 app.use('/api', venuesRouter);
 app.use('/api', plannerRouter);
+
+// --- Dual Video Stream Proxy (Port 5001 -> Port 4000) ---
+// Seamlessly proxies both CCTV (Zone 1) and Drone Overhead (Zone 2) MJPEG video feeds in production
+app.get('/stream/:zone_id', (req, res) => {
+  const { zone_id } = req.params;
+  const streamReq = http.request(
+    {
+      hostname: '127.0.0.1',
+      port: 5001,
+      path: `/stream/${zone_id}`,
+      method: 'GET',
+    },
+    (streamRes) => {
+      res.writeHead(streamRes.statusCode, streamRes.headers);
+      streamRes.pipe(res);
+    }
+  );
+
+  streamReq.on('error', () => {
+    res.status(503).send('Stream service unavailable');
+  });
+
+  req.on('close', () => {
+    streamReq.destroy();
+  });
+
+  streamReq.end();
+});
+
+// --- Serve Frontend Static Build (Single Service Deployment) ---
+const frontendDistPath = path.join(__dirname, '../../frontend/dist');
+if (fs.existsSync(frontendDistPath)) {
+  console.log(`[Backend] Serving frontend static assets from: ${frontendDistPath}`);
+  app.use(express.static(frontendDistPath));
+  app.get('*', (req, res) => {
+    if (req.path.startsWith('/api') || req.path.startsWith('/health') || req.path.startsWith('/socket.io')) {
+      return res.status(404).json({ error: 'Endpoint not found' });
+    }
+    res.sendFile(path.join(frontendDistPath, 'index.html'));
+  });
+}
 
 // --- Socket.io ---
 const io = setupSockets(server);

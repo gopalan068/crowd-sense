@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: crowdsense-app
+    runtime: docker
+    plan: free
+    region: oregon
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: CCTV_USE_CACHE
+        value: "true"
+      - key: OVERRIDE_MODE
+        value: precomputed
+      - key: ENABLE_OPTICAL_FLOW
+        value: "true"
+      - key: GROQ_API_KEY
+        sync: false
+

@@ -13,13 +13,14 @@ import math
 import time
 import cv2
 import numpy as np
-from ultralytics import YOLO
+YOLO = None
+YOLO_AVAILABLE = False
 
+SAHI_AVAILABLE = False
 try:
-    from sahi import AutoDetectionModel
-    from sahi.predict import get_sliced_prediction
-    SAHI_AVAILABLE = True
-except ImportError:
+    import importlib.util
+    SAHI_AVAILABLE = importlib.util.find_spec("sahi") is not None
+except Exception:
     SAHI_AVAILABLE = False
 
 
@@ -63,13 +64,19 @@ class PersonDetector:
         self.iou_threshold = float(os.getenv("NMS_IOU_THRESH", "0.60"))
         self.imgsz = int(os.getenv("INFERENCE_IMGSZ", "1280" if self.camera_type == "drone" else "640"))
 
-        # Load Ultralytics YOLO model
-        self.model = YOLO(self.model_path)
+        # Load Ultralytics YOLO model if available
+        self.model = None
+        if YOLO_AVAILABLE and YOLO is not None and os.path.exists(self.model_path):
+            try:
+                self.model = YOLO(self.model_path)
+            except Exception as err:
+                print(f"[Detector] Note: YOLO model weights not loaded ({err})")
 
         # Initialize SAHI AutoDetectionModel if active (drone mode only)
         self.sahi_model = None
-        if self.use_sahi:
+        if self.use_sahi and self.model is not None:
             try:
+                from sahi import AutoDetectionModel
                 self.sahi_model = AutoDetectionModel.from_pretrained(
                     model_type="ultralytics",
                     model_path=self.model_path,
@@ -125,6 +132,7 @@ class PersonDetector:
         # 1. SAHI Sliced Prediction Pass (Drone Mode Only)
         if self.use_sahi and self.sahi_model:
             try:
+                from sahi.predict import get_sliced_prediction
                 rgb_frame = cv2.cvtColor(frame, getattr(cv2, "COLOR_BGR2RGB", 4))
                 sliced_pred = get_sliced_prediction(
                     rgb_frame,
