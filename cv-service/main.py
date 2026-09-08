@@ -57,29 +57,52 @@ def check_pipeline_active(backend_url: str) -> bool:
     return _pipeline_active
 
 
+def resolve_path(path_str: str) -> str:
+    if not path_str:
+        return path_str
+    if os.path.isabs(path_str) and os.path.exists(path_str):
+        return path_str
+    if os.path.exists(path_str):
+        return path_str
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    cand1 = os.path.join(base_dir, path_str)
+    if os.path.exists(cand1):
+        return cand1
+    cand2 = os.path.join(base_dir, os.path.basename(path_str))
+    if os.path.exists(cand2):
+        return cand2
+    return path_str
+
+
 def load_zone_density_cache(cache_path: str = "zone_density_cache.json") -> dict:
-    if os.path.exists(cache_path):
+    resolved = resolve_path(cache_path)
+    if os.path.exists(resolved):
         try:
-            with open(cache_path, "r", encoding="utf-8") as f:
+            with open(resolved, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 frames_cache = data.get("frames", {})
-                print(f"[CV Cache] Loaded precomputed density cache ({len(frames_cache)} zones) from {cache_path}")
+                print(f"[CV Cache] Loaded precomputed density cache ({len(frames_cache)} zones) from {resolved}")
                 return frames_cache
         except Exception as err:
-            print(f"[CV Cache] Warning: Could not read {cache_path} ({err})")
+            print(f"[CV Cache] Warning: Could not read {resolved} ({err})")
+    else:
+        print(f"[CV Cache] Warning: Cache file not found at {cache_path} (resolved: {resolved})")
     return {}
 
 
 def load_cctv_cache(cache_path: str = "cctv_cache.json") -> dict:
-    if os.path.exists(cache_path):
+    resolved = resolve_path(cache_path)
+    if os.path.exists(resolved):
         try:
-            with open(cache_path, "r", encoding="utf-8") as f:
+            with open(resolved, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 frames_cache = data.get("frames", {})
-                print(f"[CV CCTV Cache] Loaded precomputed CCTV cache ({len(frames_cache)} zones) from {cache_path}")
+                print(f"[CV CCTV Cache] Loaded precomputed CCTV cache ({len(frames_cache)} zones) from {resolved}")
                 return frames_cache
         except Exception as err:
-            print(f"[CV CCTV Cache] Warning: Could not read {cache_path} ({err})")
+            print(f"[CV CCTV Cache] Warning: Could not read {resolved} ({err})")
+    else:
+        print(f"[CV CCTV Cache] Warning: CCTV cache file not found at {cache_path} (resolved: {resolved})")
     return {}
 
 
@@ -465,8 +488,9 @@ def main() -> None:
 
     start_stream_server(port=5001)
 
-    detector_z1 = PersonDetector(config.MODEL_PATH, camera_type=type_z1, model_type=config.MODEL_TYPE) if type_z1 == "cctv" else None
-    detector_z2 = PersonDetector(config.MODEL_PATH, camera_type=type_z2, model_type=config.MODEL_TYPE) if type_z2 == "cctv" else None
+    model_path = resolve_path(config.MODEL_PATH)
+    detector_z1 = PersonDetector(model_path, camera_type=type_z1, model_type=config.MODEL_TYPE) if type_z1 == "cctv" else None
+    detector_z2 = PersonDetector(model_path, camera_type=type_z2, model_type=config.MODEL_TYPE) if type_z2 == "cctv" else None
 
     flow_z1 = FlowAnalyzer(config.FOCAL_POINTS["zone_1"], camera_type=type_z1) if config.ENABLE_OPTICAL_FLOW else None
     flow_z2 = FlowAnalyzer(config.FOCAL_POINTS["zone_2"], camera_type=type_z2) if config.ENABLE_OPTICAL_FLOW else None
@@ -476,7 +500,7 @@ def main() -> None:
         min_detection_density=config.SATURATION_MIN_DETECTION_DENSITY,
         saturation_edge_threshold=config.SATURATION_EDGE_THRESHOLD,
     )
-    override_engine = DensityOverrideEngine(config.CALIBRATION_FILE)
+    override_engine = DensityOverrideEngine(resolve_path(config.CALIBRATION_FILE))
     zone_density_cache = load_zone_density_cache(config.CACHE_FILE)
     cctv_cache = load_cctv_cache(config.CCTV_CACHE_FILE) if cctv_use_cache else {}
 

@@ -13,8 +13,15 @@ import math
 import time
 import cv2
 import numpy as np
+
 YOLO = None
 YOLO_AVAILABLE = False
+try:
+    from ultralytics import YOLO
+    YOLO_AVAILABLE = True
+except Exception:
+    YOLO = None
+    YOLO_AVAILABLE = False
 
 SAHI_AVAILABLE = False
 try:
