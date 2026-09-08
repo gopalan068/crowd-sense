@@ -1,8 +1,8 @@
 """
 cv-service/stream_server.py
-High-Definition MJPEG HTTP Streaming Server for CrowdSense Dashboard Video Feed.
+Optimized Low-Bandwidth MJPEG HTTP Streaming Server for CrowdSense Dashboard Video Feed.
 
-Serves live HD processed frames at:
+Serves live optimized processed frames at:
   - http://localhost:5001/stream/zone_1
   - http://localhost:5001/stream/zone_2
 """
@@ -14,34 +14,44 @@ from socketserver import ThreadingMixIn
 import threading
 import cv2
 import numpy as np
+import config
 
-# In-memory latest encoded JPEG frames per zone
+# In-memory latest encoded JPEG frames and frame sequence counter per zone
 LATEST_FRAMES = {
-    "zone_1": None,
-    "zone_2": None,
+    "zone_1": {"bytes": None, "seq": 0},
+    "zone_2": {"bytes": None, "seq": 0},
 }
 
 LOCK = threading.Lock()
+FRAME_COUNTER = {"zone_1": 0, "zone_2": 0}
 
 
 def update_zone_frame(zone_id: str, frame: np.ndarray) -> None:
-    """Encode BGR frame as high-quality HD JPEG and update LATEST_FRAMES buffer."""
+    """Encode BGR frame as bandwidth-optimized JPEG and update LATEST_FRAMES buffer."""
     if frame is None or frame.size == 0:
         return
-    
-    # Preserve high-definition crisp preview (1280px width max for crisp drone clarity)
+
+    stream_w = getattr(config, "STREAM_WIDTH", 640)
+    stream_q = getattr(config, "STREAM_QUALITY", 70)
+
+    # Resize to optimized dashboard preview width while maintaining aspect ratio
     h, w = frame.shape[:2]
-    if w > 1280:
-        target_h = int(1280 * (h / w))
-        preview = cv2.resize(frame, (1280, target_h), interpolation=cv2.INTER_AREA)
+    if w > stream_w:
+        target_h = int(stream_w * (h / w))
+        preview = cv2.resize(frame, (stream_w, target_h), interpolation=cv2.INTER_AREA)
     else:
         preview = frame
 
-    # High JPEG quality (92%) to preserve small overhead crowd details
-    ret, jpeg = cv2.imencode(".jpg", preview, [int(cv2.IMWRITE_JPEG_QUALITY), 92])
+    # Balanced JPEG quality (default 70%) to preserve visual clarity with ~85% smaller payload
+    ret, jpeg = cv2.imencode(".jpg", preview, [int(cv2.IMWRITE_JPEG_QUALITY), stream_q])
     if ret:
+        frame_bytes = jpeg.tobytes()
         with LOCK:
-            LATEST_FRAMES[zone_id] = jpeg.tobytes()
+            FRAME_COUNTER[zone_id] = FRAME_COUNTER.get(zone_id, 0) + 1
+            LATEST_FRAMES[zone_id] = {
+                "bytes": frame_bytes,
+                "seq": FRAME_COUNTER[zone_id],
+            }
 
 
 class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
@@ -62,22 +72,33 @@ class MJPEGStreamHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
         self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Cache-Control", "no-cache, no-store, must-revalidate, max-age=0")
+        self.send_header("Pragma", "no-cache")
+        self.send_header("Expires", "0")
         self.end_headers()
+
+        max_fps = max(1, min(30, getattr(config, "STREAM_MAX_FPS", 15)))
+        frame_interval = 1.0 / max_fps
+        last_sent_seq = -1
 
         try:
             while True:
                 with LOCK:
-                    frame_bytes = LATEST_FRAMES.get(zone_id)
+                    zone_entry = LATEST_FRAMES.get(zone_id)
+                    frame_bytes = zone_entry["bytes"] if zone_entry else None
+                    curr_seq = zone_entry["seq"] if zone_entry else 0
 
-                if frame_bytes is not None:
+                # Only transmit when a new frame is generated or on initial stream connection
+                if frame_bytes is not None and curr_seq != last_sent_seq:
                     self.wfile.write(b"--frame\r\n")
                     self.send_header("Content-Type", "image/jpeg")
                     self.send_header("Content-Length", str(len(frame_bytes)))
                     self.end_headers()
                     self.wfile.write(frame_bytes)
                     self.wfile.write(b"\r\n")
-                
-                time.sleep(0.04)  # ~25 FPS crisp HD stream cap
+                    last_sent_seq = curr_seq
+
+                time.sleep(frame_interval)
         except (ConnectionResetError, BrokenPipeError):
             pass
 
@@ -89,5 +110,9 @@ def start_stream_server(host: str = "0.0.0.0", port: int = 5001) -> threading.Th
     server = ThreadedHTTPServer((host, port), MJPEGStreamHandler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
-    print(f"[StreamServer] Live HD Video Feeds active -> http://localhost:{port}/stream/zone_1 & zone_2")
+    stream_w = getattr(config, "STREAM_WIDTH", 640)
+    stream_q = getattr(config, "STREAM_QUALITY", 70)
+    max_fps = getattr(config, "STREAM_MAX_FPS", 15)
+    print(f"[StreamServer] Optimized Video Stream active -> http://localhost:{port}/stream/zone_1 & zone_2 ({stream_w}px @ Q={stream_q}%, Max {max_fps} FPS)")
     return thread
+

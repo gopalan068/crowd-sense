@@ -15,6 +15,12 @@ services:
         value: "true"
       - key: PIPELINE_ACTIVE
         value: "false"
+      - key: STREAM_WIDTH
+        value: "640"
+      - key: STREAM_QUALITY
+        value: "70"
+      - key: STREAM_MAX_FPS
+        value: "15"
       - key: GROQ_API_KEY
         sync: false
 

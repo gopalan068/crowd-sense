@@ -46,6 +46,14 @@ CONF_THRESH: float = float(os.getenv("CONF_THRESH", "0.30"))
 DRONE_ANALYSIS_INTERVAL_SEC: float = float(os.getenv("DRONE_ANALYSIS_INTERVAL_SEC", "0.5"))
 CCTV_ANALYSIS_INTERVAL_SEC: float = float(os.getenv("CCTV_ANALYSIS_INTERVAL_SEC", "1.0"))
 
+# Video Streaming Bandwidth & FPS Optimization
+# Target preview width (e.g. 640 for crisp SD dashboard preview, saves 75% bandwidth vs 1280)
+STREAM_WIDTH: int = int(os.getenv("STREAM_WIDTH", "640"))
+# JPEG compression quality (1-100, 70 is optimal balance of sharpness and low data usage)
+STREAM_QUALITY: int = int(os.getenv("STREAM_QUALITY", "70"))
+# Max streaming FPS cap to prevent excessive bandwidth usage (15 FPS is smooth for CCTV dashboards)
+STREAM_MAX_FPS: int = int(os.getenv("STREAM_MAX_FPS", "15"))
+
 
 # Model Weights Selection: "visdrone" vs "coco"
 MODEL_TYPE: str = os.getenv("MODEL_TYPE", "visdrone" if os.path.exists("models/yolov8n-visdrone.pt") else "coco").lower()
