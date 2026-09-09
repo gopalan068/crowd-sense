@@ -73,6 +73,20 @@ export default function WeatherControlPanel({ weatherState, backendUrl, pipeline
     setTogglingPipeline(false)
   }
 
+  // Gap #8 fix: wire POST /api/pipeline/set (explicit boolean set, previously uncalled)
+  const handlePipelineForceSet = async (active) => {
+    try {
+      await fetch(`${backendUrl}/api/pipeline/set`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ active }),
+      })
+    } catch (err) {
+      console.error('[WeatherControlPanel] Error force-setting pipeline:', err)
+    }
+  }
+
+
   const activeOption = PRESET_OPTIONS.find((o) => o.id === currentCondition) || PRESET_OPTIONS[0]
 
   return (
@@ -165,6 +179,29 @@ export default function WeatherControlPanel({ weatherState, backendUrl, pipeline
           })}
         </div>
       </div>
+
+      {/* Advanced CV Override — Gap #8: POST /api/pipeline/set wired up */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingTop: 8, borderTop: '1px solid var(--border)', flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 10, fontFamily: 'var(--font-m)', color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+          Advanced Override:
+        </span>
+        <button
+          onClick={() => handlePipelineForceSet(true)}
+          title="Force pipeline to ACTIVE state via POST /api/pipeline/set"
+          style={{ padding: '4px 10px', fontSize: 11, borderRadius: 6, border: '1px solid rgba(42,217,158,0.4)', background: 'rgba(42,217,158,0.08)', color: 'var(--green)', fontFamily: 'var(--font-m)', cursor: 'pointer' }}
+        >
+          ⏵ Force Start
+        </button>
+        <button
+          onClick={() => handlePipelineForceSet(false)}
+          title="Force pipeline to PAUSED state via POST /api/pipeline/set"
+          style={{ padding: '4px 10px', fontSize: 11, borderRadius: 6, border: '1px solid rgba(255,166,63,0.4)', background: 'rgba(255,166,63,0.08)', color: 'var(--orange)', fontFamily: 'var(--font-m)', cursor: 'pointer' }}
+        >
+          ⏸ Force Pause
+        </button>
+      </div>
     </div>
   )
 }
+
+

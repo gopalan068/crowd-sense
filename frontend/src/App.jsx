@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useRef } from 'react'
 import { io } from 'socket.io-client'
 
 import ZonePanel from './components/ZonePanel'
@@ -17,41 +17,49 @@ import DualPhoneSimulator from './components/DualPhoneSimulator'
 import WeatherControlPanel from './components/WeatherControlPanel'
 import AssistantPushBanner from './components/AssistantPushBanner'
 import AssistantChatPanel from './components/AssistantChatPanel'
+import HomeAerialMapOverlay from './components/HomeAerialMapOverlay'
+import EvacVenue2DMap from './components/EvacVenue2DMap'
 import PlannerPage from './pages/PlannerPage'
+import PlannerReportPage from './pages/PlannerReportPage'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || ''
 
+// ─── Utility: live clock ───────────────────────────────────────────────────
+function timeNow() {
+  return new Date().toTimeString().slice(0, 8)
+}
+
 export default function App() {
   const isPort5174 = window.location.port === '5174'
-  const [theme, setTheme] = useState('day')
-  const [activeTab, setActiveTab] = useState(isPort5174 ? 'DUAL_SIM' : 'LIVE')
-
+  const [activeView, setActiveView] = useState(isPort5174 ? 'landing' : 'landing')
   const [connected, setConnected] = useState(false)
   const [reconnectCount, setReconnectCount] = useState(0)
-  const [zoneMap, setZoneMap] = useState({
-    zone_1: null,
-    zone_2: null,
-  })
-  const [selectedTrendZone, setSelectedTrendZone] = useState('zone_1')
+  const [showLimitations, setShowLimitations] = useState(false)
+  const [socketInstance, setSocketInstance] = useState(null)
+
+  // Live data state
+  const [zoneMap, setZoneMap] = useState({ zone_1: null, zone_2: null })
   const [activeAlerts, setActiveAlerts] = useState([])
   const [auditLogs, setAuditLogs] = useState([])
   const [playbookSteps, setPlaybookSteps] = useState([])
   const [mockToasts, setMockToasts] = useState([])
-  const [showLimitations, setShowLimitations] = useState(false)
-  const [socketInstance, setSocketInstance] = useState(null)
   const [weatherState, setWeatherState] = useState(null)
   const [pipelineActive, setPipelineActive] = useState(true)
   const [assistantInstructions, setAssistantInstructions] = useState([])
-  // Per-zone panic confirmation build-up state (from 'panic_confirming' socket event)
-  // Shape: { zone_id: { confirmedFrames, requiredFrames, trigger } | null }
   const [panicConfirming, setPanicConfirming] = useState({})
+  const [selectedTrendZone, setSelectedTrendZone] = useState('zone_1')
+  const [clockStr, setClockStr] = useState(timeNow())
 
-  const toggleTheme = () => {
-    const nextTheme = theme === 'day' ? 'night' : 'day'
-    setTheme(nextTheme)
-    document.documentElement.setAttribute('data-theme', nextTheme)
-  }
+  // Comms feed for Evacuation page
+  const [commsMsgs, setCommsMsgs] = useState([])
 
+  // Clock ticker
+  useEffect(() => {
+    const t = setInterval(() => setClockStr(timeNow()), 1000)
+    return () => clearInterval(t)
+  }, [])
+
+  // ─── API helpers ──────────────────────────────────────────────────────────
   const fetchAuditLogs = async () => {
     try {
       const res = await fetch(`${BACKEND_URL}/api/audit-log?limit=50`)
@@ -66,21 +74,14 @@ export default function App() {
           })
         }
       }
-    } catch (err) {
-      console.error('[Frontend] Error fetching audit logs:', err)
-    }
+    } catch (err) { console.error('[App] fetchAuditLogs:', err) }
   }
 
   const fetchWeatherState = async () => {
     try {
       const res = await fetch(`${BACKEND_URL}/api/conditions/current`)
-      if (res.ok) {
-        const data = await res.json()
-        setWeatherState(data)
-      }
-    } catch (err) {
-      console.error('[Frontend] Error fetching weather conditions:', err)
-    }
+      if (res.ok) setWeatherState(await res.json())
+    } catch (err) { console.error('[App] fetchWeatherState:', err) }
   }
 
   const fetchPipelineStatus = async () => {
@@ -90,69 +91,37 @@ export default function App() {
         const data = await res.json()
         setPipelineActive(Boolean(data.active))
       }
-    } catch (err) {
-      console.error('[Frontend] Error fetching pipeline status:', err)
-    }
+    } catch (err) { console.error('[App] fetchPipelineStatus:', err) }
   }
 
   const handleTogglePipeline = async () => {
     try {
       const res = await fetch(`${BACKEND_URL}/api/pipeline/toggle`, { method: 'POST' })
-      if (res.ok) {
-        const data = await res.json()
-        setPipelineActive(Boolean(data.active))
-      }
-    } catch (err) {
-      console.error('[Frontend] Error toggling pipeline:', err)
-    }
+      if (res.ok) setPipelineActive(Boolean((await res.json()).active))
+    } catch (err) { console.error('[App] togglePipeline:', err) }
   }
 
+  // ─── Socket.io setup ─────────────────────────────────────────────────────
   useEffect(() => {
-    document.documentElement.setAttribute('data-theme', 'day')
-
-    const socket = io(BACKEND_URL, {
-      transports: ['websocket', 'polling'],
-      reconnectionAttempts: 10,
-    })
-
+    const socket = io(BACKEND_URL, { transports: ['websocket', 'polling'], reconnectionAttempts: 10 })
     setSocketInstance(socket)
 
     socket.on('connect', () => {
-      console.log('[Socket.io] Connected to backend')
-      setConnected(true)
-      setReconnectCount(0)
-      fetchAuditLogs()
-      fetchWeatherState()
-      fetchPipelineStatus()
+      setConnected(true); setReconnectCount(0)
+      fetchAuditLogs(); fetchWeatherState(); fetchPipelineStatus()
     })
+    socket.on('disconnect', () => setConnected(false))
+    socket.io.on('reconnect_attempt', (n) => setReconnectCount(n))
 
-    socket.on('disconnect', () => {
-      console.log('[Socket.io] Disconnected from backend')
-      setConnected(false)
-    })
+    socket.on('conditions_updated', (w) => setWeatherState(w))
+    socket.on('pipeline_status_updated', (p) => setPipelineActive(Boolean(p.active)))
 
-    socket.io.on('reconnect_attempt', (attempt) => {
-      setReconnectCount(attempt)
-    })
-
-    socket.on('conditions_updated', (updatedWeather) => {
-      console.log('[Socket.io] Received weather conditions_updated:', updatedWeather)
-      setWeatherState(updatedWeather)
-    })
-
-    socket.on('pipeline_status_updated', (updatedPipeline) => {
-      console.log('[Socket.io] Received pipeline_status_updated:', updatedPipeline)
-      setPipelineActive(Boolean(updatedPipeline.active))
-    })
-
-    socket.on('density_update', (payload) => {
-      setZoneMap((prev) => ({
-        ...prev,
-        [payload.zone_id]: payload,
-      }))
-    })
+    socket.on('density_update', (payload) =>
+      setZoneMap((prev) => ({ ...prev, [payload.zone_id]: payload }))
+    )
 
     socket.on('alert_triggered', (alert) => {
+      setPanicConfirming((prev) => ({ ...prev, [alert.zone_id]: null }))
       setActiveAlerts((prev) => {
         const exists = prev.some((a) => a.alert_id === alert.alert_id)
         return exists ? prev.map((a) => (a.alert_id === alert.alert_id ? alert : a)) : [alert, ...prev]
@@ -167,32 +136,22 @@ export default function App() {
 
     socket.on('alert_acknowledged', (alert) => {
       if (!alert) return
-      setActiveAlerts((prev) =>
-        prev.map((a) => (a.alert_id === alert.alert_id ? { ...a, ...alert } : a))
-      )
+      setActiveAlerts((prev) => prev.map((a) => (a.alert_id === alert.alert_id ? { ...a, ...alert } : a)))
       fetchAuditLogs()
     })
 
-    // Responder status update — keeps main dashboard alert panel and audit log
-    // in sync with status changes made from the responder view.
-    // Same data path as alert_acknowledged — no separate backend needed.
     socket.on('alert_status_updated', (alert) => {
       if (!alert) return
-      setActiveAlerts((prev) =>
-        prev.map((a) => (a.alert_id === alert.alert_id ? { ...a, ...alert } : a))
-      )
+      setActiveAlerts((prev) => prev.map((a) => (a.alert_id === alert.alert_id ? { ...a, ...alert } : a)))
       fetchAuditLogs()
     })
 
-    socket.on('playbook_step_completed', () => {
-      fetchAuditLogs()
-    })
+    socket.on('playbook_step_completed', () => fetchAuditLogs())
 
-    socket.on('mock_dispatch_toast', (toast) => {
+    socket.on('mock_dispatch_toast', (toast) =>
       setMockToasts((prev) => [toast, ...prev.slice(0, 4)])
-    })
+    )
 
-    // Control Room Assistant push instruction listener
     socket.on('assistant_instruction', (instruction) => {
       setAssistantInstructions((prev) => {
         const exists = prev.some((i) => i.instructionId === instruction.instructionId)
@@ -200,211 +159,440 @@ export default function App() {
       })
     })
 
-    // Panic confirmation build-up: backend has seen isPanic but not yet reached
-    // the PANIC_CONFIRM_FRAMES threshold. Show an intermediate 'CONFIRMING...' state.
     socket.on('panic_confirming', (data) => {
       setPanicConfirming((prev) => ({
         ...prev,
-        [data.zone_id]: {
-          confirmedFrames: data.confirmedFrames,
-          requiredFrames: data.requiredFrames,
-          trigger: data.trigger,
-        },
+        [data.zone_id]: { confirmedFrames: data.confirmedFrames, requiredFrames: data.requiredFrames, trigger: data.trigger },
       }))
     })
 
-    // Clear confirming state once a real alert fires or zone calms down
-    socket.on('alert_triggered', (alert) => {
-      setPanicConfirming((prev) => ({ ...prev, [alert.zone_id]: null }))
-      setActiveAlerts((prev) => {
-        const exists = prev.some((a) => a.alert_id === alert.alert_id)
-        return exists ? prev.map((a) => (a.alert_id === alert.alert_id ? alert : a)) : [alert, ...prev]
-      })
-      fetchAuditLogs()
-    })
-
     fetchAuditLogs()
-
-    return () => {
-      socket.disconnect()
-    }
+    return () => socket.disconnect()
   }, [])
 
-  const handleManualReconnect = () => {
-    if (socketInstance) {
-      socketInstance.connect()
-    }
-  }
+  // ─── Handlers ─────────────────────────────────────────────────────────────
+  const handleManualReconnect = () => { if (socketInstance) socketInstance.connect() }
 
   const handleAcknowledgeAlert = async (alertId) => {
-    if (socketInstance) {
-      socketInstance.emit('acknowledge_alert', {
-        alert_id: alertId,
-        acknowledged_by: 'official_1',
-      })
-    }
-
+    if (socketInstance) socketInstance.emit('acknowledge_alert', { alert_id: alertId, acknowledged_by: 'official_1' })
     try {
       await fetch(`${BACKEND_URL}/api/alerts/${alertId}/acknowledge`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ acknowledged_by: 'official_1' }),
       })
       fetchAuditLogs()
-    } catch (err) {
-      console.error('[Frontend] Error acknowledging alert:', err)
-    }
+    } catch (err) { console.error('[App] acknowledgeAlert:', err) }
   }
 
-  const handleDismissToast = (index) => {
-    setMockToasts((prev) => prev.filter((_, i) => i !== index))
-  }
+  const nav = (viewId) => setActiveView(viewId)
 
   const currentTrendData = zoneMap[selectedTrendZone] || zoneMap.zone_1 || zoneMap.zone_2
 
-  return (
-    <div className="min-h-screen flex flex-col font-sans transition-colors duration-200" style={{ background: 'var(--color-bg)' }}>
+  // Derived risk score from zone_2 (Live Monitor highlight zone)
+  const zone2Risk = zoneMap.zone_2?.risk_score ?? 0
+  const riskColor = zone2Risk > 75 ? 'var(--red)' : zone2Risk > 50 ? 'var(--orange)' : 'var(--green)'
+  const riskLabel = zone2Risk > 75 ? 'CRITICAL' : zone2Risk > 50 ? 'HIGH RISK' : 'SAFE'
+  const ringOffset = 452 - (452 * Math.min(zone2Risk, 100) / 100)
 
-      {/* Global Connection Error Banner */}
+  // KPI values for Command Center
+  const totalCrowd = Object.values(zoneMap).reduce((s, z) => s + (z?.crowd_count || 0), 0)
+  const overallRisk = Math.round(Object.values(zoneMap).reduce((s, z) => s + (z?.risk_score || 0), 0) / 2)
+  const alertCount = activeAlerts.filter((a) => !a.acknowledged_at).length
+
+  return (
+    <div style={{ fontFamily: 'var(--font-b)', background: 'var(--bg)', color: 'var(--text)', minHeight: '100vh' }}>
+
+      {/* ── Global Connection Banner ────────────────────────────────────── */}
       <ConnectionStatusBanner
         connected={connected}
         reconnectAttempts={reconnectCount}
         onRetry={handleManualReconnect}
       />
 
-      {/* Header Bar */}
-      <header
-        className="flex flex-wrap items-center justify-between px-6 py-3 border-b shadow-xs gap-4"
-        style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
-      >
-        <div className="flex items-center gap-3">
-          <div
-            className="w-8 h-8 rounded-lg flex items-center justify-center text-white font-extrabold text-sm shadow-xs"
-            style={{ background: 'var(--color-accent)' }}
-          >
-            CS
+      {/* ── Top Navigation ──────────────────────────────────────────────── */}
+      <nav className="topnav">
+        <div className="brand" onClick={() => nav('landing')}>
+          <div className="brand-mark">
+            <svg viewBox="0 0 24 24" fill="none">
+              <path d="M4 12a8 8 0 0 1 8-8v8H4Z" fill="#04121a" />
+              <path d="M12 4a8 8 0 1 1-8 8" stroke="#04121a" strokeWidth="1.6" />
+            </svg>
           </div>
-          <div>
-            <h1 className="text-base font-bold tracking-tight flex items-center gap-2" style={{ color: 'var(--color-text)' }}>
-              CrowdSense <span className="text-xs font-mono-num font-normal opacity-70">Ops Control v0.5</span>
-            </h1>
-            <p className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
-              Flow-Aware Crowd Early-Warning &amp; Automated Escalation System
-            </p>
+          <div className="brand-text">
+            <b>CrowdSense</b>
+            <span>Detect Early. Respond Faster. Save Lives.</span>
           </div>
         </div>
 
-        {/* Privacy Disclosure Badge */}
-        <div className="hidden lg:flex items-center gap-2 px-3 py-1 rounded-full border text-[11px] font-mono-num"
-             style={{ background: 'var(--color-bg)', borderColor: 'var(--color-border)', color: 'var(--color-muted)' }}>
-          <span>🛡️ Anonymous Headcount Only — Zero Facial Recognition / No Biometric Storage</span>
-        </div>
-
-        {/* Navigation Tabs */}
-        <div className="flex items-center gap-1.5 font-mono-num text-xs">
+        <div className="nav-links">
           {[
-            { id: 'LIVE', label: '🔴 LIVE OPERATIONS' },
-            { id: 'EVENT_ANALYSIS', label: '📊 EVENT ANALYSIS' },
-            { id: 'VENUE_MAP', label: '🗺️ VENUE MAP & EGRESS' },
-            { id: 'DUAL_SIM', label: '📱 DUAL PHONE SIMULATOR' },
-            { id: 'PLANNER', label: '🏗️ CROWD PLANNER' },
-          ].map((tab) => (
+            { id: 'landing', label: 'Home' },
+            { id: 'plan', label: 'Plan & Simulate' },
+            { id: 'monitor', label: 'Live Monitor' },
+            { id: 'evac', label: 'Evacuation' },
+            { id: 'post', label: 'Post-Incident' },
+            { id: 'cc', label: 'Command Center' },
+          ].map((v) => (
             <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`px-3 py-1.5 rounded-lg font-bold transition-all ${
-                activeTab === tab.id || (tab.id === 'EVENT_ANALYSIS' && (activeTab === 'REPORT' || activeTab === 'POST_EVENT'))
-                  ? 'bg-sky-600 text-white shadow-xs'
-                  : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300'
-              }`}
+              key={v.id}
+              className={activeView === v.id ? 'active' : ''}
+              onClick={() => nav(v.id)}
             >
-              {tab.label}
+              {v.label}
             </button>
           ))}
         </div>
 
-
-        {/* Header Tools */}
-        <div className="flex items-center gap-3 text-xs font-mono-num">
-          <button
-            onClick={() => setShowLimitations(true)}
-            className="px-3 py-1.5 rounded-lg border font-bold text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-950/60 border-amber-300 dark:border-amber-800 hover:bg-amber-200"
+        <div className="nav-right">
+          <div className="event-pill">
+            <span className="dot" />
+            Marina Beach New Year Festival
+          </div>
+          <div className="icon-btn" title="Notifications" onClick={() => setShowLimitations(true)}>
+            ℹ️
+          </div>
+          <div
+            className="icon-btn"
+            title="AI Status"
+            style={{ color: connected ? 'var(--cyan)' : 'var(--red)', borderColor: connected ? 'rgba(58,217,245,0.35)' : 'rgba(255,79,102,0.35)' }}
           >
-            ℹ️ LIMITATIONS
-          </button>
+            ✦
+          </div>
+          <div className="avatar">CS</div>
+        </div>
+      </nav>
 
-          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full border"
-               style={{ background: 'var(--color-bg)', borderColor: 'var(--color-border)', color: 'var(--color-muted)' }}>
-            <span
-              className="w-2 h-2 rounded-full pulse-dot"
-              style={{ background: connected ? 'var(--risk-green)' : 'var(--risk-red)' }}
-            />
-            <span>{connected ? 'WS LIVE' : 'WS DISCONNECTED'}</span>
+      {/* ════════════════════════════════════════════════════════════════════
+          PAGE: HOME (landing)
+      ════════════════════════════════════════════════════════════════════ */}
+      <section className={`view ${activeView === 'landing' ? 'active' : ''}`} id="view-landing">
+        <div className="container">
+
+          {/* Command Bar */}
+          <div className="glass cmdbar">
+            <div className="seg"><span className="k">EVENT</span><span className="v">Marina Beach New Year Festival</span></div>
+            <div className="seg"><span className="k">LOCATION</span><span className="v">Marina Beach, Chennai, Tamil Nadu</span></div>
+            <div className="seg"><span className="k">REGION / ZONE</span><span className="v">South Zone — Sector 4</span></div>
+            <div className="seg"><span className="k">LOCAL TIME</span><span className="v" style={{ fontFamily: 'var(--font-m)' }}>{clockStr}</span></div>
+            <div className="seg"><span className="k">WEATHER</span><span className="v">{weatherState ? `${weatherState.temperature ?? 29}°C · ${weatherState.condition ?? 'Clear'}` : '29°C · Clear · Wind 11 km/h'}</span></div>
+            <div className="seg"><span className="k">SYSTEM STATUS</span><span className="v" style={{ color: connected ? 'var(--green)' : 'var(--red)' }}>{connected ? '● AI ACTIVE' : '○ OFFLINE'}</span></div>
           </div>
 
-          <button
-            onClick={toggleTheme}
-            className="px-3 py-1.5 rounded-lg border font-bold shadow-xs transition-all hover:bg-slate-200 dark:hover:bg-slate-800 flex items-center gap-1.5"
-            style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)', color: 'var(--color-text)' }}
-          >
-            <span>{theme === 'day' ? '☀️ DAY' : '🌙 NIGHT'}</span>
-          </button>
-        </div>
-      </header>
-
-      {/* Main Operations Shell */}
-      <main className={`flex-1 space-y-6 w-full ${
-        activeTab === 'PLANNER'
-          ? 'p-0'                              // Planner uses its own internal padding
-          : 'p-6 max-w-7xl 2xl:max-w-[1600px] mx-auto'
-      }`}>
-
-        {/* Environmental Conditions & Presenter Control Strip (not shown in Planner) */}
-        {activeTab !== 'PLANNER' && (
-          <WeatherControlPanel
-            weatherState={weatherState}
-            backendUrl={BACKEND_URL}
-            pipelineActive={pipelineActive}
-            onTogglePipeline={handleTogglePipeline}
-          />
-        )}
-
-        {/* Tab 1: Live Operations */}
-        {activeTab === 'LIVE' && (
-          <div className="space-y-6">
-            {/* Automatic Push Guidance Banner (Assistant) */}
-            <AssistantPushBanner
-              instructions={assistantInstructions}
-              onDismiss={(id) =>
-                setAssistantInstructions((prev) =>
-                  prev.filter((i) => (i.instructionId || i) !== id)
-                )
-              }
-            />
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <div className="space-y-3">
-                <ZonePanel
-                  zoneData={zoneMap.zone_1}
-                  zoneId="zone_1"
-                  panicConfirming={panicConfirming['zone_1'] ?? null}
-                  pipelineActive={pipelineActive}
-                />
-                <FlowMetricsDisplay zoneData={zoneMap.zone_1} />
+          {/* Agent Hero: AI log + venue map */}
+          <div className="agent-hero">
+            <div className="card agent-panel">
+              <div className="agent-head">
+                <div className="agent-avatar">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none">
+                    <path d="M4 12a8 8 0 0 1 8-8v8H4Z" fill="#04121a" />
+                    <path d="M12 4a8 8 0 1 1-8 8" stroke="#04121a" strokeWidth="1.6" />
+                  </svg>
+                </div>
+                <div>
+                  <h3>CrowdSense AI Agent</h3>
+                  <p>Fusing 6 live signal sources into one running prediction</p>
+                </div>
               </div>
-              <div className="space-y-3">
-                <ZonePanel
-                  zoneData={zoneMap.zone_2}
-                  zoneId="zone_2"
-                  panicConfirming={panicConfirming['zone_2'] ?? null}
-                  pipelineActive={pipelineActive}
-                />
-                <FlowMetricsDisplay zoneData={zoneMap.zone_2} />
+              <div className="agent-log">
+                {assistantInstructions.length > 0 ? (
+                  assistantInstructions.map((instr, i) => (
+                    <div key={i} className={`line ${instr.severity === 'red' ? 'warn' : ''}`}>
+                      <span className="tag" title={instr.ruleId || 'AGENT'}>
+                        {(instr.ruleId || 'AGENT').replace(/_/g, ' ').slice(0, 10).toUpperCase()}
+                      </span>
+                      <p>{instr.text}</p>
+                    </div>
+                  ))
+                ) : (
+                  <>
+                    <div className="line"><span className="tag">WEATHER</span><p>Clear skies, rising humidity forecast at 20:30 — mild effect on Zone A dwell time.</p></div>
+                    <div className="line"><span className="tag">IOT</span><p>Barrier-mounted sensors report Zone A occupancy at 78% of safe capacity.</p></div>
+                    <div className="line warn"><span className="tag">DRONE</span><p>Aerial feed shows density trending upward near Gate 3 over the last 6 minutes.</p></div>
+                    <div className="line"><span className="tag">SOUND</span><p>Ambient audio nominal — no distress or panic signature detected.</p></div>
+                  </>
+                )}
+              </div>
+              {zoneMap.zone_2 ? (
+                <div className="agent-predict">
+                  <b style={{ fontFamily: 'var(--font-m)', fontSize: 11, color: 'var(--orange)', display: 'block', marginBottom: 4 }}>LIVE PREDICTION</b>
+                  Zone 2 density: {zoneMap.zone_2.density?.toFixed(1) ?? '--'} p/m² · Risk score: {Math.round(zoneMap.zone_2.risk_score ?? 0)}/100 · {riskLabel}
+                </div>
+              ) : (
+                <div className="agent-predict">
+                  <b style={{ fontFamily: 'var(--font-m)', fontSize: 11, color: 'var(--orange)', display: 'block', marginBottom: 4 }}>CURRENT PREDICTION</b>
+                  Elevated congestion risk near Gate 3 in ~18 minutes, based on drone density trend and historical weather–crowd correlation for this venue.
+                </div>
+              )}
+
+              {/* Integrated AI Assistant Chat Box */}
+              <div style={{ marginTop: 14 }}>
+                <AssistantChatPanel backendUrl={BACKEND_URL} embedded={true} />
               </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-              <div className="lg:col-span-4">
+            <HomeAerialMapOverlay zoneMap={zoneMap} weatherState={weatherState} />
+
+          </div>
+
+          {/* Prediction Signal Sources */}
+          <div>
+            <div className="section-title">
+              <h2>Prediction Signal Sources</h2>
+              <span className="sub">What the AI agent is reading right now</span>
+            </div>
+            <div className="signal-row">
+              <div className="card signal-card"><div className="ic">☁️</div><h5>Weather Reports</h5><div className="sv">{weatherState?.temperature ?? 29}°C</div><div className="sd">Feeds heat-stress and dwell-time modelling for open zones.</div></div>
+              <div className="card signal-card"><div className="ic">📡</div><h5>IoT Sensors</h5><div className="sv">128 online</div><div className="sd">Occupancy, barrier load and environmental readings per zone.</div></div>
+              <div className="card signal-card"><div className="ic">📷</div><h5>Portable CCTV</h5><div className="sv">9 towers</div><div className="sd">Relocatable coverage for entry lanes and temporary bottlenecks.</div></div>
+              <div className="card signal-card"><div className="ic">🛩️</div><h5>CCTV Drone Shots</h5><div className="sv">4 active</div><div className="sd">Top-down density and movement reads across open-air zones.</div></div>
+              <div className="card signal-card"><div className="ic">🔊</div><h5>Sound Anomaly Detection</h5><div className="sv">Nominal</div><div className="sd">Flags screaming, panic or crush-related audio signatures.</div></div>
+              <div className="card signal-card"><div className="ic">📱</div><h5>Mobile App Reports</h5><div className="sv">{activeAlerts.length} today</div><div className="sd">Direct emergency reports submitted by people at the venue.</div></div>
+            </div>
+          </div>
+
+
+
+          {/* ── Dual Phone Simulator (bottom of Home) ───────────────────── */}
+          <div id="dual-simulator" style={{ marginBottom: 60 }}>
+            <div className="section-title" style={{ marginBottom: 20 }}>
+              <h2>Live Simulator</h2>
+              <span className="sub">Citizen SOS app · Tactical Responder mobile app — synchronized in real time</span>
+            </div>
+            <DualPhoneSimulator
+              socket={socketInstance}
+              backendUrl={BACKEND_URL}
+              connected={connected}
+              reconnectCount={reconnectCount}
+              onRetry={handleManualReconnect}
+              activeAlerts={activeAlerts}
+              onAcknowledge={handleAcknowledgeAlert}
+            />
+          </div>
+
+        </div>
+      </section>
+
+      {/* ════════════════════════════════════════════════════════════════════
+          PAGE: PLAN & SIMULATE
+      ════════════════════════════════════════════════════════════════════ */}
+      <section className={`view ${activeView === 'plan' ? 'active' : ''}`} id="view-plan">
+        <div style={{ padding: '0 0 20px' }}>
+          <div className="container">
+            <div className="page-head">
+              <div className="eyebrow">PHASE 01 · BEFORE THE EVENT</div>
+              <h1>Plan &amp; Simulate</h1>
+              <p>Understand the venue. Predict the risks. Prepare before the crowd arrives.</p>
+            </div>
+          </div>
+          {/* PlannerPage manages its own internal layout and padding */}
+          <PlannerPage backendUrl={BACKEND_URL} />
+        </div>
+      </section>
+
+      {/* ════════════════════════════════════════════════════════════════════
+          PAGE: LIVE MONITOR
+      ════════════════════════════════════════════════════════════════════ */}
+      <section className={`view ${activeView === 'monitor' ? 'active' : ''}`} id="view-monitor">
+        <div className="container">
+          <div className="page-head" style={{ paddingBottom: 14 }}>
+            <div className="eyebrow">PHASE 02 · DURING THE EVENT</div>
+            <h1>Live Monitor</h1>
+            <p>See what is happening across the venue in real time.</p>
+          </div>
+
+          {/* Global push guidance banners */}
+          <AssistantPushBanner
+            instructions={assistantInstructions}
+            onDismiss={(id) => setAssistantInstructions((prev) => prev.filter((i) => (i.instructionId || i) !== id))}
+          />
+
+          {/* Live topbar */}
+          <div className="glass live-topbar">
+            <div className="live-tag"><span className="pulse-dot" style={{ background: 'var(--red)', display: 'inline-block', width: 7, height: 7, borderRadius: '50%' }} /> LIVE EVENT MONITORING</div>
+            <div className="sep" />
+            <div className="meta">EVENT STATUS: <span style={{ color: 'var(--green)' }}>LIVE</span></div>
+            <div className="sep" />
+            <div className="meta">AI MONITORING: <span style={{ color: pipelineActive ? 'var(--cyan)' : 'var(--orange)' }}>{pipelineActive ? 'ACTIVE' : 'PAUSED'}</span></div>
+            <div className="sep" />
+            <div className="meta">LAST UPDATE: <span style={{ fontFamily: 'var(--font-m)' }}>{clockStr}</span></div>
+            <div className="sep" />
+            <div className="meta">WS: <span style={{ color: connected ? 'var(--green)' : 'var(--red)' }}>{connected ? '● LIVE' : '○ OFFLINE'}</span></div>
+          </div>
+
+          {/* Monitor grid: Zone 2 live feed + risk dial */}
+          <div className="monitor-grid">
+            <div>
+              <ZonePanel
+                zoneData={zoneMap.zone_2}
+                zoneId="zone_2"
+                panicConfirming={panicConfirming['zone_2'] ?? null}
+                pipelineActive={pipelineActive}
+              />
+              <div style={{ marginTop: 12 }}>
+                <FlowMetricsDisplay zoneData={zoneMap.zone_2} />
+              </div>
+            </div>
+            <div className="card">
+              <div className="risk-dial">
+                <div className="ring-wrap">
+                  <svg width="170" height="170">
+                    <circle cx="85" cy="85" r="72" fill="none" stroke="#121b31" strokeWidth="12" />
+                    <circle cx="85" cy="85" r="72" fill="none" stroke={riskColor} strokeWidth="12"
+                      strokeLinecap="round" strokeDasharray="452" strokeDashoffset={ringOffset}
+                      style={{ transition: 'stroke-dashoffset 1s ease, stroke 0.5s ease' }}
+                    />
+                  </svg>
+                  <div className="ring-center">
+                    <span className="num" style={{ color: riskColor }}>{Math.round(zone2Risk)}</span>
+                    <span className="max">/ 100 · {riskLabel}</span>
+                  </div>
+                </div>
+                <div className="risk-factors">
+                  <div className="risk-factor-row"><span>Crowd Density</span><b style={{ color: 'var(--red)' }}>+{Math.round((zoneMap.zone_2?.density ?? 0) * 10) || '--'}</b></div>
+                  <div className="risk-factor-row"><span>Flow Convergence</span><b style={{ color: 'var(--orange)' }}>{((zoneMap.zone_2?.flow_convergence ?? 0) * 100).toFixed(0)}%</b></div>
+                  <div className="risk-factor-row"><span>Turbulence</span><b style={{ color: 'var(--orange)' }}>{((zoneMap.zone_2?.flow_turbulence ?? 0) * 100).toFixed(0)}%</b></div>
+                  <div className="risk-factor-row"><span>Trend Slope</span><b style={{ color: 'var(--text-dim)' }}>{zoneMap.zone_2?.trend_slope?.toFixed(3) ?? '--'}</b></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="heatmap-legend" style={{ margin: '-8px 0 20px' }}>
+            <span><span className="legend-sw" style={{ background: 'var(--green)' }} /> Safe</span>
+            <span><span className="legend-sw" style={{ background: '#e8d95a' }} /> Moderate</span>
+            <span><span className="legend-sw" style={{ background: 'var(--orange)' }} /> High</span>
+            <span><span className="legend-sw" style={{ background: 'var(--red)' }} /> Critical</span>
+          </div>
+
+          {/* Zone 1 secondary panel */}
+          <div style={{ marginBottom: 20 }}>
+            <div className="section-title" style={{ marginBottom: 12 }}>
+              <h2 style={{ fontSize: 16 }}>Zone 1 — General Area</h2>
+              <span className="sub">Secondary monitored zone</span>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 16 }}>
+              <ZonePanel
+                zoneData={zoneMap.zone_1}
+                zoneId="zone_1"
+                panicConfirming={panicConfirming['zone_1'] ?? null}
+                pipelineActive={pipelineActive}
+              />
+              <FlowMetricsDisplay zoneData={zoneMap.zone_1} />
+            </div>
+          </div>
+
+          {/* Source cards */}
+          <div className="source-row">
+            <div className="card source-card">
+              <div className="top"><span style={{ fontSize: 20 }}>📹</span><span className={`pill ${pipelineActive ? 'pill-green' : 'pill-orange'}`}>{pipelineActive ? 'CV Pipeline LIVE' : 'PAUSED'}</span></div>
+              <h4>CCTV / CV Pipeline</h4>
+              <div className="stat">{pipelineActive ? '94%' : '--'}</div>
+            </div>
+            <div className="card source-card">
+              <div className="top"><span style={{ fontSize: 20 }}>🛩️</span><span className="pill pill-cyan">4 Active</span></div>
+              <h4>Drones</h4>
+              <div className="stat">4</div>
+            </div>
+            <div className="card source-card">
+              <div className="top"><span style={{ fontSize: 20 }}>📡</span><span className="pill pill-green">128 Online</span></div>
+              <h4>IoT Sensors</h4>
+              <div className="stat">128</div>
+            </div>
+            <div className="card source-card">
+              <div className="top"><span style={{ fontSize: 20 }}>🌙</span><span className="pill pill-cyan">Active</span></div>
+              <h4>Night Vision</h4>
+              <div className="stat">6/6</div>
+            </div>
+          </div>
+
+          {/* Weather / Pipeline Control (formerly global) */}
+          <div style={{ marginBottom: 20 }}>
+            <WeatherControlPanel
+              weatherState={weatherState}
+              backendUrl={BACKEND_URL}
+              pipelineActive={pipelineActive}
+              onTogglePipeline={handleTogglePipeline}
+            />
+          </div>
+
+          {/* Density trend + zone selector */}
+          <div className="card" style={{ marginBottom: 20 }}>
+            <div className="section-title">
+              <h2 style={{ fontSize: 16 }}>Density Trend Extrapolation</h2>
+              <div style={{ display: 'flex', gap: 8 }}>
+                {['zone_1', 'zone_2'].map((zId) => (
+                  <button
+                    key={zId}
+                    className={`chip ${selectedTrendZone === zId ? 'active' : ''}`}
+                    onClick={() => setSelectedTrendZone(zId)}
+                  >
+                    {zId === 'zone_1' ? 'Zone 1 (General)' : 'Zone 2 (Corridor)'}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <TrendExtrapolationGraph zoneData={currentTrendData} />
+          </div>
+
+
+          {/* Audit log at bottom of monitor */}
+          <AuditLogView
+            logs={auditLogs}
+            playbookSteps={playbookSteps}
+            assistantInstructions={assistantInstructions}
+            onRefresh={fetchAuditLogs}
+          />
+
+        </div>
+      </section>
+
+      {/* ════════════════════════════════════════════════════════════════════
+          PAGE: EVACUATION
+      ════════════════════════════════════════════════════════════════════ */}
+      <section className={`view ${activeView === 'evac' ? 'active' : ''}`} id="view-evac">
+        <div className="container">
+          <div className="page-head" style={{ paddingBottom: 14 }}>
+            <div className="eyebrow">PHASE 03 · WHEN RISK EMERGES</div>
+            <h1>EvacAI</h1>
+            <p>When conditions change, the safest route changes with them.</p>
+          </div>
+
+          {/* Critical banner — shows when red alert active */}
+          {activeAlerts.some((a) => a.severity === 'red' && !a.acknowledged_at) && (
+            <div className="critical-banner">
+              <span style={{ fontSize: 20 }}>🚨</span>
+              <div>
+                <b style={{ color: 'var(--red)', fontFamily: 'var(--font-m)', fontSize: 12 }}>CRITICAL SITUATION DETECTED</b>
+                <p style={{ marginTop: 6, color: 'var(--text)' }}>
+                  {activeAlerts.find((a) => a.severity === 'red' && !a.acknowledged_at)?.zone_id?.toUpperCase().replace('_', ' ')} crowd density exceeds safe threshold. AI has analyzed density, movement direction, exit capacity, congestion and responder access.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Main evac grid: 2D Venue Map + Recommended Action & Alert panel */}
+          <div className="evac-grid">
+            {/* 2D Venue Architectural Map (from Plan & Simulate) */}
+            <EvacVenue2DMap />
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14, minHeight: 0 }}>
+              <div className="card">
+                <div className="section-title"><h2 style={{ fontSize: 15 }}>Recommended Action</h2></div>
+                <div className="recommend-box" style={{ marginTop: 10 }}>
+                  {activeAlerts.length > 0
+                    ? `Redirect ${activeAlerts[0]?.zone_id?.toUpperCase().replace('_', ' ')} crowd toward nearest open exit corridor`
+                    : 'Redirect Zone 4 → Zone 2 → Emergency Exit E2'}
+                </div>
+                <div className="evac-stats">
+                  <div className="box"><div className="k" style={{ fontSize: 11, color: 'var(--text-faint)' }}>EVAC TIME</div><div className="v" style={{ fontFamily: 'var(--font-d)', fontSize: 18, fontWeight: 700 }}>4:32</div></div>
+                  <div className="box"><div className="k" style={{ fontSize: 11, color: 'var(--text-faint)' }}>PEOPLE REDIRECTED</div><div className="v" style={{ fontFamily: 'var(--font-d)', fontSize: 18, fontWeight: 700 }}>3,240</div></div>
+                  <div className="box"><div className="k" style={{ fontSize: 11, color: 'var(--text-faint)' }}>CONGESTION REDUCTION</div><div className="v" style={{ fontFamily: 'var(--font-d)', fontSize: 18, fontWeight: 700, color: 'var(--green)' }}>−37%</div></div>
+                  <div className="box"><div className="k" style={{ fontSize: 11, color: 'var(--text-faint)' }}>RISK AFTER REROUTE</div><div className="v" style={{ fontFamily: 'var(--font-d)', fontSize: 18, fontWeight: 700, color: 'var(--green)' }}>LOW</div></div>
+                </div>
+              </div>
+
+              {/* Alert management panel */}
+              <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
                 <AlertPanel
                   alerts={activeAlerts}
                   onAcknowledgeAlert={handleAcknowledgeAlert}
@@ -412,36 +600,179 @@ export default function App() {
                   backendUrl={BACKEND_URL}
                 />
               </div>
+            </div>
+          </div>
 
-              <div className="lg:col-span-8 flex flex-col space-y-3">
-                <div className="flex items-center justify-between px-2 font-mono-num text-xs">
-                  <span className="font-bold uppercase tracking-wider" style={{ color: 'var(--color-muted)' }}>
-                    SELECT ZONE FOR TREND EXTRAPOLATION:
-                  </span>
-                  <div className="flex gap-2">
-                    {['zone_1', 'zone_2'].map((zId) => (
-                      <button
-                        key={zId}
-                        onClick={() => setSelectedTrendZone(zId)}
-                        className={`px-3 py-1 rounded font-bold transition-all ${
-                          selectedTrendZone === zId
-                            ? 'bg-sky-600 text-white shadow-xs'
-                            : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
-                        }`}
-                      >
-                        {zId === 'zone_1' ? 'ZONE 1 (GENERAL)' : 'ZONE 2 (CORRIDOR)'}
-                      </button>
-                    ))}
-                  </div>
+          {/* Route update card */}
+          <div className="card route-update-card" style={{ marginBottom: 20 }}>
+            <span className="pill pill-cyan">ROUTE UPDATED</span>
+            <span style={{ fontSize: 13, color: 'var(--text-dim)' }}>CCTV detected congestion near Exit C. CrowdSense AI generated a new route.</span>
+            <div className="route-path">
+              <span className="old">Zone 4 → Exit C</span>
+              <span style={{ color: 'var(--text-faint)' }}>→</span>
+              <span className="new">Zone 4 → Zone 2 → Exit E2</span>
+            </div>
+          </div>
+
+          {/* Response Coordination */}
+          <div className="card" style={{ marginBottom: 20 }}>
+            <div className="section-title"><h2 style={{ fontSize: 16 }}>Response Coordination</h2></div>
+            <div className="coord-grid">
+              <div className="coord-item"><div className="k">Police</div><div className="v" style={{ color: 'var(--green)' }}>Assigned</div></div>
+              <div className="coord-item"><div className="k">Medical Team</div><div className="v" style={{ color: 'var(--cyan)' }}>Dispatched</div></div>
+              <div className="coord-item"><div className="k">Ambulance</div><div className="v" style={{ color: 'var(--green)' }}>Route Clear</div></div>
+              <div className="coord-item"><div className="k">Security</div><div className="v" style={{ color: 'var(--orange)' }}>Redirecting Crowd</div></div>
+              <div className="coord-item"><div className="k">PA Instructions</div><div className="v" style={{ color: 'var(--green)' }}>Ready</div></div>
+              <div className="coord-item"><div className="k">Digital Arrow Boards</div><div className="v" style={{ color: 'var(--green)' }}>Updated</div></div>
+            </div>
+            <div className="disclaimer-strip">
+              CrowdSense acts as a coordination layer over physical safety infrastructure — reducing inflow, creating space, guiding crowds toward available exits, and coordinating police and medical teams. It does not replace responders on the ground.
+            </div>
+          </div>
+
+          {/* Dynamic Evacuation Pipeline */}
+          <div className="card" style={{ margin: '20px 0' }}>
+            <div className="section-title">
+              <h2 style={{ fontSize: 16 }}>How the Dynamic Evacuation Pipeline Works</h2>
+              <span className="sub">From raw signal to physical response, in seconds</span>
+            </div>
+            <div className="pipeline">
+              {[
+                ['CCTV / night vision / drone', 'Continuously observe where people are, how dense each zone is, and which direction they\'re moving.'],
+                ['IoT sensors', 'Add environmental conditions and, where applicable, occupancy and density data per zone.'],
+                ['Command & Control Centre', 'CrowdSense combines all sources and identifies the zone that\'s becoming high-risk.'],
+                ['Risk Engine', 'Determines which zone is dangerous, which exits are available, and which route is safest right now.'],
+                ['Digital arrow boards + LED/VMS', 'The displayed direction updates automatically.'],
+                ['PA speakers', 'Give matching voice instructions: "Please move calmly towards Exit B. Do not move towards Zone A."'],
+                ['Smart barricades / temporary barriers', 'Physically redirect the flow and keep people out of the dangerous zone.'],
+                ['Access-control barriers', 'Stop new people from entering an already overloaded zone.'],
+                ['Dedicated emergency corridor', 'Keeps a clear path open for police, medical teams, fire services and ambulances.'],
+                ['Smart lighting', 'Illuminates the currently selected evacuation path, especially in low-light conditions.'],
+                ['Emergency exits', 'The actual physical escape points that the system directs people towards.'],
+                ['Assembly points', 'Once clear of danger, people are guided to predefined safe assembly areas.'],
+              ].map(([title, body], i) => (
+                <div className="pipe-step" key={i}>
+                  <div className="pipe-num">{i + 1}</div>
+                  <div className="pipe-body"><h5>{title}</h5><p>{body}</p></div>
                 </div>
+              ))}
+            </div>
+          </div>
 
-                <TrendExtrapolationGraph zoneData={currentTrendData} />
-              </div>
+        </div>
+      </section>
+
+      {/* ════════════════════════════════════════════════════════════════════
+          PAGE: POST-INCIDENT
+      ════════════════════════════════════════════════════════════════════ */}
+      <section className={`view ${activeView === 'post' ? 'active' : ''}`} id="view-post">
+        <div className="container">
+          <div className="page-head" style={{ paddingBottom: 14 }}>
+            <div className="eyebrow">PHASE 04 · AFTER THE EVENT</div>
+            <h1>Post-Incident Intelligence</h1>
+            <p>Understand what happened. Learn why. Improve the next event.</p>
+          </div>
+          <PostEventAnalysisView auditLogs={auditLogs} />
+        </div>
+      </section>
+
+      {/* ════════════════════════════════════════════════════════════════════
+          PAGE: COMMAND CENTER
+      ════════════════════════════════════════════════════════════════════ */}
+      <section className={`view ${activeView === 'cc' ? 'active' : ''}`} id="view-cc">
+        <div className="container">
+          <div className="page-head" style={{ paddingBottom: 14 }}>
+            <div className="eyebrow">UNIFIED VIEW</div>
+            <h1>Command Center</h1>
+            <p>Every stage of the crowd-safety lifecycle, in one control room.</p>
+          </div>
+
+          {/* Push guidance */}
+          <AssistantPushBanner
+            instructions={assistantInstructions}
+            onDismiss={(id) => setAssistantInstructions((prev) => prev.filter((i) => (i.instructionId || i) !== id))}
+          />
+
+          {/* KPI Row */}
+          <div className="kpi-row">
+            <div className="card kpi-card"><div className="stat-label">CURRENT CROWD</div><div className="stat-num">{totalCrowd > 0 ? totalCrowd.toLocaleString() : '25,430'}</div></div>
+            <div className="card kpi-card"><div className="stat-label">RISK SCORE</div><div className="stat-num" style={{ color: riskColor }}>{overallRisk || 68}</div></div>
+            <div className="card kpi-card"><div className="stat-label">ACTIVE ALERTS</div><div className="stat-num" style={{ color: alertCount > 0 ? 'var(--red)' : 'var(--green)' }}>{alertCount}</div></div>
+            <div className="card kpi-card"><div className="stat-label">CV PIPELINE</div><div className="stat-num" style={{ color: pipelineActive ? 'var(--green)' : 'var(--orange)', fontSize: 18 }}>{pipelineActive ? 'LIVE' : 'PAUSED'}</div></div>
+            <div className="card kpi-card"><div className="stat-label">AVAILABLE EXITS</div><div className="stat-num">7/8</div></div>
+            <div className="card kpi-card"><div className="stat-label">RESPONSE TEAMS</div><div className="stat-num">12</div></div>
+          </div>
+
+          {/* CC grid: overview map + panels */}
+          <div className="cc-grid" style={{ marginBottom: 20 }}>
+            {/* Left: BottleneckExitMap overview */}
+            <div className="venue-wrap" style={{ minHeight: 340 }}>
+              <BottleneckExitMap zoneMap={zoneMap} />
             </div>
 
-            {/* Q&A Control Room Assistant Follow-up Panel */}
-            <AssistantChatPanel backendUrl={BACKEND_URL} />
+            {/* Right: Mini panels */}
+            <div className="cc-panels">
+              <div className="card">
+                <h4 style={{ fontSize: 14 }}>AI Alerts</h4>
+                <div className="cc-mini-list">
+                  {activeAlerts.slice(0, 4).map((a) => (
+                    <div className="cc-mini-row" key={a.alert_id}>
+                      <span>{a.zone_id?.replace('_', ' ')?.toUpperCase()} — {a.alert_type?.replace(/_/g, ' ')}</span>
+                      <span className={`pill ${a.severity === 'red' ? 'pill-red' : a.severity === 'orange' ? 'pill-orange' : 'pill-cyan'}`}>{a.severity?.toUpperCase()}</span>
+                    </div>
+                  ))}
+                  {activeAlerts.length === 0 && <div className="cc-mini-row"><span>No active alerts</span><span className="pill pill-green">ALL CLEAR</span></div>}
+                </div>
+              </div>
 
+              <div className="card">
+                <h4 style={{ fontSize: 14 }}>Evacuation Status</h4>
+                <div className="cc-mini-list">
+                  <div className="cc-mini-row"><span>Zone 2 Corridor</span><span className="pill pill-cyan">Monitoring</span></div>
+                  <div className="cc-mini-row"><span>Primary exits E1–E4</span><span className="pill pill-green">Clear</span></div>
+                  <div className="cc-mini-row"><span>Emergency routes</span><span className="pill pill-green">Ready</span></div>
+                </div>
+              </div>
+
+              <div className="card">
+                <h4 style={{ fontSize: 14 }}>Responder Status</h4>
+                <div className="cc-mini-list">
+                  <div className="cc-mini-row"><span>Medical team 2</span><span className="pill pill-green">Dispatched</span></div>
+                  <div className="cc-mini-row"><span>Police unit 4</span><span className="pill pill-green">On site</span></div>
+                  <div className="cc-mini-row"><span>Ambulance 1</span><span className="pill pill-cyan">Standby</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Full Alert Panel */}
+          <div style={{ marginBottom: 20 }}>
+            <AlertPanel
+              alerts={activeAlerts}
+              onAcknowledgeAlert={handleAcknowledgeAlert}
+              socket={socketInstance}
+              backendUrl={BACKEND_URL}
+            />
+          </div>
+
+          {/* Simulated Emergency Dispatch Control (Gap #1 addressed) */}
+          <div className="card" style={{ marginBottom: 20 }}>
+            <div className="section-title">
+              <h2 style={{ fontSize: 16 }}>Tactical Dispatch Simulation</h2>
+              <span className="pill pill-orange">SIMULATION ONLY</span>
+            </div>
+            <div style={{ marginTop: 16 }}>
+              <MockDispatchControl
+                socket={socketInstance}
+                backendUrl={BACKEND_URL}
+                toasts={mockToasts}
+                onDismissToast={(i) => setMockToasts((prev) => prev.filter((_, idx) => idx !== i))}
+              />
+            </div>
+          </div>
+
+          {/* Audit Log (also includes timeline from PostEventAnalysisView logic) */}
+          <div style={{ marginBottom: 20 }}>
             <AuditLogView
               logs={auditLogs}
               playbookSteps={playbookSteps}
@@ -449,49 +780,13 @@ export default function App() {
               onRefresh={fetchAuditLogs}
             />
           </div>
-        )}
 
-        {/* Combined Post-Event Analysis Tab (Report + Timeline & Audit) */}
-        {(activeTab === 'EVENT_ANALYSIS' || activeTab === 'REPORT' || activeTab === 'POST_EVENT') && (
-          <PostEventAnalysisView auditLogs={auditLogs} />
-        )}
+        </div>
+      </section>
 
-        {/* Tab 3: Venue Map & Egress Bottlenecks */}
-        {activeTab === 'VENUE_MAP' && (
-          <BottleneckExitMap zoneMap={zoneMap} />
-        )}
-
-        {/* Dual Phone Field Mobile Simulator */}
-        {activeTab === 'DUAL_SIM' && (
-          <DualPhoneSimulator
-            socket={socketInstance}
-            backendUrl={BACKEND_URL}
-            connected={connected}
-            reconnectCount={reconnectCount}
-            onRetry={handleManualReconnect}
-            activeAlerts={activeAlerts}
-            onAcknowledge={handleAcknowledgeAlert}
-          />
-        )}
-
-        {/* CrowdSense Planner — Pre-Event Venue Simulation (standalone) */}
-        {activeTab === 'PLANNER' && (
-          <PlannerPage backendUrl={BACKEND_URL} />
-        )}
-
-
-
-      </main>
-
-      {/* Known Limitations Drawer */}
+      {/* ── Known Limitations Modal (global) ────────────────────────────── */}
       <KnownLimitationsModal isOpen={showLimitations} onClose={() => setShowLimitations(false)} />
 
-      <footer
-        className="text-center text-xs py-3 border-t font-mono-num"
-        style={{ borderColor: 'var(--color-border)', color: 'var(--color-muted)' }}
-      >
-        CrowdSense · SIH Hackathon Phase 5 · Flow-Aware Early-Warning &amp; Automated Escalation System
-      </footer>
     </div>
   )
 }

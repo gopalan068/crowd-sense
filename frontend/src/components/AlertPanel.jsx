@@ -11,7 +11,7 @@ export default function AlertPanel({
 
   return (
     <div
-      className="rounded-xl border shadow-sm flex flex-col h-full overflow-hidden"
+      className="rounded-xl border shadow-sm flex flex-col flex-1 min-h-0 overflow-hidden"
       style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
     >
       {/* Panel Header */}

@@ -1,0 +1,1262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CrowdSense — AI Crowd Safety Intelligence</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#060a13;
+  --bg-alt:#080d1a;
+  --surface:#0d1424;
+  --surface-2:#121b31;
+  --surface-glass: rgba(15,22,40,0.62);
+  --border: rgba(148,178,224,0.14);
+  --border-strong: rgba(148,178,224,0.30);
+  --text: #eef3fb;
+  --text-dim: #8fa1c2;
+  --text-faint:#5b6883;
+  --cyan:#3ad9f5;
+  --cyan-soft: rgba(58,217,245,0.14);
+  --blue:#5c86ff;
+  --orange:#ffa63f;
+  --orange-soft: rgba(255,166,63,0.14);
+  --red:#ff4f66;
+  --red-soft: rgba(255,79,102,0.15);
+  --green:#2ad99e;
+  --green-soft: rgba(42,217,158,0.14);
+  --r-sm:8px;
+  --r-md:14px;
+  --r-lg:24px;
+  --font-d:'Space Grotesk',sans-serif;
+  --font-b:'Inter',sans-serif;
+  --font-m:'IBM Plex Mono',monospace;
+}
+*{box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{
+  margin:0;
+  background:
+    radial-gradient(ellipse 900px 500px at 85% -10%, rgba(58,217,245,0.10), transparent 60%),
+    radial-gradient(ellipse 700px 500px at -5% 20%, rgba(92,134,255,0.08), transparent 60%),
+    var(--bg);
+  color:var(--text);
+  font-family:var(--font-b);
+  -webkit-font-smoothing:antialiased;
+  min-height:100vh;
+}
+h1,h2,h3,h4{font-family:var(--font-d); margin:0; letter-spacing:-0.01em;}
+p{margin:0; color:var(--text-dim); line-height:1.6;}
+a{color:inherit;}
+button{font-family:var(--font-b); cursor:pointer;}
+::selection{background:var(--cyan); color:#04121a;}
+
+/* ---------- layout shells ---------- */
+.view{display:none;}
+.view.active{display:block; animation:fadeIn .35s ease;}
+@keyframes fadeIn{from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:translateY(0);}}
+
+/* ---------- NAV ---------- */
+.topnav{
+  position:sticky; top:0; z-index:100;
+  display:flex; align-items:center; gap:28px;
+  padding:14px 28px;
+  background:rgba(6,10,19,0.78);
+  backdrop-filter:blur(16px);
+  border-bottom:1px solid var(--border);
+}
+.brand{display:flex; align-items:center; gap:10px; cursor:pointer; flex-shrink:0;}
+.brand-mark{
+  width:30px; height:30px; border-radius:9px;
+  background:conic-gradient(from 220deg, var(--cyan), var(--blue), var(--cyan));
+  display:flex; align-items:center; justify-content:center;
+  box-shadow:0 0 18px rgba(58,217,245,0.35);
+}
+.brand-mark svg{width:16px; height:16px;}
+.brand-text{display:flex; flex-direction:column; line-height:1.1;}
+.brand-text b{font-family:var(--font-d); font-size:15.5px; font-weight:700; letter-spacing:0.01em;}
+.brand-text span{font-size:10px; color:var(--text-faint); font-family:var(--font-m);}
+.nav-links{display:flex; gap:2px; flex:1;}
+.nav-links button{
+  background:none; border:none; color:var(--text-dim);
+  font-size:13.5px; font-weight:500; padding:8px 14px; border-radius:8px;
+  transition:.15s;
+}
+.nav-links button:hover{color:var(--text); background:rgba(255,255,255,0.04);}
+.nav-links button.active{color:var(--cyan); background:var(--cyan-soft);}
+.nav-right{display:flex; align-items:center; gap:14px; flex-shrink:0;}
+.event-pill{
+  display:flex; align-items:center; gap:8px;
+  background:var(--surface-2); border:1px solid var(--border);
+  padding:6px 12px; border-radius:20px; font-size:12.5px; color:var(--text-dim);
+}
+.event-pill .dot{width:7px; height:7px; border-radius:50%; background:var(--green); box-shadow:0 0 8px var(--green);}
+.icon-btn{
+  width:34px; height:34px; border-radius:9px; border:1px solid var(--border);
+  background:var(--surface-2); display:flex; align-items:center; justify-content:center;
+  color:var(--text-dim); position:relative; transition:.15s;
+}
+.icon-btn:hover{border-color:var(--border-strong); color:var(--text);}
+.icon-btn .badge{
+  position:absolute; top:-4px; right:-4px; width:15px; height:15px; border-radius:50%;
+  background:var(--red); font-size:9px; display:flex; align-items:center; justify-content:center; font-family:var(--font-m); color:white;
+}
+.avatar{
+  width:34px; height:34px; border-radius:50%;
+  background:linear-gradient(135deg, var(--cyan), var(--blue));
+  display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; color:#04121a;
+}
+@media (max-width:980px){ .nav-links{display:none;} .brand-text span{display:none;} }
+
+/* ---------- shared components ---------- */
+.container{max-width:1360px; margin:0 auto; padding:0 28px;}
+.page-head{padding:48px 0 32px;}
+.page-head .eyebrow{
+  display:inline-flex; align-items:center; gap:7px;
+  font-family:var(--font-m); font-size:11.5px; color:var(--cyan);
+  background:var(--cyan-soft); border:1px solid rgba(58,217,245,0.25);
+  padding:5px 11px; border-radius:20px; margin-bottom:14px;
+}
+.page-head h1{font-size:34px; font-weight:700;}
+.page-head p{max-width:560px; margin-top:10px; font-size:15px;}
+
+.card{
+  background:linear-gradient(180deg, rgba(255,255,255,0.025), rgba(255,255,255,0));
+  background-color:var(--surface);
+  border:1px solid var(--border);
+  border-radius:var(--r-md);
+  padding:22px;
+}
+.glass{
+  background:var(--surface-glass);
+  backdrop-filter:blur(14px);
+  border:1px solid var(--border);
+  border-radius:var(--r-md);
+}
+.btn{
+  display:inline-flex; align-items:center; gap:8px;
+  padding:11px 20px; border-radius:10px; font-size:14px; font-weight:600; border:1px solid transparent;
+  transition:.15s;
+}
+.btn-primary{background:var(--cyan); color:#03131c; box-shadow:0 0 0 0 rgba(58,217,245,0.4);}
+.btn-primary:hover{box-shadow:0 4px 22px rgba(58,217,245,0.35); transform:translateY(-1px);}
+.btn-ghost{background:rgba(255,255,255,0.03); color:var(--text); border-color:var(--border-strong);}
+.btn-ghost:hover{background:rgba(255,255,255,0.07);}
+.btn-danger{background:var(--red); color:white;}
+.btn-danger:hover{box-shadow:0 4px 20px rgba(255,79,102,0.4);}
+.btn:disabled{opacity:.45; cursor:not-allowed; transform:none !important; box-shadow:none !important;}
+
+.pill{display:inline-flex; align-items:center; gap:6px; font-family:var(--font-m); font-size:11px; padding:4px 10px; border-radius:20px; font-weight:600;}
+.pill-green{color:var(--green); background:var(--green-soft); border:1px solid rgba(42,217,158,0.3);}
+.pill-orange{color:var(--orange); background:var(--orange-soft); border:1px solid rgba(255,166,63,0.3);}
+.pill-red{color:var(--red); background:var(--red-soft); border:1px solid rgba(255,79,102,0.3);}
+.pill-cyan{color:var(--cyan); background:var(--cyan-soft); border:1px solid rgba(58,217,245,0.3);}
+.pulse-dot{width:6px; height:6px; border-radius:50%; animation:pulse 1.6s infinite;}
+@keyframes pulse{0%,100%{opacity:1;}50%{opacity:.35;}}
+
+.stat-num{font-family:var(--font-d); font-size:30px; font-weight:700;}
+.stat-label{font-size:11.5px; color:var(--text-faint); font-family:var(--font-m); margin-top:2px;}
+
+/* ---------- LANDING ---------- */
+.hero{
+  display:grid; grid-template-columns:1.05fr 0.95fr; gap:50px;
+  padding:64px 0 40px; align-items:center;
+}
+.hero h1{font-size:50px; line-height:1.06; font-weight:700; letter-spacing:-0.02em;}
+.hero .lede{margin-top:20px; font-size:16.5px; max-width:480px;}
+.hero-ctas{display:flex; gap:12px; margin-top:32px;}
+.hero-map{
+  position:relative; aspect-ratio:1/0.92; border-radius:var(--r-lg);
+  background:radial-gradient(ellipse at 30% 20%, rgba(58,217,245,0.14), transparent 55%), var(--surface);
+  border:1px solid var(--border); overflow:hidden;
+}
+.hero-map svg{width:100%; height:100%;}
+.scan-line{
+  position:absolute; left:0; right:0; height:2px;
+  background:linear-gradient(90deg, transparent, var(--cyan), transparent);
+  box-shadow:0 0 16px 2px var(--cyan);
+  animation:scan 3.6s linear infinite;
+}
+@keyframes scan{0%{top:4%;}50%{top:94%;}100%{top:4%;}}
+
+.flow-strip{padding:20px 0 56px;}
+.flow-row{display:grid; grid-template-columns:repeat(4,1fr); gap:14px; position:relative; margin-top:22px;}
+.flow-card{
+  border-radius:var(--r-md); padding:22px 20px; border:1px solid var(--border);
+  background:var(--surface); position:relative;
+}
+.flow-card .fnum{font-family:var(--font-m); font-size:11px; color:var(--text-faint);}
+.flow-card h3{font-size:19px; margin-top:10px;}
+.flow-card p{font-size:13px; margin-top:6px;}
+.flow-card::after{
+  content:'→'; position:absolute; right:-20px; top:50%; transform:translateY(-50%);
+  color:var(--text-faint); font-size:16px;
+}
+.flow-card:last-child::after{display:none;}
+.flow-card.c1{border-top:2px solid var(--blue);}
+.flow-card.c2{border-top:2px solid var(--cyan);}
+.flow-card.c3{border-top:2px solid var(--orange);}
+.flow-card.c4{border-top:2px solid var(--green);}
+
+.why-grid{display:grid; grid-template-columns:repeat(4,1fr); gap:16px; padding-bottom:60px;}
+.why-card h4{font-size:16.5px;}
+.why-card p{font-size:13.3px; margin-top:8px;}
+
+.final-cta{
+  margin:0 0 80px; padding:56px 48px; border-radius:var(--r-lg); text-align:center;
+  background:linear-gradient(135deg, rgba(58,217,245,0.10), rgba(92,134,255,0.06)), var(--surface);
+  border:1px solid var(--border-strong);
+}
+.final-cta h2{font-size:28px; max-width:640px; margin:0 auto;}
+.final-cta .btn{margin-top:24px;}
+
+@media (max-width:980px){
+  .hero{grid-template-columns:1fr;}
+  .hero h1{font-size:36px;}
+  .flow-row, .why-grid{grid-template-columns:repeat(2,1fr);}
+  .flow-card::after{display:none;}
+}
+
+/* ---------- PLAN & SIMULATE ---------- */
+.plan-grid{display:grid; grid-template-columns:2fr 1fr; gap:20px; margin-bottom:20px;}
+.map-toolbar{display:flex; flex-wrap:wrap; gap:8px; margin-bottom:16px;}
+.chip{
+  font-size:12px; padding:7px 12px; border-radius:8px; border:1px solid var(--border);
+  background:var(--surface-2); color:var(--text-dim); transition:.15s;
+}
+.chip:hover{color:var(--text); border-color:var(--border-strong);}
+.venue-wrap{border-radius:var(--r-md); overflow:hidden; border:1px solid var(--border); background:var(--surface);}
+.venue-wrap svg{width:100%; display:block;}
+.side-stats{display:flex; flex-direction:column; gap:12px;}
+.stat-row{display:flex; justify-content:space-between; align-items:baseline; padding:11px 0; border-bottom:1px solid var(--border);}
+.stat-row:last-child{border-bottom:none;}
+.stat-row .k{font-size:13px; color:var(--text-dim);}
+.stat-row .v{font-family:var(--font-d); font-size:17px; font-weight:700;}
+
+.sim-panel{margin-top:8px; padding:26px;}
+.sim-scenarios{display:flex; flex-wrap:wrap; gap:8px; margin:16px 0;}
+.sim-scenario-chip{font-size:12.5px; padding:8px 13px; border-radius:20px; border:1px solid var(--border); background:var(--surface-2); color:var(--text-dim);}
+.sim-scenario-chip.selected{border-color:var(--cyan); color:var(--cyan); background:var(--cyan-soft);}
+.sim-input-row{display:flex; gap:10px; margin-top:14px;}
+.sim-input-row input{
+  flex:1; background:var(--bg-alt); border:1px solid var(--border); border-radius:10px;
+  padding:13px 15px; color:var(--text); font-size:14px;
+}
+.sim-input-row input:focus{outline:none; border-color:var(--cyan);}
+.sim-result{margin-top:22px; display:none;}
+.sim-result.show{display:block; animation:fadeIn .4s ease;}
+.sim-result-grid{display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin:16px 0;}
+.sim-result-grid .box{background:var(--surface-2); border:1px solid var(--border); border-radius:10px; padding:14px;}
+.sim-result-grid .box .k{font-size:11px; color:var(--text-faint); font-family:var(--font-m);}
+.sim-result-grid .box .v{font-family:var(--font-d); font-size:19px; font-weight:700; margin-top:4px;}
+.recommend-box{
+  margin-top:14px; padding:16px 18px; border-radius:10px; background:var(--cyan-soft);
+  border:1px solid rgba(58,217,245,0.3); font-size:14px;
+}
+.verify-list{display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-top:16px;}
+.verify-item{display:flex; align-items:center; justify-content:space-between; background:var(--surface-2); border:1px solid var(--border); border-radius:8px; padding:10px 13px; font-size:12.5px;}
+
+/* ---------- LIVE MONITOR ---------- */
+.live-topbar{display:flex; align-items:center; gap:18px; padding:16px 22px; border-radius:var(--r-md); margin-bottom:20px;}
+.live-topbar .live-tag{display:flex; align-items:center; gap:7px; font-family:var(--font-m); font-size:12.5px; color:var(--red); font-weight:600;}
+.live-topbar .sep{width:1px; height:16px; background:var(--border);}
+.live-topbar .meta{font-size:12.5px; color:var(--text-dim); font-family:var(--font-m);}
+
+.monitor-grid{display:grid; grid-template-columns:2fr 1fr; gap:20px; margin-bottom:20px;}
+.heatmap-legend{display:flex; gap:16px; margin-top:14px; font-size:11.5px; color:var(--text-dim);}
+.heatmap-legend span{display:flex; align-items:center; gap:6px;}
+.legend-sw{width:10px; height:10px; border-radius:3px;}
+
+.risk-dial{display:flex; flex-direction:column; align-items:center; padding:26px 18px;}
+.risk-dial .ring-wrap{position:relative; width:170px; height:170px;}
+.risk-dial svg{transform:rotate(-90deg);}
+.risk-dial .ring-center{position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;}
+.risk-dial .ring-center .num{font-family:var(--font-d); font-size:38px; font-weight:700;}
+.risk-dial .ring-center .max{font-size:11px; color:var(--text-faint);}
+.risk-factors{width:100%; margin-top:20px; display:flex; flex-direction:column; gap:9px;}
+.risk-factor-row{display:flex; justify-content:space-between; font-size:12.5px; color:var(--text-dim);}
+.risk-factor-row b{color:var(--text); font-family:var(--font-m);}
+
+.source-row{display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:20px;}
+.source-card{padding:18px;}
+.source-card .top{display:flex; justify-content:space-between; align-items:flex-start;}
+.source-card h4{font-size:14.5px; margin-top:10px;}
+.source-card .stat{font-family:var(--font-d); font-size:22px; font-weight:700; margin-top:6px;}
+
+.cam-grid{display:grid; grid-template-columns:repeat(6,1fr); gap:8px; margin-top:14px;}
+.cam-tile{
+  aspect-ratio:4/3; border-radius:8px; position:relative; overflow:hidden;
+  background:linear-gradient(135deg, #0a1120, #131f34);
+  border:1px solid var(--border);
+}
+.cam-tile .rec{position:absolute; top:6px; left:6px; display:flex; align-items:center; gap:4px; font-family:var(--font-m); font-size:8px; color:var(--red);}
+.cam-tile .label{position:absolute; bottom:5px; left:6px; font-family:var(--font-m); font-size:8.5px; color:var(--text-dim);}
+.cam-tile .noise{position:absolute; inset:0; opacity:.5; background-image:repeating-linear-gradient(0deg, rgba(255,255,255,0.02) 0 1px, transparent 1px 3px);}
+
+.ai-feed{margin-bottom:20px;}
+.feed-list{display:flex; flex-direction:column; gap:0; margin-top:16px; max-height:340px; overflow-y:auto;}
+.feed-item{display:flex; gap:14px; padding:13px 4px; border-bottom:1px solid var(--border);}
+.feed-item:last-child{border-bottom:none;}
+.feed-item .ftime{font-family:var(--font-m); font-size:11px; color:var(--text-faint); width:58px; flex-shrink:0; padding-top:2px;}
+.feed-item .fdot{width:8px; height:8px; border-radius:50%; margin-top:6px; flex-shrink:0;}
+.feed-item .fbody{flex:1;}
+.feed-item .ftitle{font-size:13.5px; font-weight:600;}
+.feed-item .fmeta{font-size:11.5px; color:var(--text-faint); margin-top:2px; font-family:var(--font-m);}
+.feed-item .frec{font-size:12.5px; color:var(--text-dim); margin-top:5px;}
+
+.env-toggle{display:flex; gap:8px; margin-bottom:14px;}
+.env-toggle button{padding:7px 14px; border-radius:8px; border:1px solid var(--border); background:var(--surface-2); color:var(--text-dim); font-size:12.5px;}
+.env-toggle button.active{color:var(--cyan); border-color:var(--cyan); background:var(--cyan-soft);}
+.env-row{display:grid; grid-template-columns:repeat(6,1fr); gap:12px;}
+.env-card{padding:15px; text-align:center;}
+.env-card .ev-label{font-size:11px; color:var(--text-faint); font-family:var(--font-m);}
+.env-card .ev-val{font-family:var(--font-d); font-size:20px; font-weight:700; margin-top:6px;}
+
+@media (max-width:1100px){ .monitor-grid, .plan-grid{grid-template-columns:1fr;} .source-row{grid-template-columns:repeat(2,1fr);} .cam-grid{grid-template-columns:repeat(3,1fr);} .env-row{grid-template-columns:repeat(3,1fr);} }
+
+/* ---------- EVACUATION ---------- */
+.evac-grid{display:grid; grid-template-columns:1.3fr 1fr; gap:20px; margin-bottom:20px;}
+.critical-banner{
+  display:flex; align-items:flex-start; gap:14px; padding:16px 18px; border-radius:10px;
+  background:var(--red-soft); border:1px solid rgba(255,79,102,0.35); margin-bottom:18px;
+}
+.evac-stats{display:grid; grid-template-columns:repeat(2,1fr); gap:12px; margin:18px 0;}
+.evac-stats .box{background:var(--surface-2); border:1px solid var(--border); border-radius:10px; padding:14px;}
+.route-update-card{display:flex; align-items:center; gap:18px; flex-wrap:wrap;}
+.route-path{display:flex; align-items:center; gap:8px; font-family:var(--font-m); font-size:13px;}
+.route-path .old{color:var(--text-faint); text-decoration:line-through;}
+.route-path .new{color:var(--cyan);}
+.coord-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-top:16px;}
+.coord-item{background:var(--surface-2); border:1px solid var(--border); border-radius:10px; padding:13px;}
+.coord-item .k{font-size:11.5px; color:var(--text-faint);}
+.coord-item .v{font-size:13.5px; font-weight:600; margin-top:4px;}
+.disclaimer-strip{margin-top:20px; padding:14px 18px; border-radius:10px; border:1px dashed var(--border-strong); font-size:12.5px; color:var(--text-dim);}
+@media (max-width:1100px){ .evac-grid{grid-template-columns:1fr;} }
+
+/* ---------- POST-INCIDENT ---------- */
+.timeline{display:flex; gap:0; overflow-x:auto; padding:26px 4px 10px; margin-bottom:6px;}
+.tl-node{flex:1; min-width:140px; text-align:center; position:relative; cursor:pointer; padding:0 6px;}
+.tl-node::before{content:''; position:absolute; top:9px; left:0; right:0; height:2px; background:var(--border);}
+.tl-node:first-child::before{left:50%;}
+.tl-node:last-child::before{right:50%;}
+.tl-dot{width:11px; height:11px; border-radius:50%; background:var(--surface-2); border:2px solid var(--border-strong); margin:0 auto; position:relative; z-index:1;}
+.tl-node.active .tl-dot{background:var(--cyan); border-color:var(--cyan); box-shadow:0 0 10px var(--cyan);}
+.tl-node .tl-time{font-family:var(--font-m); font-size:11px; color:var(--text-faint); margin-top:10px;}
+.tl-node .tl-label{font-size:12px; margin-top:4px; color:var(--text-dim); line-height:1.3;}
+.tl-node.active .tl-label{color:var(--text); font-weight:600;}
+.tl-detail{margin-top:6px; margin-bottom:20px;}
+
+.root-cause-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin:20px 0;}
+.rc-card{padding:16px;}
+.rc-card .k{font-size:11px; color:var(--text-faint); font-family:var(--font-m);}
+.rc-card .v{font-size:15px; font-weight:600; margin-top:6px;}
+
+.chart-row{display:grid; grid-template-columns:1fr 1fr; gap:16px; margin:20px 0;}
+.chart-card svg{width:100%; height:140px; margin-top:10px;}
+
+.rec-list{display:flex; flex-direction:column; gap:10px; margin-top:16px;}
+.rec-list li{display:flex; gap:12px; align-items:flex-start; font-size:13.5px; color:var(--text-dim); list-style:none;}
+.rec-list .n{font-family:var(--font-m); font-size:11px; color:var(--cyan); background:var(--cyan-soft); width:20px; height:20px; border-radius:50%; display:flex; align-items:center; justify-content:center; flex-shrink:0; margin-top:1px;}
+@media (max-width:900px){ .root-cause-grid{grid-template-columns:1fr 1fr;} .chart-row{grid-template-columns:1fr;} }
+
+/* ---------- COMMAND CENTER ---------- */
+.kpi-row{display:grid; grid-template-columns:repeat(6,1fr); gap:12px; margin-bottom:20px;}
+.kpi-card{padding:16px;}
+.cc-grid{display:grid; grid-template-columns:2fr 1fr; gap:20px;}
+.cc-panels{display:flex; flex-direction:column; gap:14px;}
+.cc-mini-list{display:flex; flex-direction:column; gap:9px; margin-top:12px;}
+.cc-mini-row{display:flex; justify-content:space-between; font-size:12.5px; color:var(--text-dim); padding-bottom:9px; border-bottom:1px solid var(--border);}
+.cc-mini-row:last-child{border:none; padding-bottom:0;}
+@media (max-width:1100px){ .kpi-row{grid-template-columns:repeat(3,1fr);} .cc-grid{grid-template-columns:1fr;} }
+
+/* ---------- LANDING: command room ---------- */
+.cmdbar{display:flex; flex-wrap:wrap; gap:0; margin-top:22px; padding:13px 22px; border-radius:12px;}
+.cmdbar .seg{display:flex; flex-direction:column; padding:0 20px; border-right:1px solid var(--border);}
+.cmdbar .seg:last-child{border-right:none;}
+.cmdbar .seg .k{font-size:9.5px; font-family:var(--font-m); color:var(--text-faint); letter-spacing:0.02em;}
+.cmdbar .seg .v{font-size:13px; font-weight:600; margin-top:4px;}
+@media (max-width:980px){ .cmdbar{gap:14px 0;} .cmdbar .seg{border-right:none; padding:0 14px 0 0;} }
+
+.agent-hero{display:grid; grid-template-columns:1fr 1fr; gap:22px; padding:26px 0 44px; align-items:stretch;}
+.agent-panel{padding:24px; display:flex; flex-direction:column;}
+.agent-head{display:flex; align-items:center; gap:12px;}
+.agent-avatar{width:38px; height:38px; border-radius:11px; background:conic-gradient(from 220deg, var(--cyan), var(--blue), var(--cyan)); display:flex; align-items:center; justify-content:center; box-shadow:0 0 16px rgba(58,217,245,0.35); flex-shrink:0;}
+.agent-head h3{font-size:17px;}
+.agent-head p{font-size:12px; margin-top:2px;}
+.agent-log{margin-top:18px; flex:1; display:flex; flex-direction:column; gap:12px; font-family:var(--font-m); font-size:12px; max-height:210px; overflow-y:auto;}
+.agent-log .line{display:flex; gap:10px;}
+.agent-log .line .tag{flex-shrink:0; color:var(--cyan); width:60px;}
+.agent-log .line.warn .tag{color:var(--orange);}
+.agent-log .line p{color:var(--text-dim); margin:0; font-family:var(--font-b); font-size:12.5px;}
+.agent-predict{margin-top:16px; padding:14px 16px; border-radius:10px; background:var(--orange-soft); border:1px solid rgba(255,166,63,0.3); font-size:13px; color:var(--text);}
+
+.signal-row{display:grid; grid-template-columns:repeat(6,1fr); gap:12px; padding:6px 0 46px;}
+.signal-card{padding:16px;}
+.signal-card .ic{font-size:18px;}
+.signal-card h5{font-size:12px; margin-top:12px; font-weight:600; line-height:1.3;}
+.signal-card .sv{font-family:var(--font-d); font-size:17px; font-weight:700; margin-top:8px;}
+.signal-card .sd{font-size:10.8px; color:var(--text-faint); margin-top:5px; line-height:1.4;}
+
+.app-section{display:grid; grid-template-columns:0.65fr 1.35fr; gap:40px; padding:8px 0 60px; align-items:center;}
+.phone{width:225px; margin:0 auto; border-radius:32px; border:7px solid #131c30; background:#080d1a; box-shadow:0 24px 60px rgba(0,0,0,0.5); overflow:hidden;}
+.phone .screen{padding:16px 14px; min-height:410px;}
+.phone .app-top{display:flex; justify-content:space-between; font-family:var(--font-m); font-size:9px; color:var(--text-faint);}
+.phone .app-title{font-family:var(--font-d); font-size:14px; margin-top:16px; font-weight:700;}
+.phone .app-sub{font-size:10.5px; color:var(--text-faint); margin-top:3px;}
+.sos-btn{width:118px; height:118px; border-radius:50%; background:radial-gradient(circle at 35% 30%, #ff6b7a, var(--red)); margin:30px auto 14px; display:flex; align-items:center; justify-content:center; flex-direction:column; box-shadow:0 0 40px rgba(255,79,102,0.45); color:white; font-weight:700; font-size:12px; text-align:center; line-height:1.3;}
+.phone .app-note{text-align:center; font-size:10.5px; color:var(--text-faint);}
+.phone .app-chip{margin-top:20px; padding:10px 12px; border-radius:8px; background:var(--surface-2); border:1px solid var(--border); font-size:10.5px; color:var(--text-dim);}
+.assign-flow{display:flex; flex-direction:column; gap:16px;}
+.assign-step{display:flex; gap:14px; align-items:flex-start;}
+.assign-step .idx{width:30px; height:30px; border-radius:50%; background:var(--cyan-soft); color:var(--cyan); font-family:var(--font-m); font-size:12px; display:flex; align-items:center; justify-content:center; flex-shrink:0; border:1px solid rgba(58,217,245,0.3);}
+.assign-step h5{font-size:14.5px;}
+.assign-step p{font-size:12.5px; margin-top:3px;}
+.assign-example{margin-top:8px; padding:11px 14px; border-radius:9px; background:var(--surface-2); border:1px solid var(--border); font-family:var(--font-m); font-size:11px; color:var(--cyan);}
+@media (max-width:980px){ .agent-hero, .app-section{grid-template-columns:1fr;} .signal-row{grid-template-columns:repeat(2,1fr);} }
+
+/* ---------- infra checklist / responder planning ---------- */
+.infra-cat-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-top:18px;}
+.infra-cat h4{font-size:13.5px; display:flex; align-items:center; gap:8px;}
+.infra-list{display:flex; flex-direction:column; gap:8px; margin-top:12px;}
+.infra-row{display:flex; align-items:center; justify-content:space-between; font-size:12px; color:var(--text-dim); padding-bottom:8px; border-bottom:1px solid var(--border);}
+.infra-row:last-child{border:none; padding-bottom:0;}
+.infra-row .ok{color:var(--green); font-family:var(--font-m); font-size:10px;}
+@media (max-width:1100px){ .infra-cat-grid{grid-template-columns:1fr 1fr;} }
+
+.resp-grid{display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:18px;}
+@media (max-width:900px){ .resp-grid{grid-template-columns:1fr;} }
+
+/* ---------- evac pipeline / comms channel ---------- */
+.pipeline{display:flex; flex-direction:column; margin-top:18px;}
+.pipe-step{display:flex; gap:16px; padding:14px 0; position:relative;}
+.pipe-step::before{content:''; position:absolute; left:15px; top:38px; bottom:-4px; width:2px; background:var(--border);}
+.pipe-step:last-child::before{display:none;}
+.pipe-num{width:32px; height:32px; border-radius:50%; background:var(--surface-2); border:1px solid var(--border-strong); display:flex; align-items:center; justify-content:center; font-family:var(--font-m); font-size:12px; flex-shrink:0; z-index:1; color:var(--cyan);}
+.pipe-body h5{font-size:14px;}
+.pipe-body p{font-size:12.5px; margin-top:4px;}
+.pipe-board{margin-top:8px; display:inline-flex; gap:14px; padding:8px 12px; border-radius:8px; background:var(--surface-2); border:1px solid var(--border); font-family:var(--font-m); font-size:11px;}
+
+.comms-channel{margin-top:14px; display:flex; flex-direction:column; gap:0; max-height:280px; overflow-y:auto;}
+.comm-msg{display:flex; gap:12px; padding:10px 2px; border-bottom:1px solid var(--border);}
+.comm-msg:last-child{border-bottom:none;}
+.comm-tag{flex-shrink:0; font-family:var(--font-m); font-size:10px; padding:4px 8px; border-radius:6px; height:fit-content;}
+.comm-msg .txt{font-size:12.5px; color:var(--text-dim);}
+.comm-msg .ts{font-size:10px; color:var(--text-faint); font-family:var(--font-m); margin-top:3px;}
+
+/* ---------- monitoring log table ---------- */
+.log-table{width:100%; border-collapse:collapse; margin-top:14px; font-size:12px;}
+.log-table th{text-align:left; font-family:var(--font-m); font-size:10px; color:var(--text-faint); font-weight:500; padding:8px 10px; border-bottom:1px solid var(--border-strong);}
+.log-table td{padding:9px 10px; border-bottom:1px solid var(--border); color:var(--text-dim);}
+.log-table tr:last-child td{border-bottom:none;}
+.log-table .zone{color:var(--text); font-weight:600;}
+
+/* toast */
+.toast-wrap{position:fixed; bottom:24px; right:24px; z-index:999; display:flex; flex-direction:column; gap:10px;}
+.toast{
+  background:var(--surface-2); border:1px solid var(--border-strong); border-radius:10px;
+  padding:13px 16px; font-size:13px; max-width:300px; box-shadow:0 10px 30px rgba(0,0,0,0.4);
+  animation:toastIn .25s ease;
+}
+@keyframes toastIn{from{opacity:0; transform:translateX(20px);} to{opacity:1; transform:translateX(0);}}
+.toast b{display:block; margin-bottom:2px; color:var(--cyan);}
+
+section-title{}
+.section-title{display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;}
+.section-title h2{font-size:20px;}
+.section-title .sub{font-size:12.5px; color:var(--text-faint);}
+</style>
+</head>
+<body>
+
+<nav class="topnav">
+  <div class="brand" onclick="showView('landing')">
+    <div class="brand-mark"><svg viewBox="0 0 24 24" fill="none"><path d="M4 12a8 8 0 0 1 8-8v8H4Z" fill="#04121a"/><path d="M12 4a8 8 0 1 1-8 8" stroke="#04121a" stroke-width="1.6"/></svg></div>
+    <div class="brand-text"><b>CrowdSense</b><span>Detect Early. Respond Faster. Save Lives.</span></div>
+  </div>
+  <div class="nav-links" id="navLinks">
+    <button data-view="landing" onclick="showView('landing')">Home</button>
+    <button data-view="plan" onclick="showView('plan')">Plan &amp; Simulate</button>
+    <button data-view="monitor" onclick="showView('monitor')">Live Monitor</button>
+    <button data-view="evac" onclick="showView('evac')">Evacuation</button>
+    <button data-view="post" onclick="showView('post')">Post-Incident</button>
+    <button data-view="cc" onclick="showView('cc')">Command Center</button>
+  </div>
+  <div class="nav-right">
+    <div class="event-pill"><span class="dot"></span>Riverfront Music Festival — Day 2</div>
+    <div class="icon-btn" title="Notifications">🔔<span class="badge">4</span></div>
+    <div class="icon-btn" title="AI Status" style="color:var(--cyan); border-color:rgba(58,217,245,0.35);">✦</div>
+    <div class="avatar">RS</div>
+  </div>
+</nav>
+
+<!-- ============ LANDING ============ -->
+<section class="view active" id="view-landing">
+<div class="container">
+  <div class="glass cmdbar">
+    <div class="seg"><span class="k">EVENT</span><span class="v">Marina Beach New Year Festival</span></div>
+    <div class="seg"><span class="k">LOCATION</span><span class="v">Marina Beach, Chennai, Tamil Nadu</span></div>
+    <div class="seg"><span class="k">REGION / ZONE</span><span class="v">South Zone — Sector 4</span></div>
+    <div class="seg"><span class="k">LOCAL TIME</span><span class="v" id="cmdClock">--:--:--</span></div>
+    <div class="seg"><span class="k">WEATHER</span><span class="v">29°C · Clear · Wind 11 km/h</span></div>
+    <div class="seg"><span class="k">SYSTEM STATUS</span><span class="v" style="color:var(--green);">● AI ACTIVE</span></div>
+  </div>
+
+  <div class="agent-hero">
+    <div class="card agent-panel">
+      <div class="agent-head">
+        <div class="agent-avatar"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"><path d="M4 12a8 8 0 0 1 8-8v8H4Z" fill="#04121a"/><path d="M12 4a8 8 0 1 1-8 8" stroke="#04121a" stroke-width="1.6"/></svg></div>
+        <div><h3>CrowdSense AI Agent</h3><p>Fusing 6 live signal sources into one running prediction</p></div>
+      </div>
+      <div class="agent-log" id="agentLog">
+        <div class="line"><span class="tag">WEATHER</span><p>Clear skies, rising humidity forecast at 20:30 — mild effect on Zone A dwell time.</p></div>
+        <div class="line"><span class="tag">IOT</span><p>Barrier-mounted sensors report Zone A occupancy at 78% of safe capacity.</p></div>
+        <div class="line warn"><span class="tag">DRONE</span><p>Aerial feed shows density trending upward near Gate 3 over the last 6 minutes.</p></div>
+        <div class="line"><span class="tag">SOUND</span><p>Ambient audio nominal — no distress or panic signature detected.</p></div>
+      </div>
+      <div class="agent-predict"><b style="font-family:var(--font-m); font-size:11px; color:var(--orange); display:block; margin-bottom:4px;">CURRENT PREDICTION</b>Elevated congestion risk near Gate 3 in ~18 minutes, based on drone density trend and historical weather–crowd correlation for this venue.</div>
+    </div>
+    <div class="hero-map">
+      <div class="scan-line"></div>
+      <svg viewBox="0 0 400 380" xmlns="http://www.w3.org/2000/svg">
+        <rect x="0" y="0" width="400" height="380" fill="none"/>
+        <polygon points="40,60 220,40 250,140 150,180 30,150" fill="rgba(255,166,63,0.16)" stroke="rgba(255,166,63,0.5)"/>
+        <polygon points="150,180 250,140 340,200 300,300 170,290" fill="rgba(255,79,102,0.16)" stroke="rgba(255,79,102,0.5)"/>
+        <polygon points="30,150 150,180 170,290 60,320 10,240" fill="rgba(42,217,158,0.14)" stroke="rgba(42,217,158,0.45)"/>
+        <line x1="140" y1="70" x2="60" y2="300" stroke="rgba(58,217,245,0.3)" stroke-width="1.5" stroke-dasharray="4 4"/>
+        <line x1="220" y1="40" x2="300" y2="300" stroke="rgba(58,217,245,0.3)" stroke-width="1.5" stroke-dasharray="4 4"/>
+        <g fill="var(--cyan)">
+          <circle cx="60" cy="90" r="3.5"/><circle cx="200" cy="60" r="3.5"/><circle cx="280" cy="180" r="3.5"/>
+          <circle cx="320" cy="260" r="3.5"/><circle cx="90" cy="270" r="3.5"/><circle cx="190" cy="220" r="3.5"/>
+        </g>
+        <g fill="none" stroke="var(--cyan)" stroke-width="1">
+          <circle cx="60" cy="90" r="9" opacity="0.5"/><circle cx="200" cy="60" r="9" opacity="0.5"/>
+          <circle cx="280" cy="180" r="9" opacity="0.5"/><circle cx="320" cy="260" r="9" opacity="0.5"/>
+        </g>
+        <g fill="var(--green)">
+          <rect x="25" y="230" width="10" height="10" rx="2"/>
+          <rect x="330" y="60" width="10" height="10" rx="2"/>
+        </g>
+        <text x="18" y="30" font-family="IBM Plex Mono" font-size="8.5" fill="#3ad9f5">☁ WEATHER · 📡 IoT · 🎥 CCTV · 🛩 DRONE · 🔊 SOUND</text>
+        <text x="20" y="345" font-family="IBM Plex Mono" font-size="9" fill="#8fa1c2">STAGE ZONE · EXIT E1–E4 · DRONE COVERAGE 96%</text>
+      </svg>
+    </div>
+  </div>
+
+  <div>
+    <div class="section-title"><h2>Prediction Signal Sources</h2><span class="sub">What the AI agent is reading right now</span></div>
+    <div class="signal-row">
+      <div class="card signal-card"><div class="ic">☁️</div><h5>Weather Reports</h5><div class="sv">29°C</div><div class="sd">Feeds heat-stress and dwell-time modelling for open zones.</div></div>
+      <div class="card signal-card"><div class="ic">📡</div><h5>IoT Sensors</h5><div class="sv">128 online</div><div class="sd">Occupancy, barrier load and environmental readings per zone.</div></div>
+      <div class="card signal-card"><div class="ic">📷</div><h5>Portable CCTV</h5><div class="sv">9 towers</div><div class="sd">Relocatable coverage for entry lanes and temporary bottlenecks.</div></div>
+      <div class="card signal-card"><div class="ic">🛩️</div><h5>CCTV Drone Shots</h5><div class="sv">4 active</div><div class="sd">Top-down density and movement reads across open-air zones.</div></div>
+      <div class="card signal-card"><div class="ic">🔊</div><h5>Sound Anomaly Detection</h5><div class="sv">Nominal</div><div class="sd">Flags screaming, panic or crush-related audio signatures.</div></div>
+      <div class="card signal-card"><div class="ic">📱</div><h5>Mobile App Reports</h5><div class="sv">3 today</div><div class="sd">Direct emergency reports submitted by people at the venue.</div></div>
+    </div>
+  </div>
+
+  <div class="app-section">
+    <div class="phone">
+      <div class="screen">
+        <div class="app-top"><span>9:41</span><span>CrowdSense</span></div>
+        <div class="app-title">Report an emergency</div>
+        <div class="app-sub">Marina Beach · Zone C</div>
+        <div class="sos-btn">HOLD FOR<br>SOS</div>
+        <div class="app-note">Your location is shared automatically</div>
+        <div class="app-chip">Report type: Medical, Crowd Crush, Fire, Security, Lost Person</div>
+      </div>
+    </div>
+    <div>
+      <div class="section-title"><h2>Citizen reports → automatic field response</h2></div>
+      <p style="margin-top:8px; max-width:520px; font-size:14px;">Anyone at the venue can report an emergency from the CrowdSense mobile app. The AI agent classifies the report, locates it to a zone, and assigns the nearest available field responder automatically — the responder receives it on their own app within seconds.</p>
+      <div class="assign-flow" style="margin-top:24px;">
+        <div class="assign-step"><div class="idx">1</div><div><h5>Report submitted</h5><p>Citizen taps SOS and picks a category; GPS location and zone are attached automatically.</p></div></div>
+        <div class="assign-step"><div class="idx">2</div><div><h5>AI classifies &amp; assigns</h5><p>The agent reads severity, cross-checks it against live monitoring, and matches the nearest available responder.</p>
+          <div class="assign-example">REPORT #1042 · ZONE C · MEDICAL → Auto-assigned to Responder R-14 (180m away) · ETA 2 min</div></div></div>
+        <div class="assign-step"><div class="idx">3</div><div><h5>Responder alerted</h5><p>The field responder's app shows the case, location and route; the command centre tracks status until it's resolved.</p></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="final-cta">
+    <h2>One command layer over every signal, every zone, every responder.</h2>
+    <button class="btn btn-primary" onclick="showView('cc')">Enter Command Center</button>
+  </div>
+</div>
+</section>
+
+<!-- ============ PLAN & SIMULATE ============ -->
+<section class="view" id="view-plan">
+<div class="container">
+  <div class="page-head">
+    <div class="eyebrow">PHASE 01 · BEFORE THE EVENT</div>
+    <h1>Plan &amp; Simulate</h1>
+    <p>Understand the venue. Predict the risks. Prepare before the crowd arrives.</p>
+  </div>
+
+  <div class="plan-grid">
+    <div>
+      <div class="map-toolbar">
+        <button class="chip">+ Entrance</button>
+        <button class="chip">+ Exit</button>
+        <button class="chip">+ Emergency Exit</button>
+        <button class="chip">+ Camera</button>
+        <button class="chip">+ IoT Sensor</button>
+        <button class="chip">+ Medical Point</button>
+        <button class="chip">+ Barricade</button>
+        <button class="chip">+ Safe Zone</button>
+      </div>
+      <div class="venue-wrap">
+        <svg viewBox="0 0 600 400" xmlns="http://www.w3.org/2000/svg">
+          <rect width="600" height="400" fill="#0a1120"/>
+          <polygon points="60,80 320,50 360,190 200,240 40,200" fill="rgba(255,166,63,0.14)" stroke="rgba(255,166,63,0.4)"/>
+          <text x="70" y="150" font-family="IBM Plex Mono" font-size="10" fill="#ffa63f">ZONE A — MAIN CROWD</text>
+          <polygon points="200,240 360,190 470,260 400,360 230,340" fill="rgba(255,79,102,0.13)" stroke="rgba(255,79,102,0.4)"/>
+          <text x="270" y="300" font-family="IBM Plex Mono" font-size="10" fill="#ff4f66">ZONE B — BOTTLENECK</text>
+          <polygon points="40,200 200,240 230,340 90,370 10,300" fill="rgba(42,217,158,0.12)" stroke="rgba(42,217,158,0.4)"/>
+          <text x="45" y="330" font-family="IBM Plex Mono" font-size="10" fill="#2ad99e">ASSEMBLY POINT</text>
+          <rect x="270" y="80" width="70" height="34" rx="4" fill="#131f34" stroke="#5c86ff"/>
+          <text x="280" y="101" font-family="IBM Plex Mono" font-size="9" fill="#5c86ff">STAGE</text>
+          <g fill="var(--cyan)">
+            <circle cx="80" cy="90" r="4"/><circle cx="300" cy="55" r="4"/><circle cx="440" cy="230" r="4"/>
+            <circle cx="150" cy="260" r="4"/><circle cx="380" cy="330" r="4"/>
+          </g>
+          <g fill="#eef3fb" font-family="IBM Plex Mono" font-size="9">
+            <rect x="25" y="180" width="30" height="16" rx="3" fill="#2ad99e"/><text x="30" y="192" fill="#04121a">E1</text>
+            <rect x="455" y="245" width="30" height="16" rx="3" fill="#2ad99e"/><text x="460" y="257" fill="#04121a">E2</text>
+            <rect x="195" y="345" width="30" height="16" rx="3" fill="#ffa63f"/><text x="200" y="357" fill="#04121a">G3</text>
+          </g>
+          <line x1="55" y1="188" x2="30" y2="290" stroke="#3ad9f5" stroke-width="1.4" stroke-dasharray="3 3"/>
+          <line x1="455" y1="253" x2="400" y2="330" stroke="#3ad9f5" stroke-width="1.4" stroke-dasharray="3 3"/>
+        </svg>
+      </div>
+      <div class="card" style="margin-top:16px;">
+        <h4 style="font-size:15px;">Crowd Flow Planning</h4>
+        <div class="cc-mini-list">
+          <div class="cc-mini-row"><span>Entry flow — Gates 1, 2, 4</span><span class="pill pill-green">Balanced</span></div>
+          <div class="cc-mini-row"><span>Exit flow — E1, E2</span><span class="pill pill-green">Clear</span></div>
+          <div class="cc-mini-row"><span>One-way pedestrian lane — North corridor</span><span class="pill pill-cyan">Active</span></div>
+          <div class="cc-mini-row"><span>Counter-flow risk — Gate 3 / Zone B</span><span class="pill pill-orange">Watch</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card side-stats">
+      <h4 style="font-size:15px; margin-bottom:4px;">Venue Safety Overview</h4>
+      <div class="stat-row"><span class="k">Expected Attendance</span><span class="v">25,000</span></div>
+      <div class="stat-row"><span class="k">Safe Capacity</span><span class="v">30,000</span></div>
+      <div class="stat-row"><span class="k">High-Risk Zones</span><span class="v" style="color:var(--orange);">3</span></div>
+      <div class="stat-row"><span class="k">Emergency Exits</span><span class="v">6</span></div>
+      <div class="stat-row"><span class="k">Monitoring Coverage</span><span class="v" style="color:var(--green);">94%</span></div>
+    </div>
+  </div>
+
+  <div class="card sim-panel">
+    <div class="section-title"><h2>What If…?</h2><span class="sub">AI-assisted scenario simulation</span></div>
+    <div class="sim-scenarios" id="scenarioChips">
+      <button class="sim-scenario-chip" onclick="pickScenario(this,'Gate 3 becomes unavailable')">Gate 3 becomes unavailable</button>
+      <button class="sim-scenario-chip" onclick="pickScenario(this,'Crowd density increases by 40%')">Crowd density increases by 40%</button>
+      <button class="sim-scenario-chip" onclick="pickScenario(this,'An entrance is suddenly blocked')">Entrance suddenly blocked</button>
+      <button class="sim-scenario-chip" onclick="pickScenario(this,'Sudden crowd buildup near the stage')">Sudden buildup near stage</button>
+      <button class="sim-scenario-chip" onclick="pickScenario(this,'Network connectivity fails')">Network connectivity fails</button>
+      <button class="sim-scenario-chip" onclick="pickScenario(this,'Emergency occurs near Zone B')">Emergency near Zone B</button>
+    </div>
+    <div class="sim-input-row">
+      <input type="text" id="scenarioInput" placeholder="Describe a scenario…">
+      <button class="btn btn-primary" onclick="runSimulation()">Run AI Simulation</button>
+    </div>
+
+    <div class="sim-result" id="simResult">
+      <div class="section-title" style="margin-top:22px;"><h2 style="font-size:16px;">AI Simulation Result</h2><span class="pill pill-red">RISK: HIGH</span></div>
+      <div class="sim-result-grid">
+        <div class="box"><div class="k">AFFECTED ZONE</div><div class="v">East Entrance</div></div>
+        <div class="box"><div class="k">EST. CROWD IMPACT</div><div class="v">4,200 people</div></div>
+        <div class="box"><div class="k">POTENTIAL BOTTLENECK</div><div class="v">Zone B</div></div>
+        <div class="box"><div class="k">CAPACITY MARGIN</div><div class="v" style="color:var(--orange);">−12%</div></div>
+      </div>
+      <div class="recommend-box"><b style="color:var(--cyan); display:block; margin-bottom:4px; font-family:var(--font-m); font-size:11px;">RECOMMENDED ACTION</b>Open Emergency Exit E2, reduce inflow through Gate 3, and redirect Zone B traffic toward Exit E2.</div>
+
+      <div class="verify-list">
+        <div class="verify-item"><span>Capacity check</span><span class="pill pill-green">PASS</span></div>
+        <div class="verify-item"><span>Exit accessibility</span><span class="pill pill-green">PASS</span></div>
+        <div class="verify-item"><span>Route availability</span><span class="pill pill-orange">WARNING</span></div>
+        <div class="verify-item"><span>Bottleneck detection</span><span class="pill pill-red">FAIL</span></div>
+        <div class="verify-item"><span>Emergency access</span><span class="pill pill-green">PASS</span></div>
+        <div class="verify-item"><span>Monitoring coverage</span><span class="pill pill-green">PASS</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:20px;">
+    <div class="section-title"><h2 style="font-size:16px;">Physical Infrastructure Coverage</h2><span class="sub">Every element mapped for this venue</span></div>
+    <div class="infra-cat-grid">
+      <div class="card infra-cat" style="background:var(--surface-2);">
+        <h4>📷 Monitoring &amp; Surveillance</h4>
+        <div class="infra-list">
+          <div class="infra-row"><span>CCTV &amp; portable CCTV towers</span><span class="ok">MAPPED</span></div>
+          <div class="infra-row"><span>Night-vision cameras</span><span class="ok">MAPPED</span></div>
+          <div class="infra-row"><span>Drone monitoring / launch points</span><span class="ok">MAPPED</span></div>
+          <div class="infra-row"><span>IoT sensor locations</span><span class="ok">MAPPED</span></div>
+        </div>
+      </div>
+      <div class="card infra-cat" style="background:var(--surface-2);">
+        <h4>📢 Guidance &amp; Communication</h4>
+        <div class="infra-list">
+          <div class="infra-row"><span>Digital arrow boards</span><span class="ok">MAPPED</span></div>
+          <div class="infra-row"><span>LED / variable-message boards</span><span class="ok">MAPPED</span></div>
+          <div class="infra-row"><span>PA speakers</span><span class="ok">MAPPED</span></div>
+          <div class="infra-row"><span>Smart lighting — evacuation routes</span><span class="ok">MAPPED</span></div>
+          <div class="infra-row"><span>Zone identification boards</span><span class="ok">MAPPED</span></div>
+        </div>
+      </div>
+      <div class="card infra-cat" style="background:var(--surface-2);">
+        <h4>🚧 Access &amp; Flow Control</h4>
+        <div class="infra-list">
+          <div class="infra-row"><span>Smart / movable barricades</span><span class="ok">MAPPED</span></div>
+          <div class="infra-row"><span>Dedicated entry &amp; exit gates</span><span class="ok">MAPPED</span></div>
+          <div class="infra-row"><span>Marked emergency exits</span><span class="ok">MAPPED</span></div>
+          <div class="infra-row"><span>One-way pedestrian lanes</span><span class="ok">MAPPED</span></div>
+          <div class="infra-row"><span>Access-control barriers</span><span class="ok">MAPPED</span></div>
+          <div class="infra-row"><span>Emergency / service / VIP lanes</span><span class="ok">MAPPED</span></div>
+        </div>
+      </div>
+      <div class="card infra-cat" style="background:var(--surface-2);">
+        <h4>🚑 Emergency &amp; Medical</h4>
+        <div class="infra-list">
+          <div class="infra-row"><span>Medical &amp; first-aid stations</span><span class="ok">MAPPED</span></div>
+          <div class="infra-row"><span>Ambulance staging points</span><span class="ok">MAPPED</span></div>
+          <div class="infra-row"><span>Emergency SOS / call points</span><span class="ok">MAPPED</span></div>
+          <div class="infra-row"><span>Fire-safety equipment &amp; alarms</span><span class="ok">MAPPED</span></div>
+          <div class="infra-row"><span>Dedicated emergency vehicle corridors</span><span class="ok">MAPPED</span></div>
+          <div class="infra-row"><span>Assembly / safe points</span><span class="ok">MAPPED</span></div>
+        </div>
+      </div>
+      <div class="card infra-cat" style="background:var(--surface-2);">
+        <h4>🖥️ Command Infrastructure</h4>
+        <div class="infra-list">
+          <div class="infra-row"><span>Command &amp; Control Centre</span><span class="ok">ACTIVE</span></div>
+          <div class="infra-row"><span>Offline map cache</span><span class="ok">READY</span></div>
+          <div class="infra-row"><span>Network-failure fallback</span><span class="ok">TESTED</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="resp-grid" style="margin-bottom:60px;">
+    <div class="card">
+      <div class="section-title"><h2 style="font-size:15px;">Responder &amp; Position Planning</h2></div>
+      <div class="cc-mini-list">
+        <div class="cc-mini-row"><span>Police — perimeter &amp; entry gates</span><span>18 assigned</span></div>
+        <div class="cc-mini-row"><span>Security — barricade &amp; lane control</span><span>26 assigned</span></div>
+        <div class="cc-mini-row"><span>Medical teams — first-aid stations</span><span>6 stations</span></div>
+        <div class="cc-mini-row"><span>Ambulances — staging points</span><span>4 positioned</span></div>
+        <div class="cc-mini-row"><span>Evacuation routes pre-planned</span><span>3 primary + 2 alternate</span></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="section-title"><h2 style="font-size:15px;">Emergency Comms &amp; Failure Testing</h2></div>
+      <div class="cc-mini-list">
+        <div class="cc-mini-row"><span>PA instruction presets prepared</span><span class="pill pill-green">READY</span></div>
+        <div class="cc-mini-row"><span>Digital board message presets</span><span class="pill pill-green">READY</span></div>
+        <div class="cc-mini-row"><span>Offline / network-failure drill</span><span class="pill pill-green">PASSED</span></div>
+        <div class="cc-mini-row"><span>Human-verification protocol</span><span class="pill pill-green">CONFIRMED</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- ============ LIVE MONITOR ============ -->
+<section class="view" id="view-monitor">
+<div class="container">
+  <div class="page-head" style="padding-bottom:14px;">
+    <div class="eyebrow">PHASE 02 · DURING THE EVENT</div>
+    <h1>Live Monitor</h1>
+    <p>See what is happening across the venue in real time.</p>
+  </div>
+
+  <div class="glass live-topbar">
+    <div class="live-tag"><span class="pulse-dot" style="background:var(--red);"></span>LIVE EVENT MONITORING</div>
+    <div class="sep"></div>
+    <div class="meta">EVENT STATUS: <span style="color:var(--green);">LIVE</span></div>
+    <div class="sep"></div>
+    <div class="meta">AI MONITORING: <span style="color:var(--cyan);">ACTIVE</span></div>
+    <div class="sep"></div>
+    <div class="meta">LAST UPDATE: <span id="liveClock">just now</span></div>
+  </div>
+
+  <div class="monitor-grid">
+    <div class="venue-wrap">
+      <svg viewBox="0 0 600 380" xmlns="http://www.w3.org/2000/svg">
+        <rect width="600" height="380" fill="#0a1120"/>
+        <defs>
+          <radialGradient id="hotA" cx="50%" cy="50%" r="60%"><stop offset="0%" stop-color="#ff4f66" stop-opacity="0.55"/><stop offset="100%" stop-color="#ff4f66" stop-opacity="0"/></radialGradient>
+          <radialGradient id="hotB" cx="50%" cy="50%" r="60%"><stop offset="0%" stop-color="#ffa63f" stop-opacity="0.5"/><stop offset="100%" stop-color="#ffa63f" stop-opacity="0"/></radialGradient>
+          <radialGradient id="hotC" cx="50%" cy="50%" r="60%"><stop offset="0%" stop-color="#2ad99e" stop-opacity="0.4"/><stop offset="100%" stop-color="#2ad99e" stop-opacity="0"/></radialGradient>
+        </defs>
+        <ellipse cx="230" cy="260" rx="120" ry="90" fill="url(#hotA)"/>
+        <ellipse cx="380" cy="140" rx="110" ry="80" fill="url(#hotB)"/>
+        <ellipse cx="120" cy="120" rx="100" ry="75" fill="url(#hotC)"/>
+        <ellipse cx="470" cy="290" rx="90" ry="70" fill="url(#hotC)"/>
+        <g fill="#eef3fb" opacity="0.55">
+          <circle cx="200" cy="250" r="2"/><circle cx="240" cy="270" r="2"/><circle cx="220" cy="290" r="2"/><circle cx="260" cy="240" r="2"/>
+          <circle cx="370" cy="130" r="2"/><circle cx="390" cy="150" r="2"/><circle cx="400" cy="120" r="2"/>
+        </g>
+        <text x="16" y="20" font-family="IBM Plex Mono" font-size="9" fill="#8fa1c2">CROWD DENSITY HEATMAP · LIVE</text>
+      </svg>
+    </div>
+    <div class="card">
+      <div class="risk-dial">
+        <div class="ring-wrap">
+          <svg width="170" height="170">
+            <circle cx="85" cy="85" r="72" fill="none" stroke="#121b31" stroke-width="12"/>
+            <circle id="riskRing" cx="85" cy="85" r="72" fill="none" stroke="#ffa63f" stroke-width="12" stroke-linecap="round" stroke-dasharray="452" stroke-dashoffset="130"/>
+          </svg>
+          <div class="ring-center"><span class="num" id="riskNum">78</span><span class="max">/ 100 · HIGH RISK</span></div>
+        </div>
+        <div class="risk-factors">
+          <div class="risk-factor-row"><span>Crowd Density</span><b style="color:var(--red);">+32</b></div>
+          <div class="risk-factor-row"><span>Movement Pattern</span><b style="color:var(--orange);">+21</b></div>
+          <div class="risk-factor-row"><span>Exit Congestion</span><b style="color:var(--orange);">+15</b></div>
+          <div class="risk-factor-row"><span>Bottleneck Pressure</span><b style="color:var(--text-dim);">+10</b></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="heatmap-legend" style="margin:-8px 0 20px;">
+    <span><span class="legend-sw" style="background:var(--green);"></span>Safe</span>
+    <span><span class="legend-sw" style="background:#e8d95a;"></span>Moderate</span>
+    <span><span class="legend-sw" style="background:var(--orange);"></span>High</span>
+    <span><span class="legend-sw" style="background:var(--red);"></span>Critical</span>
+  </div>
+
+  <div class="source-row">
+    <div class="card source-card"><div class="top"><span style="font-size:20px;">📹</span><span class="pill pill-green">32/34 Online</span></div><h4>CCTV</h4><div class="stat">94%</div></div>
+    <div class="card source-card"><div class="top"><span style="font-size:20px;">🛩️</span><span class="pill pill-cyan">4 Active</span></div><h4>Drones</h4><div class="stat">4</div></div>
+    <div class="card source-card"><div class="top"><span style="font-size:20px;">📡</span><span class="pill pill-green">128 Online</span></div><h4>IoT Sensors</h4><div class="stat">128</div></div>
+    <div class="card source-card"><div class="top"><span style="font-size:20px;">🌙</span><span class="pill pill-cyan">Active</span></div><h4>Night Vision</h4><div class="stat">6/6</div></div>
+  </div>
+
+  <div class="card" style="margin-bottom:20px;">
+    <div class="section-title"><h2 style="font-size:16px;">Live Monitoring Log</h2><span class="sub">Crowd counting · density · motion analysis · risk engine</span></div>
+    <table class="log-table">
+      <thead><tr><th>TIME</th><th>ZONE</th><th>CROWD COUNT</th><th>DENSITY</th><th>AI EVENT</th><th>RISK SCORE</th><th>STATUS</th></tr></thead>
+      <tbody id="logTableBody"></tbody>
+    </table>
+  </div>
+
+  <div class="card" style="margin-bottom:20px;">
+    <div class="section-title"><h2 style="font-size:16px;">Camera Grid</h2><span class="sub">32 of 34 feeds online</span></div>
+    <div class="cam-grid" id="camGrid"></div>
+  </div>
+
+  <div class="card ai-feed">
+    <div class="section-title"><h2 style="font-size:16px;">CrowdSense AI — Continuous Analysis</h2><span class="pill pill-cyan"><span class="pulse-dot" style="background:var(--cyan);"></span>SCANNING</span></div>
+    <div class="feed-list" id="feedList"></div>
+  </div>
+
+  <div class="card">
+    <div class="section-title"><h2 style="font-size:16px;">Environmental Monitoring</h2></div>
+    <div class="env-toggle">
+      <button class="active" onclick="setEnvMode(this,'open')">Open-Air Event</button>
+      <button onclick="setEnvMode(this,'closed')">Closed Infrastructure</button>
+    </div>
+    <div class="env-row" id="envRow"></div>
+  </div>
+</div>
+</section>
+
+<!-- ============ EVACUATION ============ -->
+<section class="view" id="view-evac">
+<div class="container">
+  <div class="page-head" style="padding-bottom:14px;">
+    <div class="eyebrow">PHASE 03 · WHEN RISK EMERGES</div>
+    <h1>EvacAI</h1>
+    <p>When conditions change, the safest route changes with them.</p>
+  </div>
+
+  <div class="evac-grid">
+    <div class="venue-wrap">
+      <svg viewBox="0 0 600 400" xmlns="http://www.w3.org/2000/svg">
+        <rect width="600" height="400" fill="#0a1120"/>
+        <polygon points="60,80 320,50 360,190 200,240 40,200" fill="rgba(255,79,102,0.18)" stroke="rgba(255,79,102,0.5)"/>
+        <text x="80" y="140" font-family="IBM Plex Mono" font-size="10" fill="#ff4f66">ZONE 4 — OVER THRESHOLD</text>
+        <polygon points="200,240 360,190 470,260 400,360 230,340" fill="rgba(58,217,245,0.10)" stroke="rgba(58,217,245,0.35)"/>
+        <text x="280" y="300" font-family="IBM Plex Mono" font-size="10" fill="#3ad9f5">ZONE 2 — REROUTE PATH</text>
+        <rect x="500" y="230" width="34" height="18" rx="3" fill="#2ad99e"/><text x="504" y="243" font-family="IBM Plex Mono" font-size="9" fill="#04121a">E2</text>
+        <rect x="215" y="345" width="34" height="18" rx="3" fill="#5b6883"/><text x="220" y="357" font-family="IBM Plex Mono" font-size="9" fill="#eef3fb">EXIT C</text>
+        <text x="255" y="330" font-family="IBM Plex Mono" font-size="8" fill="#5b6883">BLOCKED</text>
+        <path id="routeArrow" d="M 130,150 C 220,220 350,260 500,240" fill="none" stroke="#3ad9f5" stroke-width="3" stroke-dasharray="8 6" marker-end="url(#arrowhead)"/>
+        <defs><marker id="arrowhead" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#3ad9f5"/></marker></defs>
+        <g fill="#eef3fb" opacity="0.6"><circle cx="150" cy="160" r="2"/><circle cx="170" cy="140" r="2"/><circle cx="130" cy="180" r="2"/><circle cx="190" cy="170" r="2"/></g>
+      </svg>
+    </div>
+
+    <div>
+      <div class="card critical-banner">
+        <span style="font-size:20px;">🚨</span>
+        <div>
+          <b style="color:var(--red); font-family:var(--font-m); font-size:12px;">CRITICAL SITUATION DETECTED</b>
+          <p style="margin-top:6px; color:var(--text);">Zone 4 crowd density exceeds safe threshold. AI has analyzed density, movement direction, exit capacity, congestion and responder access.</p>
+        </div>
+      </div>
+      <div class="card">
+        <div class="section-title"><h2 style="font-size:15px;">Recommended Action</h2></div>
+        <div class="recommend-box" style="margin-top:10px;">Redirect Zone 4 → Zone 2 → Emergency Exit E2</div>
+        <div class="evac-stats">
+          <div class="box"><div class="k" style="font-size:11px; color:var(--text-faint);">EVAC TIME</div><div class="v" style="font-family:var(--font-d); font-size:18px; font-weight:700;">4:32</div></div>
+          <div class="box"><div class="k" style="font-size:11px; color:var(--text-faint);">PEOPLE REDIRECTED</div><div class="v" style="font-family:var(--font-d); font-size:18px; font-weight:700;">3,240</div></div>
+          <div class="box"><div class="k" style="font-size:11px; color:var(--text-faint);">CONGESTION REDUCTION</div><div class="v" style="font-family:var(--font-d); font-size:18px; font-weight:700; color:var(--green);">−37%</div></div>
+          <div class="box"><div class="k" style="font-size:11px; color:var(--text-faint);">RISK AFTER REROUTE</div><div class="v" style="font-family:var(--font-d); font-size:18px; font-weight:700; color:var(--green);">LOW</div></div>
+        </div>
+        <div style="display:flex; gap:10px; margin-top:6px;">
+          <button class="btn btn-danger" id="activateBtn" onclick="activateRecommendation()">Activate Recommendation</button>
+          <button class="btn btn-ghost">View Alternative Routes</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card route-update-card" style="margin-bottom:20px;" id="routeUpdateCard">
+    <span class="pill pill-cyan">ROUTE UPDATED</span>
+    <span style="font-size:13px; color:var(--text-dim);">CCTV detected congestion near Exit C. CrowdSense AI generated a new route.</span>
+    <div class="route-path"><span class="old">Zone 4 → Exit C</span><span style="color:var(--text-faint);">→</span><span class="new">Zone 4 → Zone 2 → Exit E2</span></div>
+  </div>
+
+  <div class="card">
+    <div class="section-title"><h2 style="font-size:16px;">Response Coordination</h2></div>
+    <div class="coord-grid">
+      <div class="coord-item"><div class="k">Police</div><div class="v" style="color:var(--green);">Assigned</div></div>
+      <div class="coord-item"><div class="k">Medical Team</div><div class="v" style="color:var(--cyan);">Dispatched</div></div>
+      <div class="coord-item"><div class="k">Ambulance</div><div class="v" style="color:var(--green);">Route Clear</div></div>
+      <div class="coord-item"><div class="k">Security</div><div class="v" style="color:var(--orange);">Redirecting Crowd</div></div>
+      <div class="coord-item"><div class="k">PA Instructions</div><div class="v" style="color:var(--green);">Ready</div></div>
+      <div class="coord-item"><div class="k">Digital Arrow Boards</div><div class="v" style="color:var(--green);">Updated</div></div>
+    </div>
+    <div class="disclaimer-strip">CrowdSense acts as a coordination layer over physical safety infrastructure — reducing inflow, creating space, guiding crowds toward available exits, and coordinating police and medical teams. It does not replace responders on the ground.</div>
+  </div>
+
+  <div class="card" style="margin:20px 0;">
+    <div class="section-title"><h2 style="font-size:16px;">How the Dynamic Evacuation Pipeline Works</h2><span class="sub">From raw signal to physical response, in seconds</span></div>
+    <div class="pipeline">
+      <div class="pipe-step"><div class="pipe-num">1</div><div class="pipe-body"><h5>CCTV / night vision / drone</h5><p>Continuously observe where people are, how dense each zone is, and which direction they're moving.</p></div></div>
+      <div class="pipe-step"><div class="pipe-num">2</div><div class="pipe-body"><h5>IoT sensors</h5><p>Add environmental conditions and, where applicable, occupancy and density data per zone.</p></div></div>
+      <div class="pipe-step"><div class="pipe-num">3</div><div class="pipe-body"><h5>Command &amp; Control Centre</h5><p>CrowdSense combines all sources and identifies the zone that's becoming high-risk.</p></div></div>
+      <div class="pipe-step"><div class="pipe-num">4</div><div class="pipe-body"><h5>Risk Engine</h5><p>Determines which zone is dangerous, which exits are available, and which route is safest right now.</p></div></div>
+      <div class="pipe-step"><div class="pipe-num">5</div><div class="pipe-body"><h5>Digital arrow boards + LED/VMS</h5><p>The displayed direction updates automatically.</p>
+        <div class="pipe-board"><span style="color:var(--red);">EXIT A → ✕ BLOCKED</span><span style="color:var(--green);">EXIT B → USE THIS ROUTE →</span></div></div></div>
+      <div class="pipe-step"><div class="pipe-num">6</div><div class="pipe-body"><h5>PA speakers</h5><p>Give matching voice instructions: <i>"Please move calmly towards Exit B. Do not move towards Zone A."</i></p></div></div>
+      <div class="pipe-step"><div class="pipe-num">7</div><div class="pipe-body"><h5>Smart barricades / temporary barriers</h5><p>Physically redirect the flow and keep people out of the dangerous zone.</p></div></div>
+      <div class="pipe-step"><div class="pipe-num">8</div><div class="pipe-body"><h5>Access-control barriers</h5><p>Stop new people from entering an already overloaded zone.</p></div></div>
+      <div class="pipe-step"><div class="pipe-num">9</div><div class="pipe-body"><h5>Dedicated emergency corridor</h5><p>Keeps a clear path open for police, medical teams, fire services and ambulances.</p></div></div>
+      <div class="pipe-step"><div class="pipe-num">10</div><div class="pipe-body"><h5>Smart lighting</h5><p>Illuminates the currently selected evacuation path, especially in low-light conditions.</p></div></div>
+      <div class="pipe-step"><div class="pipe-num">11</div><div class="pipe-body"><h5>Emergency exits</h5><p>The actual physical escape points that the system directs people towards.</p></div></div>
+      <div class="pipe-step"><div class="pipe-num">12</div><div class="pipe-body"><h5>Assembly points</h5><p>Once clear of danger, people are guided to predefined safe assembly areas rather than forming a new crowd near the exit.</p></div></div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:60px;">
+    <div class="section-title"><h2 style="font-size:16px;">Single-Point Coordination Channel</h2><span class="sub">Police · medical · ambulance · organizers · evacuation team · authorities — one shared feed</span></div>
+    <div class="comms-channel" id="commsChannel"></div>
+  </div>
+</div>
+</section>
+
+<!-- ============ POST-INCIDENT ============ -->
+<section class="view" id="view-post">
+<div class="container">
+  <div class="page-head" style="padding-bottom:14px;">
+    <div class="eyebrow">PHASE 04 · AFTER THE EVENT</div>
+    <h1>Post-Incident Intelligence</h1>
+    <p>Understand what happened. Learn why. Improve the next event.</p>
+  </div>
+
+  <div class="card">
+    <div class="section-title"><h2 style="font-size:16px;">Incident Timeline</h2><span class="sub">Click a point for detail</span></div>
+    <div class="timeline" id="incidentTimeline"></div>
+    <div class="card tl-detail" id="tlDetail" style="background:var(--surface-2);"></div>
+  </div>
+
+  <div class="card" style="margin:20px 0;">
+    <div class="section-title"><h2 style="font-size:16px;">AI Incident Summary — What Happened?</h2></div>
+    <p style="margin-top:10px; color:var(--text); font-size:14.5px;">The incident originated near Gate 3 following rapid crowd accumulation. Increased density and restricted movement caused congestion to propagate toward Zone B, triggering an AI-recommended reroute and coordinated response.</p>
+  </div>
+
+  <div class="root-cause-grid">
+    <div class="card rc-card"><div class="k">PRIMARY CAUSE</div><div class="v">Rapid crowd accumulation</div></div>
+    <div class="card rc-card"><div class="k">CONTRIBUTING FACTOR</div><div class="v">Restricted movement</div></div>
+    <div class="card rc-card"><div class="k">BOTTLENECK</div><div class="v">Gate 3</div></div>
+    <div class="card rc-card"><div class="k">WARNING DETECTION</div><div class="v">4 min before critical state</div></div>
+    <div class="card rc-card"><div class="k">RESPONSE TIME</div><div class="v">2 min</div></div>
+    <div class="card rc-card"><div class="k">EVACUATION TIME</div><div class="v">7 min</div></div>
+  </div>
+
+  <div class="chart-row">
+    <div class="card chart-card">
+      <h4 style="font-size:14px;">Crowd Density Over Time</h4>
+      <svg viewBox="0 0 300 140" preserveAspectRatio="none"><polyline points="0,110 40,100 80,90 120,60 160,30 200,20 240,40 280,55" fill="none" stroke="#ff4f66" stroke-width="2.5"/><polyline points="0,110 40,100 80,90 120,60 160,30 200,20 240,40 280,55" fill="url(#g1)" stroke="none"/><defs><linearGradient id="g1" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#ff4f66" stop-opacity="0.25"/><stop offset="100%" stop-color="#ff4f66" stop-opacity="0"/></linearGradient></defs></svg>
+    </div>
+    <div class="card chart-card">
+      <h4 style="font-size:14px;">Risk Score Over Time</h4>
+      <svg viewBox="0 0 300 140" preserveAspectRatio="none"><polyline points="0,120 40,115 80,100 120,70 160,35 200,25 240,50 280,80" fill="none" stroke="#ffa63f" stroke-width="2.5"/></svg>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="section-title"><h2 style="font-size:16px;">AI Recommendations for Future Events</h2></div>
+    <ul class="rec-list">
+      <li><span class="n">1</span>Increase capacity at Gate 3</li>
+      <li><span class="n">2</span>Add additional monitoring coverage near Zone B</li>
+      <li><span class="n">3</span>Introduce one-way pedestrian flow near the bottleneck</li>
+      <li><span class="n">4</span>Pre-position responders near Exit E2</li>
+      <li><span class="n">5</span>Increase emergency signage across the venue</li>
+      <li><span class="n">6</span>Run additional what-if simulations before next event</li>
+    </ul>
+    <div style="display:flex; gap:10px; margin-top:20px;">
+      <button class="btn btn-primary" onclick="showToast('Report generated','Full incident report compiled and ready to view.')">Generate Full Incident Report</button>
+      <button class="btn btn-ghost" onclick="showToast('Export started','Analysis is being exported as PDF.')">Export Analysis</button>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- ============ COMMAND CENTER ============ -->
+<section class="view" id="view-cc">
+<div class="container">
+  <div class="page-head" style="padding-bottom:14px;">
+    <div class="eyebrow">UNIFIED VIEW</div>
+    <h1>Command Center</h1>
+    <p>Every stage of the crowd-safety lifecycle, in one control room.</p>
+  </div>
+
+  <div class="kpi-row">
+    <div class="card kpi-card"><div class="stat-label">CURRENT CROWD</div><div class="stat-num">25,430</div></div>
+    <div class="card kpi-card"><div class="stat-label">RISK SCORE</div><div class="stat-num" style="color:var(--orange);">68</div></div>
+    <div class="card kpi-card"><div class="stat-label">ACTIVE ALERTS</div><div class="stat-num" style="color:var(--red);">4</div></div>
+    <div class="card kpi-card"><div class="stat-label">MONITORING COVERAGE</div><div class="stat-num" style="color:var(--green);">96%</div></div>
+    <div class="card kpi-card"><div class="stat-label">AVAILABLE EXITS</div><div class="stat-num">7/8</div></div>
+    <div class="card kpi-card"><div class="stat-label">RESPONSE TEAMS</div><div class="stat-num">12</div></div>
+  </div>
+
+  <div class="cc-grid">
+    <div class="venue-wrap">
+      <svg viewBox="0 0 600 380" xmlns="http://www.w3.org/2000/svg">
+        <rect width="600" height="380" fill="#0a1120"/>
+        <ellipse cx="230" cy="260" rx="120" ry="90" fill="url(#hotA)"/>
+        <ellipse cx="380" cy="140" rx="110" ry="80" fill="url(#hotB)"/>
+        <ellipse cx="120" cy="120" rx="100" ry="75" fill="url(#hotC)"/>
+        <text x="16" y="20" font-family="IBM Plex Mono" font-size="9" fill="#8fa1c2">COMMAND VIEW · ALL SYSTEMS</text>
+      </svg>
+    </div>
+    <div class="cc-panels">
+      <div class="card"><h4 style="font-size:14px;">AI Alerts</h4><div class="cc-mini-list"><div class="cc-mini-row"><span>Zone 4 density rising</span><span class="pill pill-red">Critical</span></div><div class="cc-mini-row"><span>Gate B congestion</span><span class="pill pill-orange">Watch</span></div></div></div>
+      <div class="card"><h4 style="font-size:14px;">Evacuation Status</h4><div class="cc-mini-list"><div class="cc-mini-row"><span>Zone 4 reroute</span><span class="pill pill-cyan">Active</span></div></div></div>
+      <div class="card"><h4 style="font-size:14px;">Responder Status</h4><div class="cc-mini-list"><div class="cc-mini-row"><span>Medical team 2</span><span class="pill pill-green">Dispatched</span></div><div class="cc-mini-row"><span>Police unit 4</span><span class="pill pill-green">On site</span></div></div></div>
+    </div>
+  </div>
+</div>
+</section>
+
+<div class="toast-wrap" id="toastWrap"></div>
+
+<script>
+/* ---------- nav ---------- */
+function showView(id){
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  document.getElementById('view-'+id).classList.add('active');
+  document.querySelectorAll('.nav-links button').forEach(b=>b.classList.toggle('active', b.dataset.view===id));
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+
+/* ---------- toast ---------- */
+function showToast(title, body){
+  const wrap = document.getElementById('toastWrap');
+  const t = document.createElement('div');
+  t.className='toast';
+  t.innerHTML = `<b>${title}</b>${body}`;
+  wrap.appendChild(t);
+  setTimeout(()=>{ t.style.opacity='0'; t.style.transition='.4s'; setTimeout(()=>t.remove(),400); }, 4200);
+}
+
+/* ---------- landing: command bar + agent log ---------- */
+function timeNow(){ const d=new Date(); return d.toTimeString().slice(0,8); }
+setInterval(()=>{ const el=document.getElementById('cmdClock'); if(el) el.textContent = timeNow(); }, 1000);
+
+const agentLines = [
+  {tag:'IOT', warn:false, text:'Zone A occupancy steady at 78% of safe capacity.'},
+  {tag:'DRONE', warn:true, text:'Density near Gate 3 up 6% in the last 3 minutes.'},
+  {tag:'SOUND', warn:false, text:'Ambient audio nominal across all monitored zones.'},
+  {tag:'CCTV', warn:false, text:'Portable tower 4 recalibrated after wind gust — feed stable.'},
+  {tag:'WEATHER', warn:false, text:'No precipitation expected before event close.'},
+  {tag:'APP', warn:true, text:'New citizen report received — Zone C, medical.'},
+];
+function addAgentLine(){
+  const log = document.getElementById('agentLog');
+  if(!log) return;
+  const l = agentLines[Math.floor(Math.random()*agentLines.length)];
+  const row = document.createElement('div');
+  row.className = 'line'+(l.warn?' warn':'');
+  row.innerHTML = `<span class="tag">${l.tag}</span><p>${l.text}</p>`;
+  log.appendChild(row);
+  log.scrollTop = log.scrollHeight;
+  while(log.children.length>7) log.removeChild(log.firstChild);
+}
+setInterval(addAgentLine, 6500);
+
+/* ---------- plan: simulation ---------- */
+function pickScenario(el, text){
+  document.querySelectorAll('.sim-scenario-chip').forEach(c=>c.classList.remove('selected'));
+  el.classList.add('selected');
+  document.getElementById('scenarioInput').value = text;
+}
+function runSimulation(){
+  const val = document.getElementById('scenarioInput').value.trim();
+  if(!val){ showToast('Describe a scenario','Enter or select a what-if scenario first.'); return; }
+  document.getElementById('simResult').classList.add('show');
+  document.getElementById('simResult').scrollIntoView({behavior:'smooth', block:'nearest'});
+  showToast('Simulation complete', 'AI generated a recommendation for: '+val);
+}
+
+/* ---------- monitor: camera grid ---------- */
+const camLabels = ['GATE-1','GATE-2','GATE-3','STAGE-L','STAGE-R','ZONE-A1','ZONE-A2','ZONE-B1','ZONE-B2','EXIT-E1','EXIT-E2','MED-PT'];
+const camGrid = document.getElementById('camGrid');
+camLabels.forEach((l,i)=>{
+  const offline = i===5;
+  const tile = document.createElement('div');
+  tile.className='cam-tile';
+  tile.innerHTML = `<div class="noise"></div><div class="rec">${offline? '○ OFFLINE':'● REC'}</div><div class="label">${l}</div>`;
+  if(offline) tile.style.opacity='0.35';
+  camGrid.appendChild(tile);
+});
+
+/* ---------- monitor: live feed ---------- */
+const feedPool = [
+  {sev:'red', title:'UNUSUAL MOVEMENT DETECTED', loc:'Zone 4', conf:'92%', rec:'Reduce further inflow and monitor adjacent zones.', count:'3,420', density:'5.1/m²', risk:81, dispatch:true},
+  {sev:'orange', title:'Increasing crowd density', loc:'Zone 4', conf:'88%', rec:'Flag zone for AI evacuation engine.', count:'3,180', density:'4.4/m²', risk:70, dispatch:false},
+  {sev:'orange', title:'Exit congestion detected', loc:'Gate B', conf:'85%', rec:'Open secondary route via Zone 2.', count:'1,960', density:'3.9/m²', risk:66, dispatch:false},
+  {sev:'green', title:'Zone 2 stable', loc:'Zone 2', conf:'97%', rec:'No action needed.', count:'2,240', density:'2.1/m²', risk:28, dispatch:false},
+  {sev:'red', title:'Crowd pressure increasing', loc:'Zone B', conf:'90%', rec:'Prepare inflow reduction at Gate 3.', count:'2,890', density:'4.8/m²', risk:77, dispatch:true},
+  {sev:'orange', title:'Sudden movement detected', loc:'Zone A2', conf:'79%', rec:'Continue monitoring — below action threshold.', count:'1,510', density:'3.2/m²', risk:54, dispatch:false},
+];
+const feedList = document.getElementById('feedList');
+const logBody = document.getElementById('logTableBody');
+function timeNow(){ const d=new Date(); return d.toTimeString().slice(0,8); }
+function addFeedItem(){
+  const f = feedPool[Math.floor(Math.random()*feedPool.length)];
+  const colors = {red:'var(--red)', orange:'var(--orange)', green:'var(--green)'};
+  const now = timeNow();
+  const el = document.createElement('div');
+  el.className='feed-item';
+  el.innerHTML = `<div class="ftime">${now}</div><div class="fdot" style="background:${colors[f.sev]}"></div>
+    <div class="fbody"><div class="ftitle">${f.sev==='green'?'✓':'⚠'} ${f.title}</div>
+    <div class="fmeta">${f.loc} · Confidence: ${f.conf}</div><div class="frec">${f.rec}</div></div>`;
+  feedList.prepend(el);
+  while(feedList.children.length>8) feedList.removeChild(feedList.lastChild);
+
+  if(logBody){
+    const statusHtml = f.dispatch ? `<span class="pill pill-red">FIELD RESPONDER ALERTED</span>` : `<span class="pill pill-cyan">MONITORING</span>`;
+    const riskColor = f.risk>75?'var(--red)':f.risk>50?'var(--orange)':'var(--green)';
+    const row = document.createElement('tr');
+    row.innerHTML = `<td>${now}</td><td class="zone">${f.loc}</td><td>${f.count}</td><td>${f.density}</td><td>${f.title}</td><td style="color:${riskColor}; font-family:var(--font-m);">${f.risk}</td><td>${statusHtml}</td>`;
+    logBody.prepend(row);
+    while(logBody.children.length>7) logBody.removeChild(logBody.lastChild);
+  }
+}
+for(let i=0;i<5;i++) addFeedItem();
+setInterval(addFeedItem, 7000);
+
+/* live clock + risk score drift */
+let riskVal = 78;
+setInterval(()=>{
+  document.getElementById('liveClock').textContent = timeNow();
+  riskVal += (Math.random()*6-3);
+  riskVal = Math.max(40, Math.min(96, riskVal));
+  document.getElementById('riskNum').textContent = Math.round(riskVal);
+  const ring = document.getElementById('riskRing');
+  const offset = 452 - (452*riskVal/100);
+  ring.style.strokeDashoffset = offset;
+  ring.setAttribute('stroke', riskVal>75?'#ff4f66':riskVal>50?'#ffa63f':'#2ad99e');
+}, 3000);
+
+/* environmental */
+const envOpen = [
+  {l:'CROWD DENSITY', v:'4.2/m²'}, {l:'MOVEMENT INDEX', v:'0.71'}, {l:'PRESSURE', v:'Moderate'},
+  {l:'BOTTLENECK RISK', v:'High'}, {l:'INFLOW RATE', v:'820/min'}, {l:'EXIT CONGESTION', v:'18%'}
+];
+const envClosed = [
+  {l:'O₂ LEVEL', v:'20.7%'}, {l:'CO₂ LEVEL', v:'612 ppm'}, {l:'SMOKE', v:'None'},
+  {l:'TEMPERATURE', v:'27.4°C'}, {l:'HUMIDITY', v:'58%'}, {l:'VENTILATION', v:'Normal'}
+];
+function renderEnv(list){
+  const row = document.getElementById('envRow');
+  row.innerHTML='';
+  list.forEach(e=>{
+    row.innerHTML += `<div class="card env-card"><div class="ev-label">${e.l}</div><div class="ev-val">${e.v}</div></div>`;
+  });
+}
+function setEnvMode(btn, mode){
+  document.querySelectorAll('.env-toggle button').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  renderEnv(mode==='open'? envOpen: envClosed);
+}
+renderEnv(envOpen);
+
+/* ---------- evacuation: single-point coordination channel ---------- */
+const commsPool = [
+  {agency:'POLICE', color:'var(--blue)', text:'Unit 4 positioned at Zone 2 / Exit E2 corridor.'},
+  {agency:'MEDICAL', color:'var(--green)', text:'Team 2 dispatched to Zone 4, ETA 3 min.'},
+  {agency:'AMBULANCE', color:'var(--red)', text:'Ambulance 1 route confirmed clear via emergency corridor.'},
+  {agency:'ORGANIZERS', color:'var(--cyan)', text:'Stage announcement paused per AI recommendation.'},
+  {agency:'EVAC TEAM', color:'var(--orange)', text:'Barricades at Gate 3 being repositioned to reduce inflow.'},
+  {agency:'AUTHORITIES', color:'var(--text-dim)', text:'District control room acknowledges Zone 4 status — monitoring.'},
+];
+const commsChannel = document.getElementById('commsChannel');
+function addCommsMsg(){
+  if(!commsChannel) return;
+  const m = commsPool[Math.floor(Math.random()*commsPool.length)];
+  const row = document.createElement('div');
+  row.className='comm-msg';
+  row.innerHTML = `<span class="comm-tag" style="color:${m.color}; background:rgba(255,255,255,0.05); border:1px solid var(--border);">${m.agency}</span>
+    <div><div class="txt">${m.text}</div><div class="ts">${timeNow()}</div></div>`;
+  commsChannel.prepend(row);
+  while(commsChannel.children.length>7) commsChannel.removeChild(commsChannel.lastChild);
+}
+for(let i=0;i<5;i++) addCommsMsg();
+setInterval(addCommsMsg, 8000);
+
+function activateRecommendation(){
+  const btn = document.getElementById('activateBtn');
+  btn.disabled = true;
+  btn.textContent = 'Recommendation Activated';
+  showToast('Recommendation activated', 'Digital boards, PA and responder guidance updated.');
+}
+
+/* ---------- post-incident timeline ---------- */
+const tlEvents = [
+  {t:'18:42', l:'Crowd density begins increasing', d:'Zone 4 sensors flag density climbing above the 2.5/m² baseline. AI logs the trend for monitoring.'},
+  {t:'18:47', l:'Unusual movement detected', d:'Camera ZONE-A2 and drone feed flag erratic movement patterns near Zone 4 with 92% confidence.'},
+  {t:'18:49', l:'Risk level → HIGH', d:'Composite AI risk score crosses 75/100, driven primarily by density and movement-pattern factors.'},
+  {t:'18:51', l:'Exit B congestion detected', d:'Outflow sensors at Gate B show a 40% drop in throughput — early bottleneck signature.'},
+  {t:'18:52', l:'AI evacuation recommendation generated', d:'EvacAI proposes rerouting Zone 4 → Zone 2 → Exit E2, estimating a 37% congestion reduction.'},
+  {t:'18:54', l:'Emergency response initiated', d:'Police and medical teams dispatched; PA and digital boards updated with new routing.'},
+  {t:'18:59', l:'Crowd conditions stabilized', d:'Risk score falls back below 40/100; Zone 4 density returns to safe range.'},
+];
+const tlWrap = document.getElementById('incidentTimeline');
+tlEvents.forEach((e,i)=>{
+  const node = document.createElement('div');
+  node.className='tl-node'+(i===2?' active':'');
+  node.innerHTML = `<div class="tl-dot"></div><div class="tl-time">${e.t}</div><div class="tl-label">${e.l}</div>`;
+  node.onclick = ()=>selectTl(i);
+  node.dataset.i=i;
+  tlWrap.appendChild(node);
+});
+function selectTl(i){
+  document.querySelectorAll('.tl-node').forEach(n=>n.classList.toggle('active', +n.dataset.i===i));
+  const e = tlEvents[i];
+  document.getElementById('tlDetail').innerHTML = `<b style="font-family:var(--font-m); font-size:12px; color:var(--cyan);">${e.t} · ${e.l.toUpperCase()}</b><p style="margin-top:8px; color:var(--text-dim);">${e.d}</p>`;
+}
+selectTl(2);
+</script>
+</body>
+</html>
