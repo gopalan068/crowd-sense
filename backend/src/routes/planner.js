@@ -31,7 +31,7 @@ const { generatePlannerNarration } = require('../services/geminiPlannerService')
  * Returns: { narration: string, model: string, source: string, success: boolean }
  */
 router.post('/planner/narrate-report', async (req, res) => {
-  const { bottleneckResults, recommendations, venueName, scenarioLabels } = req.body || {};
+  const { bottleneckResults, recommendations, venueName, scenarioLabels, eventContext } = req.body || {};
 
   if (!bottleneckResults || !recommendations) {
     return res.status(400).json({ error: 'bottleneckResults and recommendations are required' });
@@ -40,6 +40,7 @@ router.post('/planner/narrate-report', async (req, res) => {
   // Build compact, structured prompt payload (avoid sending raw density Float32Arrays)
   const promptPayload = {
     venueName:      venueName || 'Venue Layout',
+    eventContext:   eventContext || {},
     scenariosRun:   scenarioLabels || [],
     bottleneckResults: {
       persistentBottleneckCount:  bottleneckResults.persistentBottlenecks?.length ?? 0,

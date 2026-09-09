@@ -63,7 +63,7 @@ export function createLogger() {
     if (t - _lastRecordT < _intervalSec) return
     _lastRecordT = t
 
-    const grid    = buildGrid(canvasW, canvasH, pxPerMeter, 1.0)
+    const grid    = buildGrid(canvasW, canvasH, pxPerMeter)
     const density = computeDensity(agents, grid, pxPerMeter)
 
     // Find max-density cell index + value

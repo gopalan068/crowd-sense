@@ -223,7 +223,7 @@ export function runScenario(scenarioConfig, venueLayout, onProgress) {
   const layout = cloneLayout(venueLayout)
   applyInitialGateState(layout, scenarioConfig)
 
-  const pxM = layout.scale?.px_per_meter || 25
+  const pxM = layout.scale?.px_per_meter || 13.363
   const canvasW = layout.canvasWidth  || CANVAS_W
   const canvasH = layout.canvasHeight || CANVAS_H
 
@@ -241,8 +241,8 @@ export function runScenario(scenarioConfig, venueLayout, onProgress) {
     }
   }
 
-  // 3. Build grid (reused throughout the run)
-  const grid = buildGrid(canvasW, canvasH, pxM, 1.0)
+  // 3. Build grid (calibrated to 3.5 sq.m per 25px cell)
+  const grid = buildGrid(canvasW, canvasH, pxM)
 
   // 4. Boundary
   const boundary_m = {

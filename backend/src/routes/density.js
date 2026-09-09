@@ -12,6 +12,7 @@ const { updateAndGetTrendSlope, computeRiskScore } = require('../services/riskEn
 const { processZoneAlerts } = require('../services/escalationManager');
 const { recordDensitySnapshot } = require('../services/densityHistoryService');
 const { getWeatherState } = require('../services/weatherService');
+const { handleDensityReading } = require('../services/controlRoomAssistant');
 
 const REQUIRED_FIELDS = [
   'zone_id',
@@ -113,6 +114,9 @@ router.post('/density', async (req, res) => {
   if (io) {
     io.emit('density_update', socketPayload);
   }
+
+  // Notify Control Room Assistant of live reading & check for threshold crossings
+  handleDensityReading(socketPayload, io);
 
   return res.status(200).json({ received: true, processed: socketPayload });
 });

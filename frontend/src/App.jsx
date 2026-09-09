@@ -15,6 +15,8 @@ import ResponderDashboard from './components/ResponderDashboard'
 import CitizenReportView from './components/CitizenReportView'
 import DualPhoneSimulator from './components/DualPhoneSimulator'
 import WeatherControlPanel from './components/WeatherControlPanel'
+import AssistantPushBanner from './components/AssistantPushBanner'
+import AssistantChatPanel from './components/AssistantChatPanel'
 import PlannerPage from './pages/PlannerPage'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || ''
@@ -39,6 +41,7 @@ export default function App() {
   const [socketInstance, setSocketInstance] = useState(null)
   const [weatherState, setWeatherState] = useState(null)
   const [pipelineActive, setPipelineActive] = useState(true)
+  const [assistantInstructions, setAssistantInstructions] = useState([])
   // Per-zone panic confirmation build-up state (from 'panic_confirming' socket event)
   // Shape: { zone_id: { confirmedFrames, requiredFrames, trigger } | null }
   const [panicConfirming, setPanicConfirming] = useState({})
@@ -56,6 +59,12 @@ export default function App() {
         const data = await res.json()
         setAuditLogs(data.logs || [])
         setPlaybookSteps(data.playbook_steps || [])
+        if (data.assistant_instructions && data.assistant_instructions.length > 0) {
+          setAssistantInstructions((prev) => {
+            if (prev.length === 0) return data.assistant_instructions.slice(0, 3)
+            return prev
+          })
+        }
       }
     } catch (err) {
       console.error('[Frontend] Error fetching audit logs:', err)
@@ -181,6 +190,14 @@ export default function App() {
 
     socket.on('mock_dispatch_toast', (toast) => {
       setMockToasts((prev) => [toast, ...prev.slice(0, 4)])
+    })
+
+    // Control Room Assistant push instruction listener
+    socket.on('assistant_instruction', (instruction) => {
+      setAssistantInstructions((prev) => {
+        const exists = prev.some((i) => i.instructionId === instruction.instructionId)
+        return exists ? prev : [instruction, ...prev.slice(0, 4)]
+      })
     })
 
     // Panic confirmation build-up: backend has seen isPanic but not yet reached
@@ -355,6 +372,16 @@ export default function App() {
         {/* Tab 1: Live Operations */}
         {activeTab === 'LIVE' && (
           <div className="space-y-6">
+            {/* Automatic Push Guidance Banner (Assistant) */}
+            <AssistantPushBanner
+              instructions={assistantInstructions}
+              onDismiss={(id) =>
+                setAssistantInstructions((prev) =>
+                  prev.filter((i) => (i.instructionId || i) !== id)
+                )
+              }
+            />
+
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <div className="space-y-3">
                 <ZonePanel
@@ -412,9 +439,13 @@ export default function App() {
               </div>
             </div>
 
+            {/* Q&A Control Room Assistant Follow-up Panel */}
+            <AssistantChatPanel backendUrl={BACKEND_URL} />
+
             <AuditLogView
               logs={auditLogs}
               playbookSteps={playbookSteps}
+              assistantInstructions={assistantInstructions}
               onRefresh={fetchAuditLogs}
             />
           </div>

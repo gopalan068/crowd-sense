@@ -482,9 +482,9 @@ export default function Venue25DViewer({
       maxY = Math.max(...allPts.map(p => p.y))
     }
 
-    // Grid cell size: 25px (= 1 meter / 1 grid square)
-    const pxM = layout.scale?.px_per_meter || 25
-    const gridCell = pxM
+    // Grid cell size: 25px (= √3.5 meters ≈ 1.871m / 3.5 sq.m per square)
+    const pxM = layout.scale?.px_per_meter || 13.363
+    const gridCell = 25 // 1 grid square = 3.5 sq.m
     // Exactly 2 squares margin over the venue boundary
     const margin = 2 * gridCell // 50px on each side
 

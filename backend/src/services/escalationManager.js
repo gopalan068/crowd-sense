@@ -15,6 +15,7 @@ const {
   escalateAlertInDb,
   updateResponderStatus,
 } = require('../db/database');
+const { handleAlertEvent } = require('./controlRoomAssistant');
 
 
 const activeTimers = new Map();
@@ -150,6 +151,9 @@ async function processZoneAlerts(riskResult, cvPayload, io) {
         io.emit('alert_triggered', alertEntry);
         io.emit('alert_panic', alertEntry);
 
+        // Notify Control Room Assistant (push guidance instruction)
+        handleAlertEvent('alert_panic', alertEntry, io);
+
         // Determine dispatch message based on trigger type
         const triggerLabel = exodus_signature
           ? 'FIRE EVACUATION / MASS EXODUS DETECTED'
@@ -206,6 +210,7 @@ async function processZoneAlerts(riskResult, cvPayload, io) {
 
       if (io) {
         io.emit('alert_triggered', alertEntry);
+        handleAlertEvent('alert_triggered', alertEntry, io);
       }
 
       const timer = setTimeout(async () => {
@@ -243,6 +248,7 @@ async function handleAutoEscalation(alertId, zoneId, io) {
 
       if (io) {
         io.emit('alert_escalated', updatedAlert);
+        handleAlertEvent('alert_escalated', updatedAlert, io);
       }
     }
   } catch (err) {
@@ -296,6 +302,7 @@ async function registerCustomAlert(alertEntry, io) {
   }
   if (io) {
     io.emit('alert_triggered', alertEntry);
+    handleAlertEvent('alert_triggered', alertEntry, io);
   }
   return alertEntry;
 }

@@ -23,6 +23,7 @@ const reportsRouter = require('./routes/reports');
 const venuesRouter = require('./routes/venues');
 const plannerRouter = require('./routes/planner');
 const pipelineRouter = require('./routes/pipeline');
+const assistantRouter = require('./routes/assistant');
 const { seedDemoVenue } = require('../scripts/seedDemoVenue');
 const { sendEmergencyNotification } = require('./services/notifications');
 
@@ -81,6 +82,7 @@ app.use('/api', reportsRouter);
 app.use('/api', venuesRouter);
 app.use('/api', plannerRouter);
 app.use('/api', pipelineRouter);
+app.use('/api', assistantRouter);
 
 // --- Dual Video Stream Proxy (Port 5001 -> Port 4000) ---
 // Seamlessly proxies both CCTV (Zone 1) and Drone Overhead (Zone 2) MJPEG video feeds in production

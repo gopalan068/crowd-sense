@@ -45,10 +45,10 @@ const [YELLOW_T, ORANGE_T, RED_T] = FRUIN_THRESHOLDS   // 1.08, 2.15, 3.8 p/m²
  *   }
  */
 export function analyzeSingleRun(timeSeries, layout) {
-  const pxM     = layout?.scale?.px_per_meter || 25
+  const pxM     = layout?.scale?.px_per_meter || 13.363
   const canvasW = layout?.canvasWidth  || 800
   const canvasH = layout?.canvasHeight || 850
-  const grid    = buildGrid(canvasW, canvasH, pxM, 1.0)
+  const grid    = buildGrid(canvasW, canvasH, pxM)
   const nCells  = grid.cols * grid.rows
 
   // Use Maps for sparse storage (most cells stay empty)

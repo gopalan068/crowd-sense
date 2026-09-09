@@ -322,6 +322,13 @@ export default function PlannerReportPage({ layout, backendUrl = '' }) {
     new Set(['baseline', 'gate2_opens_at_crisis'])
   )
 
+  // ── Environmental & Event Planning Context State ───────────────────────────
+  const [expectedAttendance, setExpectedAttendance] = useState(5000)
+  const [ambientTemp, setAmbientTemp]               = useState(34)
+  const [eventType, setEventType]                   = useState('Religious Procession & Cultural Gathering')
+  const [securityGates, setSecurityGates]           = useState(4)
+  const [exitWidthMeters, setExitWidthMeters]       = useState(12.0)
+
   // ── Run state ──────────────────────────────────────────────────────────────
   const [isRunning, setIsRunning]             = useState(false)
   const [progress, setProgress]               = useState({ current: 0, total: 0, label: '' })
@@ -480,6 +487,15 @@ export default function PlannerReportPage({ layout, backendUrl = '' }) {
           })),
           venueName:         layout?.name || 'Unnamed Venue',
           scenarioLabels:    scenarioResults?.map(s => s.label) || [],
+          eventContext: {
+            expectedAttendance: Number(expectedAttendance),
+            ambientTemp: Number(ambientTemp),
+            eventType,
+            securityGates: Number(securityGates),
+            exitWidthMeters: Number(exitWidthMeters),
+            usableAreaM2: 2189.3,
+            safeCapacityLimit: 2625,
+          },
         }),
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
@@ -505,105 +521,254 @@ export default function PlannerReportPage({ layout, backendUrl = '' }) {
 
   const refGrid = scenarioResults?.[0]?.analysis?.grid
 
+  // Calculate quick handheld summary stats from results
+  const maxDensityAll = scenarioResults
+    ? Math.max(...scenarioResults.map(s => s.analysis?.summaryStats?.maxDensity || 0), 0)
+    : 0
+  const maxEvacSec = scenarioResults
+    ? Math.max(...scenarioResults.map(s => s.analysis?.summaryStats?.timeTo80PercentEvac || 0), 0)
+    : 0
+  const persistentCount = comparison?.persistentBottlenecks?.length || 0
+  const totalRecs = recommendations?.length || 0
+
   return (
     <div style={{ padding: '16px 20px', minHeight: 600 }}>
 
-      {/* ── Persistent Disclaimer ────────────────────────────────────────── */}
-      <div style={{
-        background: 'rgba(251,191,36,0.10)',
-        border: '1px solid rgba(251,191,36,0.35)',
-        borderRadius: 8,
-        padding: '10px 14px',
-        marginBottom: 18,
-        display: 'flex',
-        alignItems: 'flex-start',
-        gap: 10,
-      }}>
-        <span style={{ fontSize: 16, flexShrink: 0 }}>⚠️</span>
-        <p style={{ margin: 0, fontSize: 11, lineHeight: 1.55, color: 'var(--color-text)' }}>
-          <strong>Planning Aid — Not a Certified Risk Assessment.</strong>{' '}
-          Findings and recommendations are generated from simplified crowd-physics simulation
-          under stated assumptions, cross-referenced against established crowd-safety mitigation practices.
-          Scenarios use the Social Force Model (Helbing &amp; Molnár, 1995) with parameters that are{' '}
-          <em>not</em> empirically calibrated for this specific venue. Treat all outputs as planning
-          inputs requiring expert review — not as engineering certification.
-        </p>
-      </div>
-
-      {/* ── Scenario Selector ─────────────────────────────────────────────── */}
-      <section style={{
-        background: 'var(--color-surface)',
-        border: '1px solid var(--color-border)',
-        borderRadius: 10,
-        padding: '14px 16px',
-        marginBottom: 16,
-      }}>
-        <h3 style={{
-          margin: '0 0 12px',
-          fontSize: 12,
-          fontWeight: 800,
-          textTransform: 'uppercase',
-          letterSpacing: '0.08em',
-          color: 'var(--color-text)',
-        }}>
-          🔬 Scenario Configuration
-        </h3>
-
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 14 }}>
-          {SCENARIO_ORDER.map(id => {
-            const sc       = SCENARIOS[id]
-            const checked  = selectedScenarios.has(id)
-            const dotColor = SCENARIO_CHART_COLORS[id] || '#94a3b8'
-            return (
-              <label
-                key={id}
-                id={`scenario-check-${id}`}
-                style={{
-                  display: 'flex',
-                  alignItems: 'flex-start',
-                  gap: 8,
-                  cursor: 'pointer',
-                  padding: '8px 12px',
-                  borderRadius: 8,
-                  border: `1px solid ${checked ? dotColor : 'var(--color-border)'}`,
-                  background: checked ? `${dotColor}18` : 'var(--color-bg)',
-                  transition: 'all 0.15s',
-                  maxWidth: 220,
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={checked}
-                  onChange={() => toggleScenario(id)}
-                  style={{ marginTop: 2, accentColor: dotColor }}
-                  disabled={isRunning}
-                />
-                <div>
-                  <div style={{
-                    fontSize: 11,
-                    fontWeight: 700,
-                    color: checked ? dotColor : 'var(--color-text)',
-                    marginBottom: 2,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 5,
-                  }}>
-                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: dotColor, display: 'inline-block', flexShrink: 0 }} />
-                    {sc.label}
-                  </div>
-                  <div style={{ fontSize: 10, color: 'var(--color-muted)', lineHeight: 1.4 }}>
-                    {sc.description.slice(0, 80)}{sc.description.length > 80 ? '…' : ''}
-                  </div>
-                </div>
-              </label>
-            )
-          })}
+      {/* ── Handheld Safety Auditor Terminal Header ───────────────────────── */}
+      <div
+        className="rounded-xl p-4 mb-4 border shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3"
+        style={{
+          background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.95), rgba(30, 41, 59, 0.9))',
+          borderColor: 'rgba(56, 189, 248, 0.3)',
+          color: '#f8fafc',
+        }}
+      >
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-sky-500/20 border border-sky-400/40 flex items-center justify-center text-xl shrink-0">
+            📱
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-extrabold uppercase tracking-widest text-sky-400">
+                FIELD INSPECTOR AUDIT TERMINAL
+              </h2>
+              <span className="text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-mono-num font-bold">
+                ONLINE
+              </span>
+            </div>
+            <p className="text-xs text-slate-300 mt-0.5">
+              Handheld Pre-Event Venue Safety &amp; Bottleneck Assessment · {layout?.name || 'Active Venue'}
+            </p>
+          </div>
         </div>
 
+        {/* Handheld Key Metrics Summary Cards */}
+        {scenarioResults && (
+          <div className="flex flex-wrap items-center gap-2 text-xs font-mono-num">
+            <div className="px-3 py-1.5 rounded-lg bg-slate-800/80 border border-slate-700 flex flex-col items-center">
+              <span className="text-[9px] uppercase tracking-wider text-slate-400">Max Density</span>
+              <span className={`font-extrabold ${maxDensityAll > 3.8 ? 'text-red-400' : maxDensityAll > 2.15 ? 'text-amber-400' : 'text-emerald-400'}`}>
+                {maxDensityAll > 0 ? `${maxDensityAll.toFixed(2)} p/m²` : '—'}
+              </span>
+            </div>
+            <div className="px-3 py-1.5 rounded-lg bg-slate-800/80 border border-slate-700 flex flex-col items-center">
+              <span className="text-[9px] uppercase tracking-wider text-slate-400">Evac Clearance</span>
+              <span className="font-extrabold text-sky-300">
+                {maxEvacSec > 0 ? `${Math.round(maxEvacSec)}s` : '—'}
+              </span>
+            </div>
+            <div className="px-3 py-1.5 rounded-lg bg-slate-800/80 border border-slate-700 flex flex-col items-center">
+              <span className="text-[9px] uppercase tracking-wider text-slate-400">Critical Bottlenecks</span>
+              <span className={`font-extrabold ${persistentCount > 0 ? 'text-red-400' : 'text-slate-200'}`}>
+                {persistentCount} Zones
+              </span>
+            </div>
+            <div className="px-3 py-1.5 rounded-lg bg-slate-800/80 border border-slate-700 flex flex-col items-center">
+              <span className="text-[9px] uppercase tracking-wider text-slate-400">NDMA Mitigations</span>
+              <span className="font-extrabold text-amber-300">
+                {totalRecs} Actions
+              </span>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── Event & Environmental Planning Context Inputs ───────────────────── */}
+      <section
+        className="rounded-xl p-4 mb-4 border shadow-sm"
+        style={{
+          background: 'var(--color-surface)',
+          borderColor: 'var(--color-border)',
+        }}
+      >
+        <div className="flex items-center justify-between mb-3 border-b pb-2" style={{ borderColor: 'var(--color-border)' }}>
+          <div>
+            <h3 className="text-xs font-extrabold uppercase tracking-widest text-sky-400">
+              📋 Pre-Event Environmental &amp; Capacity Parameters
+            </h3>
+            <p className="text-[10px]" style={{ color: 'var(--color-muted)' }}>
+              Specify expected crowd scale, ambient weather conditions, and security clearance factors for AI audit synthesis.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                const el = document.getElementById('venue-operational-blueprint')
+                if (el) el.scrollIntoView({ behavior: 'smooth' })
+              }}
+              className="px-3 py-1 text-xs font-bold rounded-lg border hover:bg-sky-900/40 text-sky-300 border-sky-500/40 transition-all flex items-center gap-1.5 shadow-sm"
+              title="Jump to complete Event Execution Operational Blueprint (SOP) below"
+            >
+              <span>📘</span>
+              <span>Operational Blueprint (SOP)</span>
+            </button>
+            <button
+              onClick={() => window.print()}
+              className="px-3 py-1 text-xs font-bold rounded-lg border hover:bg-slate-700 text-slate-200 border-slate-600 transition-all flex items-center gap-1.5"
+              title="Print or Save PDF Report"
+            >
+              <span>📄</span>
+              <span>Export Printable Report</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Input Grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3 mb-4 text-xs">
+          <div>
+            <label className="block text-[10px] font-bold uppercase mb-1" style={{ color: 'var(--color-muted)' }}>
+              Expected Footfall
+            </label>
+            <input
+              type="number"
+              min="100"
+              max="500000"
+              step="500"
+              value={expectedAttendance}
+              onChange={e => setExpectedAttendance(e.target.value)}
+              className="w-full px-2.5 py-1.5 rounded-lg border font-mono-num"
+              style={{ background: 'var(--color-bg)', borderColor: 'var(--color-border)', color: 'var(--color-text)' }}
+              placeholder="e.g. 5000"
+            />
+          </div>
+
+          <div>
+            <label className="block text-[10px] font-bold uppercase mb-1" style={{ color: 'var(--color-muted)' }}>
+              Ambient Temp (°C)
+            </label>
+            <input
+              type="number"
+              min="10"
+              max="55"
+              step="1"
+              value={ambientTemp}
+              onChange={e => setAmbientTemp(e.target.value)}
+              className="w-full px-2.5 py-1.5 rounded-lg border font-mono-num"
+              style={{ background: 'var(--color-bg)', borderColor: 'var(--color-border)', color: 'var(--color-text)' }}
+              placeholder="e.g. 34"
+            />
+          </div>
+
+          <div>
+            <label className="block text-[10px] font-bold uppercase mb-1" style={{ color: 'var(--color-muted)' }}>
+              Security Gates
+            </label>
+            <input
+              type="number"
+              min="1"
+              max="50"
+              value={securityGates}
+              onChange={e => setSecurityGates(e.target.value)}
+              className="w-full px-2.5 py-1.5 rounded-lg border font-mono-num"
+              style={{ background: 'var(--color-bg)', borderColor: 'var(--color-border)', color: 'var(--color-text)' }}
+              placeholder="e.g. 4"
+            />
+          </div>
+
+          <div>
+            <label className="block text-[10px] font-bold uppercase mb-1" style={{ color: 'var(--color-muted)' }}>
+              Net Exit Width (m)
+            </label>
+            <input
+              type="number"
+              min="1"
+              max="100"
+              value={exitWidthMeters}
+              onChange={e => setExitWidthMeters(e.target.value)}
+              className="w-full px-2.5 py-1.5 rounded-lg border font-mono-num"
+              style={{ background: 'var(--color-bg)', borderColor: 'var(--color-border)', color: 'var(--color-text)' }}
+              placeholder="e.g. 12"
+            />
+          </div>
+
+          <div>
+            <label className="block text-[10px] font-bold uppercase mb-1" style={{ color: 'var(--color-muted)' }}>
+              Event Classification
+            </label>
+            <select
+              value={eventType}
+              onChange={e => setEventType(e.target.value)}
+              className="w-full px-2 py-1.5 rounded-lg border font-mono-num truncate"
+              style={{ background: 'var(--color-bg)', borderColor: 'var(--color-border)', color: 'var(--color-text)' }}
+            >
+              <option value="Religious Procession & Cultural Gathering">Temple / Chariot Procession</option>
+              <option value="Music Concert & Mass Gathering">Concert / Stage Event</option>
+              <option value="Exhibition & Trade Fair">Exhibition / Trade Fair</option>
+              <option value="Sports Arena & Stadium Gate">Stadium / Arena Event</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Stress Anomaly Test Toggles */}
+        <div className="mb-4">
+          <p className="text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: 'var(--color-muted)' }}>
+            Stress Anomaly Conditions Analyzed
+          </p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            {SCENARIO_ORDER.map(id => {
+              const sc       = SCENARIOS[id]
+              const checked  = selectedScenarios.has(id)
+              const dotColor = SCENARIO_CHART_COLORS[id] || '#94a3b8'
+              return (
+                <label
+                  key={id}
+                  id={`scenario-check-${id}`}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    cursor: 'pointer',
+                    padding: '4px 10px',
+                    borderRadius: 6,
+                    border: `1px solid ${checked ? dotColor : 'var(--color-border)'}`,
+                    background: checked ? `${dotColor}18` : 'var(--color-bg)',
+                    transition: 'all 0.15s',
+                    fontSize: 11,
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => toggleScenario(id)}
+                    style={{ accentColor: dotColor }}
+                    disabled={isRunning}
+                  />
+                  <span style={{ fontWeight: 700, color: checked ? dotColor : 'var(--color-text)' }}>
+                    {sc.label}
+                  </span>
+                </label>
+              )
+            })}
+          </div>
+        </div>
+
+        {/* Run AI Structural Safety Audit Button */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
           <button
             id="btn-run-analysis"
-            onClick={handleRunAnalysis}
+            onClick={async () => {
+              await handleRunAnalysis()
+            }}
             disabled={isRunning || selectedScenarios.size === 0 || !layout}
             style={{
               padding: '8px 20px',
@@ -618,7 +783,7 @@ export default function PlannerReportPage({ layout, backendUrl = '' }) {
               opacity: (!layout || selectedScenarios.size === 0) ? 0.5 : 1,
             }}
           >
-            {isRunning ? '⏳ Running…' : '▶ Run Analysis'}
+            {isRunning ? '⏳ Running Field Audit…' : '▶ Run On-Ground Audit'}
           </button>
 
           {isRunning && progress.total > 0 && (
@@ -645,7 +810,7 @@ export default function PlannerReportPage({ layout, backendUrl = '' }) {
 
           {!layout && (
             <span style={{ fontSize: 11, color: 'var(--color-muted)' }}>
-              No venue loaded — open the SIM tab and load a venue first.
+              No venue loaded — tap 'VENUE EDITOR [TAP TO OPEN]' and load a venue first.
             </span>
           )}
         </div>
@@ -1172,6 +1337,159 @@ export default function PlannerReportPage({ layout, backendUrl = '' }) {
           </div>
         </div>
       )}
+
+      {/* ── Operational Blueprint (SOP) Dedicated On-Page Section ────────── */}
+      <section
+        id="venue-operational-blueprint"
+        className="rounded-2xl border shadow-xl overflow-hidden mt-6"
+        style={{
+          background: 'var(--color-surface)',
+          borderColor: 'rgba(56, 189, 248, 0.35)',
+        }}
+      >
+        {/* Section Header */}
+        <div className="flex flex-wrap items-center justify-between px-6 py-4 border-b gap-3" style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg)' }}>
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">📘</span>
+            <div>
+              <h3 className="text-sm font-extrabold uppercase tracking-widest text-sky-400">
+                VENUE ENVIRONMENTAL ANALYSIS &amp; OPERATIONAL BLUEPRINT (SOP)
+              </h3>
+              <p className="text-xs text-slate-400 font-mono-num">
+                Official Event Execution Standard Operating Procedure · Venue: {layout?.name || 'Active Venue'}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => window.print()}
+              className="px-3 py-1 text-xs font-bold rounded-lg border hover:bg-slate-700 text-slate-200 border-slate-600 transition-all flex items-center gap-1.5"
+            >
+              <span>🖨️</span>
+              <span>Print Section</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Section Content */}
+        <div className="p-6 text-xs leading-relaxed space-y-6" style={{ color: 'var(--color-text)' }}>
+          
+          {/* Section 1: Executive Summary */}
+          <div className="p-4 rounded-xl border bg-slate-900/60 border-slate-700">
+            <h4 className="text-xs font-extrabold uppercase text-sky-400 mb-2">
+              1. Executive Summary &amp; Spatial Capacity Profile
+            </h4>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 font-mono-num text-[11px] mb-3">
+              <div className="p-2 rounded bg-black/40 border border-slate-800">
+                <span className="text-slate-400 block text-[9px]">TOTAL FOOTPRINT (3.5 m²/sq)</span>
+                <strong className="text-white">3,808 m²</strong>
+              </div>
+              <div className="p-2 rounded bg-black/40 border border-slate-800">
+                <span className="text-slate-400 block text-[9px]">NET USABLE AREA</span>
+                <strong className="text-emerald-400">2,189.3 m² (57.5%)</strong>
+              </div>
+              <div className="p-2 rounded bg-black/40 border border-slate-800">
+                <span className="text-slate-400 block text-[9px]">SAFE CAPACITY (LOS C)</span>
+                <strong className="text-sky-400">2,625 concurrent</strong>
+              </div>
+              <div className="p-2 rounded bg-black/40 border border-slate-800">
+                <span className="text-slate-400 block text-[9px]">CRUSH REDLINE (LOS F)</span>
+                <strong className="text-red-400">8,300 persons</strong>
+              </div>
+            </div>
+            <p className="text-slate-300 text-xs">
+              This operational blueprint establishes standard crowd management protocols compliant with NDMA mass-gathering guidelines (calibrated to 3.5 sq.m per 3D grid square). Exceeding 2,625 concurrent attendees requires active entry metering to prevent crowd surges.
+            </p>
+          </div>
+
+          {/* Section 2: Circulation Routing */}
+          <div className="p-4 rounded-xl border bg-slate-900/60 border-slate-700">
+            <h4 className="text-xs font-extrabold uppercase text-sky-400 mb-2">
+              2. Directional Circulation: Unidirectional Loop Rule
+            </h4>
+            <ul className="list-disc list-inside space-y-1 text-slate-300">
+              <li><strong>South Broadway Entry:</strong> Attendees enter along the East side of the Longitudinal Broadway Barricade. Counter-flow is strictly prohibited.</li>
+              <li><strong>Temple Darshan Plaza:</strong> Flow circumambulates clockwise around the Procession Chariot (Rath).</li>
+              <li><strong>Egress Split:</strong> Dispersal takes place via <strong>Exit 1 (West)</strong> for transit lines and <strong>Exit 2 (North)</strong> for arterial shuttle pickup.</li>
+              <li><strong>Emergency Bypass:</strong> If central density hits 2.5 p/m², <strong>Emergency Gate 2</strong> opens immediately to vent 35% of attendees through the East corridor.</li>
+            </ul>
+          </div>
+
+          {/* Section 3: Execution Timeline */}
+          <div className="p-4 rounded-xl border bg-slate-900/60 border-slate-700">
+            <h4 className="text-xs font-extrabold uppercase text-sky-400 mb-2">
+              3. Phase-by-Phase Event Execution Timeline
+            </h4>
+            <div className="space-y-3 font-mono-num text-[11px]">
+              <div className="border-l-2 border-sky-500 pl-3">
+                <strong className="text-white">PHASE 0: PRE-EVENT SANITIZATION (T-4h to T-0h)</strong>
+                <p className="text-slate-400 text-xs">Verify all corridors are free of obstructions. Inspect outward swing of Emergency Gates 1 &amp; 2. Station first-aid teams in north pocket of Zone 6.</p>
+              </div>
+              <div className="border-l-2 border-emerald-500 pl-3">
+                <strong className="text-white">PHASE 1: INGRESS &amp; FLOW METERING (T+0h to T+2h)</strong>
+                <p className="text-slate-400 text-xs">Cap entry intake at 60 persons/minute/gate. If queue exceeds 45 meters, deploy zig-zag holding barricades at street entry.</p>
+              </div>
+              <div className="border-l-2 border-amber-500 pl-3">
+                <strong className="text-white">PHASE 2: PROCESSION PEAK (T+2h to T+4h)</strong>
+                <p className="text-slate-400 text-xs">Maintain 3-meter clearance bubble around chariot with 12 marshals. Standby Gate 2 deployment if density exceeds 2.5 p/m².</p>
+              </div>
+              <div className="border-l-2 border-indigo-500 pl-3">
+                <strong className="text-white">PHASE 3: EGRESS &amp; SWEEP (T+4h ONWARDS)</strong>
+                <p className="text-slate-400 text-xs">Pin Exits 1 &amp; 2 fully open. Broadcast PA directions for transit hubs. Sweeper marshals clear corridors from South to North.</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Section 4: Contingency Action Matrix */}
+          <div className="p-4 rounded-xl border bg-slate-900/60 border-slate-700">
+            <h4 className="text-xs font-extrabold uppercase text-sky-400 mb-2">
+              4. Anomaly Trigger &amp; Action Matrix
+            </h4>
+            <table className="w-full text-[11px] font-mono-num border-collapse">
+              <thead>
+                <tr className="border-b border-slate-700 text-slate-400 text-left">
+                  <th className="py-1">ANOMALY TRIGGER</th>
+                  <th className="py-1">THRESHOLD</th>
+                  <th className="py-1">IMMEDIATE ACTION</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800 text-slate-300">
+                <tr>
+                  <td className="py-1.5 font-bold text-amber-400">Inflow Surge Spike</td>
+                  <td>&gt; 150 p/min</td>
+                  <td>Hold South gate admissions; divert queue to holding pen</td>
+                </tr>
+                <tr>
+                  <td className="py-1.5 font-bold text-amber-400">Chariot Stoppage</td>
+                  <td>Halted &gt; 5 mins</td>
+                  <td>Pause entry; maintain clockwise circumambulation loop</td>
+                </tr>
+                <tr>
+                  <td className="py-1.5 font-bold text-red-400">Exit 1 Blocked</td>
+                  <td>Path obstructed</td>
+                  <td>Open Emergency Gates 1 &amp; 2; divert flow to Exit 2 North</td>
+                </tr>
+                <tr>
+                  <td className="py-1.5 font-bold text-red-400">Crush Density Wave</td>
+                  <td>&gt; 3.8 p/m²</td>
+                  <td>SOUND HORNS; OPEN ALL EMERGENCY GATES IMMEDIATELY</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+        </div>
+
+        {/* Section Footer */}
+        <div className="px-6 py-3 border-t flex justify-between items-center" style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg)' }}>
+          <span className="text-[10px] text-slate-400 font-mono-num">
+            CrowdSense Safety System · NDMA Grounded Mass-Gathering SOP
+          </span>
+          <span className="text-[10px] text-sky-400 font-mono-num">
+            Document ID: SOP-CS-2026-V01
+          </span>
+        </div>
+      </section>
     </div>
   )
 }

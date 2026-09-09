@@ -199,7 +199,7 @@ export function matchRules(analysisBundle, venueLayout) {
   const seen = new Set()  // deduplicate by ruleId + cellIdx
 
   const totalScenarios = scenarioResults.length
-  const pxM = venueLayout?.scale?.px_per_meter || 25
+  const pxM = venueLayout?.scale?.px_per_meter || 13.363
 
   // --- Build zone contexts from analysis results ---
 

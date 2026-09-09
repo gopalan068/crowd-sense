@@ -6,7 +6,7 @@
 
 const express = require('express');
 const router = express.Router();
-const { getAuditLogs, getAlertById, getAllPlaybookStepLogsInDb } = require('../db/database');
+const { getAuditLogs, getAlertById, getAllPlaybookStepLogsInDb, getAssistantInstructions } = require('../db/database');
 const { acknowledgeAlert, updateAlertStatus, getActiveAlerts } = require('../services/escalationManager');
 const {
   getPlaybookForAlert,
@@ -19,14 +19,19 @@ const { getWeatherState } = require('../services/weatherService');
 
 /**
  * GET /api/audit-log
- * Returns timestamped audit log records and completed playbook steps.
+ * Returns timestamped audit log records, completed playbook steps, and assistant guidance instructions.
  */
 router.get('/audit-log', async (req, res) => {
   try {
     const limit = parseInt(req.query.limit || '50', 10);
     const logs = await getAuditLogs(limit);
     const playbookSteps = await getAllPlaybookStepLogsInDb(limit);
-    return res.status(200).json({ logs, playbook_steps: playbookSteps });
+    const assistantInstructions = await getAssistantInstructions(limit);
+    return res.status(200).json({
+      logs,
+      playbook_steps: playbookSteps,
+      assistant_instructions: assistantInstructions,
+    });
   } catch (err) {
     console.error('[Route] GET /api/audit-log error:', err);
     return res.status(500).json({ error: 'Failed to fetch audit logs' });

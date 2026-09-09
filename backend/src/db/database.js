@@ -103,6 +103,21 @@ db.serialize(() => {
       updated_at TEXT NOT NULL
     )
   `);
+
+  // ── Control Room Assistant: Push Guidance Audit Log ──────────────────────────
+  db.run(`
+    CREATE TABLE IF NOT EXISTS assistant_instructions (
+      instruction_id TEXT PRIMARY KEY,
+      triggering_alert_id TEXT,
+      zone_id TEXT NOT NULL,
+      text TEXT NOT NULL,
+      severity TEXT NOT NULL,
+      event_type TEXT NOT NULL,
+      generated_at TEXT NOT NULL,
+      source TEXT
+    )
+  `);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_assistant_instructions_ts ON assistant_instructions (generated_at DESC)`, () => {});
 });
 
 // ─── Venue CRUD helpers (callback-style, consistent with rest of module) ─────
@@ -577,6 +592,57 @@ function getAllPlaybookStepLogsInDb(limit = 100) {
   });
 }
 
+/**
+ * Insert a generated Control Room Assistant instruction into audit log.
+ * @param {Object} instruction
+ * @returns {Promise<Object>}
+ */
+function insertAssistantInstruction(instruction) {
+  return new Promise((resolve, reject) => {
+    const sql = `
+      INSERT INTO assistant_instructions (
+        instruction_id, triggering_alert_id, zone_id, text, severity, event_type, generated_at, source
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `;
+    const params = [
+      instruction.instruction_id,
+      instruction.triggering_alert_id || null,
+      instruction.zone_id,
+      instruction.text,
+      instruction.severity || 'yellow',
+      instruction.event_type || 'alert_triggered',
+      instruction.generated_at || new Date().toISOString(),
+      instruction.source || 'groq_llm',
+    ];
+    db.run(sql, params, function (err) {
+      if (err) {
+        console.error('[DB] Error inserting assistant instruction:', err);
+        return reject(err);
+      }
+      resolve(instruction);
+    });
+  });
+}
+
+/**
+ * Retrieve recent assistant instructions.
+ * @param {number} limit
+ * @returns {Promise<Array<Object>>}
+ */
+function getAssistantInstructions(limit = 50) {
+  return new Promise((resolve, reject) => {
+    const sql = `
+      SELECT * FROM assistant_instructions
+      ORDER BY generated_at DESC
+      LIMIT ?
+    `;
+    db.all(sql, [limit], (err, rows) => {
+      if (err) return reject(err);
+      resolve(rows || []);
+    });
+  });
+}
+
 module.exports = {
   db,
   insertAlert,
@@ -596,6 +662,9 @@ module.exports = {
   recordPlaybookStepInDb,
   getPlaybookStepsForAlertInDb,
   getAllPlaybookStepLogsInDb,
+  // Control Room Assistant persistence
+  insertAssistantInstruction,
+  getAssistantInstructions,
   // CrowdSense Planner venue persistence
   getVenues,
   getVenueById,

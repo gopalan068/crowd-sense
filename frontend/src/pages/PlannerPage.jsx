@@ -62,9 +62,9 @@ const DEMO_VENUE = {
   canvasWidth: CANVAS_W,
   canvasHeight: CANVAS_H,
   scale: {
-    px_per_meter: 25,
-    reference_distance_m: 15.0,
-    reference_description: 'South Broadway corridor width (~375 px ≈ 15 m), estimated from venue sketch.',
+    px_per_meter: 13.363,
+    reference_distance_m: 28.06,
+    reference_description: 'South Broadway corridor width (~375 px ≈ 28.1 m, calibrated to 3.5 sq.m per 25px grid square).',
     scale_is_estimated: true,          // ← honesty field per spec
   },
   walls: [
@@ -501,11 +501,12 @@ export default function PlannerPage({ backendUrl = '' }) {
   const [venueName, setVenueName] = useState('Untitled Venue')
   const [venueId, setVenueId] = useState(null)
   const [saveStatus, setSaveStatus] = useState('')      // '', 'saving', 'saved', 'error'
+  const [isEditorOpen, setIsEditorOpen] = useState(false) // tap-to-open drawer
 
   // ── View Mode (2D Layout Editor vs 2.5D Isometric Venue Map) ───────────
   const [viewMode, setViewMode] = useState('2D')  // '2D' | '2.5D'
 
-  // ── Planner top-level tab: Simulation view vs Report Analysis view ──────
+  // ── Planner top-level view ──────────────────────────────────────────────
   const [plannerView, setPlannerView] = useState('sim')  // 'sim' | 'report'
 
   // ── Drawing & Selection ──────────────────────────────────────────────────
@@ -779,13 +780,13 @@ export default function PlannerPage({ backendUrl = '' }) {
       return
     }
 
-    const pxM = lay.scale?.px_per_meter || 25
+    const pxM = lay.scale?.px_per_meter || 13.363
 
     // ── Grid lines ────────────────────────────────────────────────────────
     if (showGridRef.current) {
       ctx.strokeStyle = DRAW_COLORS.grid
       ctx.lineWidth = 0.5
-      const cellPx = pxM // 1 m per cell
+      const cellPx = 25 // 25 px per 3.5 sq.m cell
       for (let x = 0; x < CANVAS_W; x += cellPx) {
         ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, CANVAS_H); ctx.stroke()
       }
@@ -796,7 +797,7 @@ export default function PlannerPage({ backendUrl = '' }) {
 
     // ── Density heatmap ───────────────────────────────────────────────────
     if (agentsRef.current.length > 0 && heatmapOpacityRef.current > 0.01) {
-      const grid = buildGrid(CANVAS_W, CANVAS_H, pxM, 1.0)
+      const grid = buildGrid(CANVAS_W, CANVAS_H, pxM)
       const density = computeDensity(agentsRef.current, grid, pxM)
       renderHeatmap(ctx, density, grid, heatmapOpacityRef.current)
     }
@@ -1254,7 +1255,7 @@ export default function PlannerPage({ backendUrl = '' }) {
         : 0.016
       lastTsRef.current = timestamp
 
-      const pxM = lay.scale?.px_per_meter || 25
+      const pxM = lay.scale?.px_per_meter || 13.363
       const wallSegs = extractWallSegments(lay.walls, pxM)
       const exits_m = convertExitsToMeters(lay.exits, pxM)
       const spawns_m = convertSpawnsToMeters(lay.spawns, pxM)
@@ -1339,7 +1340,7 @@ export default function PlannerPage({ backendUrl = '' }) {
 
           // Max density stat
           if (agentsRef.current.length > 0) {
-            const grid = buildGrid(CANVAS_W, CANVAS_H, pxM, 1.0)
+            const grid = buildGrid(CANVAS_W, CANVAS_H, pxM)
             const dens = computeDensity(agentsRef.current, grid, pxM)
             setMaxDensity(getMaxDensity(dens))
           } else {
@@ -1607,7 +1608,7 @@ export default function PlannerPage({ backendUrl = '' }) {
         const nfx = Math.max(0, Math.min(CANVAS_W, Math.round(dragState.origX + dx)))
         const nfy = Math.max(0, Math.min(CANVAS_H, Math.round(dragState.origY + dy)))
         setFocusPoint({ x: nfx, y: nfy })
-        const pxM = layout?.scale?.px_per_meter || 25
+        const pxM = layout?.scale?.px_per_meter || 13.363
         if (agentsRef.current.length > 0 && isFocusMode) {
           setFocusTarget(agentsRef.current, { x: nfx / pxM, y: nfy / pxM }, focusCondition)
         }
@@ -1628,7 +1629,7 @@ export default function PlannerPage({ backendUrl = '' }) {
     if (drawTool === TOOLS.FOCUS) {
       setFocusPoint(pos)
       setIsFocusMode(true)
-      const pxM = layout?.scale?.px_per_meter || 25
+      const pxM = layout?.scale?.px_per_meter || 13.363
       if (agentsRef.current.length > 0) {
         setFocusTarget(agentsRef.current, { x: pos.x / pxM, y: pos.y / pxM }, focusCondition)
       }
@@ -1720,7 +1721,7 @@ export default function PlannerPage({ backendUrl = '' }) {
         focusConditionRef.current
       )
     } else if (!newActive && lay) {
-      const pxM = lay.scale?.px_per_meter || 25
+      const pxM = lay.scale?.px_per_meter || 13.363
       const exits_m = convertExitsToMeters(lay.exits, pxM)
       for (const a of agentsRef.current) {
         a.isFocus = false
@@ -1921,7 +1922,7 @@ export default function PlannerPage({ backendUrl = '' }) {
     if (simMode === 'edit') return
     const lay = layoutRef.current
     if (!lay) return
-    const pxM = lay.scale?.px_per_meter || 25
+    const pxM = lay.scale?.px_per_meter || 13.363
     const exits_m = convertExitsToMeters(lay.exits, pxM)
     sfmTriggerEmergency(agentsRef.current, exits_m, DEFAULT_SFM_PARAMS)
     setIsEmergency(true)
@@ -1975,331 +1976,316 @@ export default function PlannerPage({ backendUrl = '' }) {
   ]
 
   return (
-    <div className="flex flex-col gap-0" style={{ minHeight: 0 }}>
+    <div className="flex flex-col gap-3" style={{ minHeight: 0 }}>
 
-      {/* ── Persistent Disclaimer Banner ──────────────────────────────── */}
-
-      {/* ── Main Layout: Editor Left + Sim Right ──────────────────────── */}
-      <div className="flex gap-4 p-4" style={{ minHeight: 0 }}>
-
-        {/* ── Left Panel: Venue Management + Drawing Tools ──────────── */}
-        <div className="flex flex-col gap-3 w-56 shrink-0">
-
-          {/* Header */}
-          <div>
-            <h2 className="text-sm font-extrabold uppercase tracking-widest" style={{ color: 'var(--color-text)' }}>
-              🏗️ Venue Editor
-            </h2>
-            <p className="text-[10px] mt-0.5" style={{ color: 'var(--color-muted)' }}>
-              Draw &amp; edit walls, exits &amp; spawns
-            </p>
-          </div>
-
-          {/* Venue selector */}
-          <div
-            className="rounded-xl p-3 border flex flex-col gap-2"
-            style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
+      {/* ── Top Bar: Editor Drawer Toggle + View Mode Switcher ─────────────── */}
+      <div
+        className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 rounded-xl border mx-4 mt-3 shadow-sm"
+        style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
+      >
+        {/* Left: Tap to open venue editor button */}
+        <div className="flex items-center gap-2">
+          <button
+            id="planner-open-editor-btn"
+            onClick={() => setIsEditorOpen(true)}
+            className="flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-extrabold bg-sky-600 hover:bg-sky-500 text-white shadow-sm transition-all"
+            title="Tap to open venue editor, tool selector, and layout manager"
           >
-            <p className="font-bold uppercase text-[10px] tracking-wider" style={{ color: 'var(--color-muted)' }}>Venue</p>
-            <input
-              value={venueName}
-              onChange={e => setVenueName(e.target.value)}
-              className="text-xs px-2 py-1.5 rounded-lg border w-full font-mono-num"
-              style={{ background: 'var(--color-bg)', borderColor: 'var(--color-border)', color: 'var(--color-text)' }}
-              placeholder="Venue name…"
-            />
-            <select
-              id="planner-venue-select"
-              className="text-xs px-2 py-1.5 rounded-lg border w-full font-mono-num"
-              style={{ background: 'var(--color-bg)', borderColor: 'var(--color-border)', color: 'var(--color-text)' }}
-              value={venueId || ''}
-              onChange={e => e.target.value && loadVenue(e.target.value)}
-            >
-              <option value="">— Load venue —</option>
-              <option value={DEMO_VENUE.id}>{DEMO_VENUE.name}</option>
-              {savedVenues
-                .filter(v => v.venue_id !== DEMO_VENUE.id)
-                .map(v => (
-                  <option key={v.venue_id} value={v.venue_id}>{v.name}</option>
-                ))}
-            </select>
-            <div className="flex gap-1.5">
-              <button
-                onClick={saveVenue}
-                disabled={!layout}
-                className="flex-1 text-[10px] font-bold py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white disabled:opacity-50 transition-all"
-                title="Save this venue to database and browser storage"
-              >
-                {saveStatus === 'saving' ? '…' : saveStatus === 'saved' ? '✓ Saved' : '💾 Save'}
-              </button>
-              <button
-                onClick={newBlankVenue}
-                className="text-[10px] font-bold py-1.5 px-2 rounded-lg border hover:bg-slate-100 dark:hover:bg-slate-700 transition-all"
-                style={{ borderColor: 'var(--color-border)', color: 'var(--color-muted)' }}
-                title="Create a new blank venue"
-              >
-                + New
-              </button>
-              <button
-                onClick={resetToDemoVenue}
-                className="text-[10px] font-bold py-1.5 px-2 rounded-lg border hover:bg-slate-100 dark:hover:bg-slate-700 transition-all text-amber-500"
-                style={{ borderColor: 'var(--color-border)' }}
-                title="Reset map to clean default reference venue"
-              >
-                🔄 Reset
-              </button>
-            </div>
-            <button
-              onClick={export2DImage}
-              disabled={!layout}
-              className="w-full text-[10px] font-bold py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-all flex items-center justify-center gap-1.5"
-              title="Download high-resolution 2D layout PNG image"
-            >
-              <span>📸</span>
-              <span>Export 2D Layout PNG</span>
-            </button>
-          </div>
-
-          {/* Selected element action card */}
-          {selectedItem && (
-            <div
-              className="rounded-xl p-3 border flex flex-col gap-2 shadow-sm"
-              style={{
-                borderColor: selectedItem.type === 'opening' ? 'rgba(239, 68, 68, 0.4)' : selectedItem.type === 'barricade' ? 'rgba(245, 158, 11, 0.4)' : 'rgba(56, 189, 248, 0.4)',
-                background: selectedItem.type === 'opening' ? 'rgba(239, 68, 68, 0.08)' : selectedItem.type === 'barricade' ? 'rgba(245, 158, 11, 0.08)' : 'rgba(56, 189, 248, 0.08)',
-              }}
-            >
-              <div className="flex items-center justify-between">
-                <span className={`text-[10px] font-extrabold uppercase tracking-wider ${selectedItem.type === 'opening'
-                  ? 'text-red-400'
-                  : selectedItem.type === 'barricade'
-                    ? 'text-amber-500 dark:text-amber-400'
-                    : 'text-sky-500 dark:text-sky-400'
-                  }`}>
-                  Selected {selectedItem.type === 'opening' ? 'EMERGENCY GATE' : selectedItem.type === 'barricade' ? 'BARRICADE' : selectedItem.type.toUpperCase()}
-                </span>
-                <button
-                  onClick={() => setSelectedItem(null)}
-                  className="text-[11px] text-slate-400 hover:text-white px-1"
-                  title="Deselect"
-                >
-                  ✕
-                </button>
-              </div>
-              <p className="text-[11px] font-mono-num font-semibold truncate" style={{ color: 'var(--color-text)' }}>
-                {selectedItem.name || selectedItem.id || selectedItem.type}
-                {selectedItem.vertexIndex !== undefined && (
-                  <span className="text-amber-500 dark:text-amber-400 ml-1 font-bold">
-                    (Point #{selectedItem.vertexIndex + 1})
-                  </span>
-                )}
-              </p>
-              <p className="text-[9px] leading-tight" style={{ color: 'var(--color-muted)' }}>
-                Drag on canvas to move. Press <strong>Del / Backspace</strong> to delete.
-              </p>
-
-              {/* Emergency opening specific toggle */}
-              {selectedItem.type === 'opening' && (
-                <div className="flex gap-1.5 mt-0.5">
-                  <button
-                    onClick={() => toggleOpening(selectedItem.id)}
-                    className={`flex-1 text-[10px] font-bold py-1.5 px-2 rounded-lg text-white transition-all shadow-sm ${(layout?.openings?.find(o => o.id === selectedItem.id)?.isOpen)
-                      ? 'bg-amber-600 hover:bg-amber-500'
-                      : 'bg-emerald-600 hover:bg-emerald-500'
-                      }`}
-                  >
-                    {(layout?.openings?.find(o => o.id === selectedItem.id)?.isOpen) ? '🔒 Close Gate' : '🔓 Open Gate'}
-                  </button>
-                </div>
-              )}
-
-              <div className="flex gap-1.5 mt-0.5">
-                <button
-                  onClick={deleteSelectedItem}
-                  className="flex-1 text-[10px] font-bold py-1.5 px-2 rounded-lg bg-red-600 hover:bg-red-500 text-white transition-all shadow-sm"
-                  title={`Delete this ${selectedItem.type}`}
-                >
-                  🗑 Delete {selectedItem.type === 'wall' ? 'Wall' : selectedItem.type === 'barricade' ? 'Barricade' : selectedItem.type === 'spawn' ? 'Entry' : selectedItem.type === 'opening' ? 'Gate' : selectedItem.type === 'exit' ? 'Exit' : 'Item'}
-                </button>
-                {selectedItem.type === 'wall' && selectedItem.vertexIndex !== undefined && (
-                  <button
-                    onClick={deleteSelectedVertex}
-                    className="text-[10px] font-bold py-1.5 px-2 rounded-lg border border-amber-500/50 hover:bg-amber-500/20 text-amber-500 dark:text-amber-300 transition-all"
-                    title="Delete selected point only"
-                  >
-                    Del Pt
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Drawing tools */}
-          <div
-            className="rounded-xl p-3 border"
-            style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
-          >
-            <p className="font-bold uppercase text-[10px] tracking-wider mb-2" style={{ color: 'var(--color-muted)' }}>
-              Drawing Tool
-            </p>
-            {toolDefs.map(t => (
-              <button
-                key={t.id}
-                id={`planner-tool-${t.id.toLowerCase()}`}
-                title={t.tip}
-                onClick={() => {
-                  setDrawTool(t.id)
-                  setCurrentPoly([])
-                  setBarricadeLine(null)
-                  setExitLine(null)
-                  setOpeningLine(null)
-                  setScalePoints([])
-                }}
-                className={`w-full text-left text-[10px] font-bold px-2 py-1.5 rounded-lg mb-1 transition-all ${drawTool === t.id
-                  ? 'bg-sky-600 text-white shadow-sm'
-                  : 'hover:bg-slate-100 dark:hover:bg-slate-700'
-                  }`}
-                style={drawTool !== t.id ? { color: 'var(--color-text)' } : {}}
-              >
-                {t.label}
-              </button>
-            ))}
-
-            {/* Tool hint */}
-            <p className="text-[9px] mt-1 leading-tight" style={{ color: 'var(--color-muted)' }}>
-              {toolDefs.find(t => t.id === drawTool)?.tip}
-            </p>
-          </div>
-
-          {/* Edit actions */}
-          <div className="flex gap-1.5">
-            <button
-              onClick={handleUndoWall}
-              className="flex-1 text-[10px] font-bold py-1.5 rounded-lg border transition-all hover:bg-slate-100 dark:hover:bg-slate-700"
-              style={{ borderColor: 'var(--color-border)', color: 'var(--color-muted)' }}
-              title="Undo last placed point or wall"
-            >
-              ↩ Undo
-            </button>
-            <button
-              onClick={handleClearAll}
-              className="flex-1 text-[10px] font-bold py-1.5 rounded-lg border border-red-400/40 text-red-500 dark:text-red-400 transition-all hover:bg-red-50 dark:hover:bg-red-950/40"
-            >
-              🗑 Clear
-            </button>
-          </div>
-
-          {/* Scale info */}
-          {layout?.scale && (
-            <div
-              className="rounded-lg p-2.5 border text-[9px] font-mono-num"
-              style={{ background: 'var(--color-bg)', borderColor: 'var(--color-border)', color: 'var(--color-muted)' }}
-            >
-              <span className="font-bold">Scale:</span>{' '}
-              {layout.scale.px_per_meter?.toFixed(1)} px/m
-              {layout.scale.scale_is_estimated && (
-                <span className="ml-1 text-amber-500">(estimated)</span>
-              )}
-            </div>
-          )}
+            <span>✏️</span>
+            <span>VENUE EDITOR [TAP TO OPEN]</span>
+            {drawTool !== TOOLS.SELECT && (
+              <span className="ml-1 text-[9px] px-1.5 py-0.5 rounded bg-black/30 font-mono-num uppercase">
+                Tool: {drawTool}
+              </span>
+            )}
+          </button>
+          <span className="text-xs font-mono-num hidden sm:inline" style={{ color: 'var(--color-muted)' }}>
+            Venue: <strong className="text-sky-400">{layout?.name || venueName || 'Untitled Venue'}</strong>
+          </span>
         </div>
 
-        {/* ── Centre: Simulation Canvas / 2.5D Venue Map / Report Analysis ── */}
-        <div className="flex flex-col gap-2 flex-1 min-w-0">
-
-          {/* ── Top-level Planner tab: SIM vs REPORT ─────────────────── */}
-          <div className="flex items-center justify-between gap-2 px-1">
-            {/* Left: SIM / REPORT tab */}
-            <div
-              className="flex items-center gap-1 p-1 rounded-xl border shadow-sm"
-              style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
+        {/* Right: View mode switcher (2D Canvas vs 2.5D Isometric Map) */}
+        <div className="flex items-center gap-2">
+          <div
+            className="flex items-center gap-1 p-1 rounded-xl border shadow-sm"
+            style={{ background: 'var(--color-bg)', borderColor: 'var(--color-border)' }}
+          >
+            <button
+              onClick={() => setViewMode('2D')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === '2D'
+                ? 'bg-sky-600 text-white shadow-sm'
+                : 'hover:bg-slate-100 dark:hover:bg-slate-800'
+                }`}
+              style={viewMode !== '2D' ? { color: 'var(--color-muted)' } : {}}
             >
-              <button
-                id="planner-tab-sim"
-                onClick={() => setPlannerView('sim')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                  plannerView === 'sim'
-                    ? 'bg-sky-600 text-white shadow-sm'
-                    : 'hover:bg-slate-100 dark:hover:bg-slate-800'
+              <span>🗺️ 2D Interactive Canvas</span>
+            </button>
+            <button
+              onClick={() => setViewMode('2.5D')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === '2.5D'
+                ? 'bg-indigo-600 text-white shadow-sm'
+                : 'hover:bg-slate-100 dark:hover:bg-slate-800'
                 }`}
-                style={plannerView !== 'sim' ? { color: 'var(--color-muted)' } : {}}
-              >
-                🎮 Simulation
-              </button>
+              style={viewMode !== '2.5D' ? { color: 'var(--color-muted)' } : {}}
+            >
+              <span>🏛️ 2.5D Isometric Map</span>
+              <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-400/20 text-amber-500 dark:text-amber-300 font-extrabold uppercase">
+                3D Extrusion
+              </span>
+            </button>
+          </div>
+          {viewMode === '2.5D' && (
+            <span className="text-[10px] font-mono-num hidden md:inline" style={{ color: 'var(--color-muted)' }}>
+              {layout?.walls?.length || 0} Structures Extruded
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* ── Slide-Over Drawer: Venue Editor & Drawing Tools ───────────────── */}
+      {isEditorOpen && (
+        <div
+          className="fixed inset-0 z-50 flex bg-black/60 backdrop-blur-sm animate-in fade-in duration-150"
+          onClick={() => setIsEditorOpen(false)}
+        >
+          <div
+            className="w-80 max-w-[90vw] h-full p-4 overflow-y-auto border-r shadow-2xl flex flex-col gap-3"
+            style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Drawer Header */}
+            <div className="flex items-center justify-between border-b pb-2" style={{ borderColor: 'var(--color-border)' }}>
+              <div>
+                <h2 className="text-sm font-extrabold uppercase tracking-widest" style={{ color: 'var(--color-text)' }}>
+                  🏗️ Venue Editor
+                </h2>
+                <p className="text-[10px]" style={{ color: 'var(--color-muted)' }}>
+                  Draw walls, exits, barricades &amp; emergency gates
+                </p>
+              </div>
               <button
-                id="planner-tab-report"
-                onClick={() => setPlannerView('report')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                  plannerView === 'report'
-                    ? 'bg-violet-600 text-white shadow-sm'
-                    : 'hover:bg-slate-100 dark:hover:bg-slate-800'
-                }`}
-                style={plannerView !== 'report' ? { color: 'var(--color-muted)' } : {}}
+                onClick={() => setIsEditorOpen(false)}
+                className="px-2.5 py-1 text-xs font-bold rounded-lg border hover:bg-red-500/20 text-red-400 border-red-500/40 transition-all"
+                title="Close Editor Drawer"
               >
-                🔬 Report Analysis
-                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-violet-400/20 text-violet-400 dark:text-violet-300 font-extrabold uppercase">
-                  NEW
-                </span>
+                ✕ Close
               </button>
             </div>
 
-            {/* Right: view-mode switcher (only visible in SIM tab) */}
-            {plannerView === 'sim' && (
-              <div className="flex items-center gap-2">
-                <div
-                  className="flex items-center gap-1 p-1 rounded-xl border shadow-sm"
-                  style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
+            {/* Venue Selector Card */}
+            <div
+              className="rounded-xl p-3 border flex flex-col gap-2"
+              style={{ background: 'var(--color-bg)', borderColor: 'var(--color-border)' }}
+            >
+              <p className="font-bold uppercase text-[10px] tracking-wider" style={{ color: 'var(--color-muted)' }}>Venue</p>
+              <input
+                value={venueName}
+                onChange={e => setVenueName(e.target.value)}
+                className="text-xs px-2 py-1.5 rounded-lg border w-full font-mono-num"
+                style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)', color: 'var(--color-text)' }}
+                placeholder="Venue name…"
+              />
+              <select
+                id="planner-venue-select"
+                className="text-xs px-2 py-1.5 rounded-lg border w-full font-mono-num"
+                style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)', color: 'var(--color-text)' }}
+                value={venueId || ''}
+                onChange={e => e.target.value && loadVenue(e.target.value)}
+              >
+                <option value="">— Load venue —</option>
+                <option value={DEMO_VENUE.id}>{DEMO_VENUE.name}</option>
+                {savedVenues
+                  .filter(v => v.venue_id !== DEMO_VENUE.id)
+                  .map(v => (
+                    <option key={v.venue_id} value={v.venue_id}>{v.name}</option>
+                  ))}
+              </select>
+              <div className="flex gap-1.5">
+                <button
+                  onClick={saveVenue}
+                  disabled={!layout}
+                  className="flex-1 text-[10px] font-bold py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white disabled:opacity-50 transition-all"
+                  title="Save this venue to database and browser storage"
                 >
+                  {saveStatus === 'saving' ? '…' : saveStatus === 'saved' ? '✓ Saved' : '💾 Save'}
+                </button>
+                <button
+                  onClick={newBlankVenue}
+                  className="text-[10px] font-bold py-1.5 px-2 rounded-lg border hover:bg-slate-100 dark:hover:bg-slate-700 transition-all"
+                  style={{ borderColor: 'var(--color-border)', color: 'var(--color-muted)' }}
+                  title="Create a new blank venue"
+                >
+                  + New
+                </button>
+                <button
+                  onClick={resetToDemoVenue}
+                  className="text-[10px] font-bold py-1.5 px-2 rounded-lg border hover:bg-slate-100 dark:hover:bg-slate-700 transition-all text-amber-500"
+                  style={{ borderColor: 'var(--color-border)' }}
+                  title="Reset map to clean default reference venue"
+                >
+                  🔄 Reset
+                </button>
+              </div>
+              <button
+                onClick={export2DImage}
+                disabled={!layout}
+                className="w-full text-[10px] font-bold py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-all flex items-center justify-center gap-1.5"
+                title="Download high-resolution 2D layout PNG image"
+              >
+                <span>📸</span>
+                <span>Export 2D Layout PNG</span>
+              </button>
+            </div>
+
+            {/* Selected element action card */}
+            {selectedItem && (
+              <div
+                className="rounded-xl p-3 border flex flex-col gap-2 shadow-sm"
+                style={{
+                  borderColor: selectedItem.type === 'opening' ? 'rgba(239, 68, 68, 0.4)' : selectedItem.type === 'barricade' ? 'rgba(245, 158, 11, 0.4)' : 'rgba(56, 189, 248, 0.4)',
+                  background: selectedItem.type === 'opening' ? 'rgba(239, 68, 68, 0.08)' : selectedItem.type === 'barricade' ? 'rgba(245, 158, 11, 0.08)' : 'rgba(56, 189, 248, 0.08)',
+                }}
+              >
+                <div className="flex items-center justify-between">
+                  <span className={`text-[10px] font-extrabold uppercase tracking-wider ${selectedItem.type === 'opening'
+                    ? 'text-red-400'
+                    : selectedItem.type === 'barricade'
+                      ? 'text-amber-500 dark:text-amber-400'
+                      : 'text-sky-500 dark:text-sky-400'
+                    }`}>
+                    Selected {selectedItem.type === 'opening' ? 'EMERGENCY GATE' : selectedItem.type === 'barricade' ? 'BARRICADE' : selectedItem.type.toUpperCase()}
+                  </span>
                   <button
-                    onClick={() => setViewMode('2D')}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === '2D'
-                      ? 'bg-sky-600 text-white shadow-sm'
-                      : 'hover:bg-slate-100 dark:hover:bg-slate-800'
-                      }`}
-                    style={viewMode !== '2D' ? { color: 'var(--color-muted)' } : {}}
+                    onClick={() => setSelectedItem(null)}
+                    className="text-[11px] text-slate-400 hover:text-white px-1"
+                    title="Deselect"
                   >
-                    <span>🗺️ 2D Layout &amp; Sim</span>
-                  </button>
-                  <button
-                    onClick={() => setViewMode('2.5D')}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === '2.5D'
-                      ? 'bg-indigo-600 text-white shadow-sm'
-                      : 'hover:bg-slate-100 dark:hover:bg-slate-800'
-                      }`}
-                    style={viewMode !== '2.5D' ? { color: 'var(--color-muted)' } : {}}
-                  >
-                    <span>🏛️ 2.5D Isometric Map</span>
-                    <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-400/20 text-amber-500 dark:text-amber-300 font-extrabold uppercase">
-                      3D Extrusion
-                    </span>
+                    ✕
                   </button>
                 </div>
-                {viewMode === '2.5D' && (
-                  <span className="text-[10px] font-mono-num" style={{ color: 'var(--color-muted)' }}>
-                    Architectural Isometric Projection · {layout?.walls?.length || 0} Structures Extruded
-                  </span>
+                <p className="text-[11px] font-mono-num font-semibold truncate" style={{ color: 'var(--color-text)' }}>
+                  {selectedItem.name || selectedItem.id || selectedItem.type}
+                  {selectedItem.vertexIndex !== undefined && (
+                    <span className="text-amber-500 dark:text-amber-400 ml-1 font-bold">
+                      (Point #{selectedItem.vertexIndex + 1})
+                    </span>
+                  )}
+                </p>
+                <p className="text-[9px] leading-tight" style={{ color: 'var(--color-muted)' }}>
+                  Drag on canvas to move. Press <strong>Del / Backspace</strong> to delete.
+                </p>
+
+                {selectedItem.type === 'opening' && (
+                  <div className="flex gap-1.5 mt-0.5">
+                    <button
+                      onClick={() => toggleOpening(selectedItem.id)}
+                      className={`flex-1 text-[10px] font-bold py-1.5 px-2 rounded-lg text-white transition-all shadow-sm ${(layout?.openings?.find(o => o.id === selectedItem.id)?.isOpen)
+                        ? 'bg-amber-600 hover:bg-amber-500'
+                        : 'bg-emerald-600 hover:bg-emerald-500'
+                        }`}
+                    >
+                      {(layout?.openings?.find(o => o.id === selectedItem.id)?.isOpen) ? '🔒 Close Gate' : '🔓 Open Gate'}
+                    </button>
+                  </div>
+                )}
+
+                <div className="flex gap-1.5 mt-0.5">
+                  <button
+                    onClick={deleteSelectedItem}
+                    className="flex-1 text-[10px] font-bold py-1.5 px-2 rounded-lg bg-red-600 hover:bg-red-500 text-white transition-all shadow-sm"
+                    title={`Delete this ${selectedItem.type}`}
+                  >
+                    🗑 Delete {selectedItem.type === 'wall' ? 'Wall' : selectedItem.type === 'barricade' ? 'Barricade' : selectedItem.type === 'spawn' ? 'Entry' : selectedItem.type === 'opening' ? 'Gate' : selectedItem.type === 'exit' ? 'Exit' : 'Item'}
+                  </button>
+                  {selectedItem.type === 'wall' && selectedItem.vertexIndex !== undefined && (
+                    <button
+                      onClick={deleteSelectedVertex}
+                      className="text-[10px] font-bold py-1.5 px-2 rounded-lg border border-amber-500/50 hover:bg-amber-500/20 text-amber-500 dark:text-amber-300 transition-all"
+                      title="Delete selected point only"
+                    >
+                      Del Pt
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Drawing Tools Selector Card */}
+            <div
+              className="rounded-xl p-3 border"
+              style={{ background: 'var(--color-bg)', borderColor: 'var(--color-border)' }}
+            >
+              <p className="font-bold uppercase text-[10px] tracking-wider mb-2" style={{ color: 'var(--color-muted)' }}>
+                Drawing Tool Selector
+              </p>
+              {toolDefs.map(t => (
+                <button
+                  key={t.id}
+                  id={`planner-tool-${t.id.toLowerCase()}`}
+                  title={t.tip}
+                  onClick={() => {
+                    setDrawTool(t.id)
+                    setCurrentPoly([])
+                    setBarricadeLine(null)
+                    setExitLine(null)
+                    setOpeningLine(null)
+                    setScalePoints([])
+                  }}
+                  className={`w-full text-left text-[10px] font-bold px-2.5 py-2 rounded-lg mb-1 transition-all ${drawTool === t.id
+                    ? 'bg-sky-600 text-white shadow-sm'
+                    : 'hover:bg-slate-100 dark:hover:bg-slate-700'
+                    }`}
+                  style={drawTool !== t.id ? { color: 'var(--color-text)' } : {}}
+                >
+                  {t.label}
+                </button>
+              ))}
+
+              <p className="text-[9px] mt-1.5 leading-tight" style={{ color: 'var(--color-muted)' }}>
+                {toolDefs.find(t => t.id === drawTool)?.tip}
+              </p>
+            </div>
+
+            {/* Edit actions */}
+            <div className="flex gap-1.5">
+              <button
+                onClick={handleUndoWall}
+                className="flex-1 text-[10px] font-bold py-1.5 rounded-lg border transition-all hover:bg-slate-100 dark:hover:bg-slate-700"
+                style={{ borderColor: 'var(--color-border)', color: 'var(--color-muted)' }}
+                title="Undo last placed point or wall"
+              >
+                ↩ Undo
+              </button>
+              <button
+                onClick={handleClearAll}
+                className="flex-1 text-[10px] font-bold py-1.5 rounded-lg border border-red-400/40 text-red-500 dark:text-red-400 transition-all hover:bg-red-50 dark:hover:bg-red-950/40"
+              >
+                🗑 Clear
+              </button>
+            </div>
+
+            {/* Scale info */}
+            {layout?.scale && (
+              <div
+                className="rounded-lg p-2.5 border text-[9px] font-mono-num"
+                style={{ background: 'var(--color-bg)', borderColor: 'var(--color-border)', color: 'var(--color-muted)' }}
+              >
+                <span className="font-bold">Scale:</span>{' '}
+                {layout.scale.px_per_meter?.toFixed(1)} px/m
+                {layout.scale.scale_is_estimated && (
+                  <span className="ml-1 text-amber-500">(estimated)</span>
                 )}
               </div>
             )}
           </div>
+        </div>
+      )}
 
-          {/* ── Report Analysis view ───────────────────────────────── */}
-          {plannerView === 'report' && (
-            <div
-              className="rounded-xl border overflow-auto"
-              style={{
-                borderColor: 'var(--color-border)',
-                background: 'var(--color-bg)',
-                minHeight: 600,
-                maxHeight: '80vh',
-              }}
-            >
-              <PlannerReportPage layout={layout} backendUrl={backendUrl} />
-            </div>
-          )}
+      {/* ── Main Upper Section: Map Canvas (3 parts) + Simulation Controls (2 parts) ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 px-4" style={{ minHeight: 0 }}>
 
-          {/* Render 2.5D Isometric Viewer or 2D Interactive Canvas (SIM tab only) */}
-          {plannerView === 'sim' && <>
+        {/* ── Map Canvas Viewer (3 parts width = 60%) ── */}
+        <div className="flex flex-col gap-2 lg:col-span-3 min-w-0">
           {viewMode === '2.5D' ? (
             <Venue25DViewer
               layout={layout}
@@ -2396,25 +2382,26 @@ export default function PlannerPage({ backendUrl = '' }) {
               </div>
             </>
           )}
-          {/* end viewMode ternary */}
-          </>
-          }
-          {/* end plannerView === 'sim' */}
         </div>
 
-        {/* ── Right Panel: Simulation Controls (SIM tab only) ────────── */}
-        {plannerView === 'sim' && (
+        {/* ── Simulation Controls Panel (2 parts width = 40%) ───────────── */}
         <div
-          className="w-56 shrink-0 rounded-xl border p-3 overflow-y-auto"
+          className="w-full lg:col-span-2 min-w-0 rounded-xl border p-3.5 overflow-y-auto"
           style={{
             background: 'var(--color-surface)',
             borderColor: 'var(--color-border)',
             maxHeight: '82vh',
           }}
         >
-          <h2 className="text-xs font-extrabold uppercase tracking-widest mb-3" style={{ color: 'var(--color-text)' }}>
-            ▶ Simulation
-          </h2>
+          <div className="flex items-center justify-between mb-3 border-b pb-2" style={{ borderColor: 'var(--color-border)' }}>
+            <h2 className="text-xs font-extrabold uppercase tracking-widest flex items-center gap-2" style={{ color: 'var(--color-text)' }}>
+              <span className="text-sm">🎛️</span> Simulation Command Center
+            </h2>
+            <span className="text-[10px] font-mono-num px-2 py-0.5 rounded border uppercase font-bold"
+                  style={{ borderColor: 'var(--color-border)', color: 'var(--color-muted)' }}>
+              3 Map : 2 Sim Ratio
+            </span>
+          </div>
           <PlannerControls
             simMode={simMode}
             isEmergency={isEmergency}
@@ -2463,8 +2450,34 @@ export default function PlannerPage({ backendUrl = '' }) {
             hasVenue={!!layout}
           />
         </div>
-        )}
-        {/* end plannerView === 'sim' right panel */}
+      </div>
+
+      {/* ── Lower Section: Venue Report & Handheld Safety Audit Dashboard ── */}
+      <div className="px-4 pb-8 flex flex-col gap-3 mt-4">
+        <div className="border-t pt-4 flex flex-wrap items-center justify-between gap-2" style={{ borderColor: 'var(--color-border)' }}>
+          <div className="flex items-center gap-2">
+            <span className="text-lg">📋</span>
+            <div>
+              <h2 className="text-sm font-extrabold uppercase tracking-widest" style={{ color: 'var(--color-text)' }}>
+                On-Ground Venue Safety Audit &amp; Bottleneck Analysis
+              </h2>
+              <p className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
+                Field inspector terminal report · Fruin level thresholds · Automated NDMA mitigation playbooks
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Embedded Venue Report Component directly below the map */}
+        <div
+          className="rounded-xl border overflow-hidden shadow-lg"
+          style={{
+            borderColor: 'var(--color-border)',
+            background: 'var(--color-surface)',
+          }}
+        >
+          <PlannerReportPage layout={layout} backendUrl={backendUrl} />
+        </div>
       </div>
 
       {/* ── Scale Dialog ───────────────────────────────────────────── */}
