@@ -312,20 +312,8 @@ export default function App() {
                   </>
                 )}
               </div>
-              {zoneMap.zone_2 ? (
-                <div className="agent-predict">
-                  <b style={{ fontFamily: 'var(--font-m)', fontSize: 11, color: 'var(--orange)', display: 'block', marginBottom: 4 }}>LIVE PREDICTION</b>
-                  Zone 2 density: {zoneMap.zone_2.density?.toFixed(1) ?? '--'} p/m² · Risk score: {Math.round(zoneMap.zone_2.risk_score ?? 0)}/100 · {riskLabel}
-                </div>
-              ) : (
-                <div className="agent-predict">
-                  <b style={{ fontFamily: 'var(--font-m)', fontSize: 11, color: 'var(--orange)', display: 'block', marginBottom: 4 }}>CURRENT PREDICTION</b>
-                  Elevated congestion risk near Gate 3 in ~18 minutes, based on drone density trend and historical weather–crowd correlation for this venue.
-                </div>
-              )}
-
               {/* Integrated AI Assistant Chat Box */}
-              <div style={{ marginTop: 14 }}>
+              <div style={{ marginTop: 'auto', paddingTop: 16 }}>
                 <AssistantChatPanel backendUrl={BACKEND_URL} embedded={true} />
               </div>
             </div>

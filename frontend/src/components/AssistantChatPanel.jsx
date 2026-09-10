@@ -204,8 +204,7 @@ export default function AssistantChatPanel({ backendUrl = '', embedded = false }
           {/* Messages Scroll Area */}
           <div
             style={{
-              maxHeight: embedded ? 190 : 260,
-              minHeight: 120,
+              height: embedded ? 240 : 280,
               overflowY: 'auto',
               display: 'flex',
               flexDirection: 'column',
@@ -368,7 +367,7 @@ export default function AssistantChatPanel({ backendUrl = '', embedded = false }
         </div>
       ) : (
         /* Instruction History Tab */
-        <div style={{ padding: '12px 14px', maxHeight: embedded ? 240 : 340, overflowY: 'auto' }}>
+        <div style={{ padding: '12px 14px', height: embedded ? 288 : 330, overflowY: 'auto' }}>
           {loadingHistory && (
             <div style={{ textAlign: 'center', color: 'var(--text-faint)', fontFamily: 'var(--font-m)', fontSize: 11, padding: 12 }}>
               Loading instructions…

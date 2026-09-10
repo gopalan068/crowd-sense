@@ -503,8 +503,8 @@ export default function PlannerPage({ backendUrl = '' }) {
   const [saveStatus, setSaveStatus] = useState('')      // '', 'saving', 'saved', 'error'
   const [isEditorOpen, setIsEditorOpen] = useState(false) // tap-to-open drawer
 
-  // ── View Mode (2D Layout Editor vs 2.5D Isometric Venue Map) ───────────
-  const [viewMode, setViewMode] = useState('2D')  // '2D' | '2.5D'
+  // ── View Mode (2.5D Isometric Venue Map) ──────────────────────────────
+  const [viewMode, setViewMode] = useState('2.5D')  // '2D' | '2.5D'
 
   // ── Planner top-level view ──────────────────────────────────────────────
   const [plannerView, setPlannerView] = useState('sim')  // 'sim' | 'report'
@@ -1978,67 +1978,40 @@ export default function PlannerPage({ backendUrl = '' }) {
   return (
     <div className="flex flex-col gap-3" style={{ minHeight: 0 }}>
 
-      {/* ── Top Bar: Editor Drawer Toggle + View Mode Switcher ─────────────── */}
+      {/* ── Top Bar: 2.5D Simulation Header ─────────────── */}
       <div
         className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 rounded-xl border mx-4 mt-3 shadow-sm"
         style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
       >
-        {/* Left: Tap to open venue editor button */}
-        <div className="flex items-center gap-2">
-          <button
-            id="planner-open-editor-btn"
-            onClick={() => setIsEditorOpen(true)}
-            className="flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-extrabold bg-sky-600 hover:bg-sky-500 text-white shadow-sm transition-all"
-            title="Tap to open venue editor, tool selector, and layout manager"
-          >
-            <span>✏️</span>
-            <span>VENUE EDITOR [TAP TO OPEN]</span>
-            {drawTool !== TOOLS.SELECT && (
-              <span className="ml-1 text-[9px] px-1.5 py-0.5 rounded bg-black/30 font-mono-num uppercase">
-                Tool: {drawTool}
+        <div className="flex items-center gap-2.5">
+          <span className="text-base">🏛️</span>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-extrabold uppercase tracking-wide" style={{ color: 'var(--color-text)' }}>
+                2.5D Isometric Simulation &amp; Planning
               </span>
-            )}
-          </button>
-          <span className="text-xs font-mono-num hidden sm:inline" style={{ color: 'var(--color-muted)' }}>
-            Venue: <strong className="text-sky-400">{layout?.name || venueName || 'Untitled Venue'}</strong>
-          </span>
+              <span className="text-[10px] font-mono-num px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-400 font-bold border border-indigo-500/30">
+                3D EXTRUSION ACTIVE
+              </span>
+            </div>
+            <p className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
+              Venue: <strong className="text-sky-400">{layout?.name || venueName || 'Temple Chariot Procession & Broadway Network'}</strong>
+            </p>
+          </div>
         </div>
 
-        {/* Right: View mode switcher (2D Canvas vs 2.5D Isometric Map) */}
-        <div className="flex items-center gap-2">
-          <div
-            className="flex items-center gap-1 p-1 rounded-xl border shadow-sm"
-            style={{ background: 'var(--color-bg)', borderColor: 'var(--color-border)' }}
+        <div className="flex items-center gap-3">
+          <span className="text-[10px] font-mono-num" style={{ color: 'var(--color-muted)' }}>
+            {layout?.walls?.length || 0} Structures Extruded · 3D Spatial Physics Active
+          </span>
+          <button
+            onClick={resetToDemoVenue}
+            className="text-[10px] font-bold py-1 px-2.5 rounded-lg border hover:bg-slate-100 dark:hover:bg-slate-700 transition-all text-amber-500"
+            style={{ borderColor: 'var(--color-border)' }}
+            title="Reset map to clean default reference venue"
           >
-            <button
-              onClick={() => setViewMode('2D')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === '2D'
-                ? 'bg-sky-600 text-white shadow-sm'
-                : 'hover:bg-slate-100 dark:hover:bg-slate-800'
-                }`}
-              style={viewMode !== '2D' ? { color: 'var(--color-muted)' } : {}}
-            >
-              <span>🗺️ 2D Interactive Canvas</span>
-            </button>
-            <button
-              onClick={() => setViewMode('2.5D')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === '2.5D'
-                ? 'bg-indigo-600 text-white shadow-sm'
-                : 'hover:bg-slate-100 dark:hover:bg-slate-800'
-                }`}
-              style={viewMode !== '2.5D' ? { color: 'var(--color-muted)' } : {}}
-            >
-              <span>🏛️ 2.5D Isometric Map</span>
-              <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-400/20 text-amber-500 dark:text-amber-300 font-extrabold uppercase">
-                3D Extrusion
-              </span>
-            </button>
-          </div>
-          {viewMode === '2.5D' && (
-            <span className="text-[10px] font-mono-num hidden md:inline" style={{ color: 'var(--color-muted)' }}>
-              {layout?.walls?.length || 0} Structures Extruded
-            </span>
-          )}
+            🔄 Reset
+          </button>
         </div>
       </div>
 
@@ -2286,102 +2259,37 @@ export default function PlannerPage({ backendUrl = '' }) {
 
         {/* ── Map Canvas Viewer (3 parts width = 60%) ── */}
         <div className="flex flex-col gap-2 lg:col-span-3 min-w-0">
-          {viewMode === '2.5D' ? (
-            <Venue25DViewer
-              layout={layout}
-              focusPoint={focusPoint}
-              isFocusMode={isFocusMode}
-              width={CANVAS_W}
-              height={CANVAS_H}
-              onResetToDemo={resetToDemoVenue}
-              agentsRef={agentsRef}
-              simMode={simMode}
-              isEmergency={isEmergency}
-              agentCount={agentCount}
-              simTimeSec={simTimeSec}
-              maxDensityPpm2={maxDensity}
-              fps={fps}
-              onStart={handleStart}
-              onPause={handlePause}
-              onReset={handleReset}
-              onTriggerEmergency={handleTriggerEmergency}
-              onToggleEmergencyGate={toggleOpening}
-              onOpenAllOpenings={openAllOpenings}
-              onCloseAllOpenings={closeAllOpenings}
-            />
-          ) : (
-            <>
-              <div
-                className="relative rounded-xl overflow-auto border shadow-2xl flex justify-center"
-                style={{
-                  borderColor: 'rgba(255, 255, 255, 0.08)',
-                  background: '#000000',
-                  maxHeight: '78vh',
-                }}
-              >
-                <canvas
-                  ref={canvasRef}
-                  id="planner-canvas"
-                  width={CANVAS_W}
-                  height={CANVAS_H}
-                  className="block"
-                  style={{
-                    cursor: getCanvasCursor(),
-                    width: '100%',
-                    maxWidth: `${CANVAS_W}px`,
-                    aspectRatio: `${CANVAS_W} / ${CANVAS_H}`,
-                    display: 'block',
-                  }}
-                  onMouseDown={handleCanvasMouseDown}
-                  onMouseUp={handleCanvasMouseUp}
-                  onClick={handleCanvasClick}
-                  onDoubleClick={handleCanvasDoubleClick}
-                  onMouseMove={handleCanvasMouseMove}
-                  onMouseEnter={() => setHovered(true)}
-                  onMouseLeave={() => {
-                    setHovered(false)
-                    setHoveredHit(null)
-                    setDragState(null)
-                    setMousePos({ x: -999, y: -999 })
-                  }}
-                />
+          <Venue25DViewer
+            layout={layout}
+            focusPoint={focusPoint}
+            isFocusMode={isFocusMode}
+            width={CANVAS_W}
+            height={CANVAS_H}
+            onResetToDemo={resetToDemoVenue}
+            agentsRef={agentsRef}
+            simMode={simMode}
+            isEmergency={isEmergency}
+            agentCount={agentCount}
+            simTimeSec={simTimeSec}
+            maxDensityPpm2={maxDensity}
+            fps={fps}
+            onStart={handleStart}
+            onPause={handlePause}
+            onReset={handleReset}
+            onTriggerEmergency={handleTriggerEmergency}
+            onToggleEmergencyGate={toggleOpening}
+            onOpenAllOpenings={openAllOpenings}
+            onCloseAllOpenings={closeAllOpenings}
+          />
 
-                {/* Sim mode badge overlay */}
-                <div className="absolute top-2 right-2 flex items-center gap-1.5 px-2 py-1 rounded-lg bg-black/70 backdrop-blur text-xs font-mono-num">
-                  <span
-                    className={`w-2 h-2 rounded-full ${simMode === 'running' ? 'pulse-dot' : ''}`}
-                    style={{ background: simMode === 'running' ? '#10b981' : simMode === 'paused' ? '#f59e0b' : '#64748b' }}
-                  />
-                  <span className="text-white font-bold uppercase">{simMode}</span>
-                  {isEmergency && (
-                    <span className="ml-1 text-red-400 font-extrabold animate-pulse">🚨 EMERGENCY</span>
-                  )}
-                </div>
-
-                {/* Mouse coordinate overlay (edit mode) */}
-                {simMode === 'edit' && hovered && (
-                  <div className="absolute bottom-2 left-2 px-2 py-0.5 rounded bg-black/70 backdrop-blur text-[9px] font-mono-num text-slate-300">
-                    {mousePos.x}, {mousePos.y} px
-                    {layout?.scale?.px_per_meter
-                      ? ` · ${(mousePos.x / layout.scale.px_per_meter).toFixed(1)}, ${(mousePos.y / layout.scale.px_per_meter).toFixed(1)} m`
-                      : ''}
-                  </div>
-                )}
-              </div>
-
-              {/* Canvas legend */}
-              <div className="flex flex-wrap gap-3 text-[9px] font-mono-num px-1" style={{ color: 'var(--color-muted)' }}>
-                <span><span style={{ color: '#6366f1' }}>■</span> Walls/Obstacles</span>
-                <span><span style={{ color: '#f59e0b' }}>■</span> Barricades</span>
-                <span><span style={{ color: '#10b981' }}>- -</span> Exits</span>
-                <span><span style={{ color: '#ef4444' }}>■</span> Emergency Gates (🔒 Closed / 🔓 Open)</span>
-                <span><span style={{ color: '#f59e0b' }}>●</span> Spawn / Entry points</span>
-                <span><span style={{ color: '#38bdf8' }}>●</span> Agents (normal)</span>
-                <span><span style={{ color: '#f87171' }}>●</span> Agents (panic)</span>
-                <span>Heatmap: Fruin LOS A→F bands</span>
-              </div>
-            </>
-          )}
+          {/* Hidden 2D Canvas (Preserved for background calculations & export) */}
+          <canvas
+            ref={canvasRef}
+            id="planner-canvas"
+            width={CANVAS_W}
+            height={CANVAS_H}
+            style={{ display: 'none' }}
+          />
         </div>
 
         {/* ── Simulation Controls Panel (2 parts width = 40%) ───────────── */}
