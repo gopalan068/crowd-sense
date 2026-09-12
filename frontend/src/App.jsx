@@ -5,9 +5,7 @@ import ZonePanel from './components/ZonePanel'
 import AlertPanel from './components/AlertPanel'
 import AuditLogView from './components/AuditLogView'
 import TrendExtrapolationGraph from './components/TrendExtrapolationGraph'
-import FlowMetricsDisplay from './components/FlowMetricsDisplay'
 import PostEventAnalysisView from './components/PostEventAnalysisView'
-import BottleneckExitMap from './components/BottleneckExitMap'
 import MockDispatchControl from './components/MockDispatchControl'
 import KnownLimitationsModal from './components/KnownLimitationsModal'
 import ConnectionStatusBanner from './components/ConnectionStatusBanner'
@@ -15,10 +13,11 @@ import ResponderDashboard from './components/ResponderDashboard'
 import CitizenReportView from './components/CitizenReportView'
 import DualPhoneSimulator from './components/DualPhoneSimulator'
 import WeatherControlPanel from './components/WeatherControlPanel'
-import AssistantPushBanner from './components/AssistantPushBanner'
 import AssistantChatPanel from './components/AssistantChatPanel'
 import HomeAerialMapOverlay from './components/HomeAerialMapOverlay'
 import EvacVenue2DMap from './components/EvacVenue2DMap'
+import SinglePointCoordinationChannel from './components/SinglePointCoordinationChannel'
+import CameraGrid from './components/CameraGrid'
 import PlannerPage from './pages/PlannerPage'
 import PlannerReportPage from './pages/PlannerReportPage'
 
@@ -47,7 +46,7 @@ export default function App() {
   const [pipelineActive, setPipelineActive] = useState(true)
   const [assistantInstructions, setAssistantInstructions] = useState([])
   const [panicConfirming, setPanicConfirming] = useState({})
-  const [selectedTrendZone, setSelectedTrendZone] = useState('zone_1')
+  const [selectedTrendZone, setSelectedTrendZone] = useState('zone_2')
   const [clockStr, setClockStr] = useState(timeNow())
 
   // Comms feed for Evacuation page
@@ -188,15 +187,38 @@ export default function App() {
 
   const currentTrendData = zoneMap[selectedTrendZone] || zoneMap.zone_1 || zoneMap.zone_2
 
-  // Derived risk score from zone_2 (Live Monitor highlight zone)
-  const zone2Risk = zoneMap.zone_2?.risk_score ?? 0
-  const riskColor = zone2Risk > 75 ? 'var(--red)' : zone2Risk > 50 ? 'var(--orange)' : 'var(--green)'
-  const riskLabel = zone2Risk > 75 ? 'CRITICAL' : zone2Risk > 50 ? 'HIGH RISK' : 'SAFE'
-  const ringOffset = 452 - (452 * Math.min(zone2Risk, 100) / 100)
+  // Derived risk score & level from zone_2 (Live Monitor single feed)
+  const zone2 = zoneMap.zone_2 || {}
+  const zone2RiskScore = zone2.risk_score != null ? Number(zone2.risk_score) : 0
+  const zone2RiskLevel = zone2.risk_level || (
+    zone2RiskScore >= 0.75 ? 'red' :
+      zone2RiskScore >= 0.50 ? 'orange' :
+        zone2RiskScore >= 0.25 ? 'yellow' : 'green'
+  )
+
+  const riskColorMap = {
+    green: 'var(--green)',
+    yellow: '#e8d95a',
+    orange: 'var(--orange)',
+    red: 'var(--red)'
+  }
+  const riskLabelMap = {
+    green: 'SAFE',
+    yellow: 'CAUTION',
+    orange: 'WARNING',
+    red: 'CRITICAL'
+  }
+
+  const riskColor = riskColorMap[zone2RiskLevel] || 'var(--green)'
+  const riskLabel = riskLabelMap[zone2RiskLevel] || (zone2.risk_level ? String(zone2.risk_level).toUpperCase() : 'SAFE')
+  const normalizedRiskRatio = Math.min(Math.max(zone2RiskScore > 1 ? zone2RiskScore / 100 : zone2RiskScore, 0), 1)
+  const ringOffset = 452 - (452 * normalizedRiskRatio)
 
   // KPI values for Command Center
-  const totalCrowd = Object.values(zoneMap).reduce((s, z) => s + (z?.crowd_count || 0), 0)
-  const overallRisk = Math.round(Object.values(zoneMap).reduce((s, z) => s + (z?.risk_score || 0), 0) / 2)
+  const totalCrowd = Object.values(zoneMap).reduce(
+    (s, z) => s + (Number(z?.people_count ?? z?.crowd_count) || 0),
+    0
+  )
   const alertCount = activeAlerts.filter((a) => !a.acknowledged_at).length
 
   return (
@@ -388,12 +410,6 @@ export default function App() {
             <p>See what is happening across the venue in real time.</p>
           </div>
 
-          {/* Global push guidance banners */}
-          <AssistantPushBanner
-            instructions={assistantInstructions}
-            onDismiss={(id) => setAssistantInstructions((prev) => prev.filter((i) => (i.instructionId || i) !== id))}
-          />
-
           {/* Live topbar */}
           <div className="glass live-topbar">
             <div className="live-tag"><span className="pulse-dot" style={{ background: 'var(--red)', display: 'inline-block', width: 7, height: 7, borderRadius: '50%' }} /> LIVE EVENT MONITORING</div>
@@ -404,10 +420,10 @@ export default function App() {
             <div className="sep" />
             <div className="meta">LAST UPDATE: <span style={{ fontFamily: 'var(--font-m)' }}>{clockStr}</span></div>
             <div className="sep" />
-            <div className="meta">WS: <span style={{ color: connected ? 'var(--green)' : 'var(--red)' }}>{connected ? '● LIVE' : '○ OFFLINE'}</span></div>
+
           </div>
 
-          {/* Monitor grid: Zone 2 live feed + risk dial */}
+          {/* Monitor grid: Zone 2 live feed (Single Video Stream) + risk dial */}
           <div className="monitor-grid">
             <div>
               <ZonePanel
@@ -416,9 +432,6 @@ export default function App() {
                 panicConfirming={panicConfirming['zone_2'] ?? null}
                 pipelineActive={pipelineActive}
               />
-              <div style={{ marginTop: 12 }}>
-                <FlowMetricsDisplay zoneData={zoneMap.zone_2} />
-              </div>
             </div>
             <div className="card">
               <div className="risk-dial">
@@ -431,15 +444,69 @@ export default function App() {
                     />
                   </svg>
                   <div className="ring-center">
-                    <span className="num" style={{ color: riskColor }}>{Math.round(zone2Risk)}</span>
-                    <span className="max">/ 100 · {riskLabel}</span>
+                    <span className="num" style={{ color: riskColor, fontSize: 34 }}>
+                      {zone2RiskScore.toFixed(2)}
+                    </span>
+                    <span className="max" style={{ fontSize: 11, fontWeight: 700, color: riskColor, letterSpacing: 0.4 }}>
+                      {riskLabel} (Score: {zone2RiskScore.toFixed(2)})
+                    </span>
                   </div>
                 </div>
                 <div className="risk-factors">
-                  <div className="risk-factor-row"><span>Crowd Density</span><b style={{ color: 'var(--red)' }}>+{Math.round((zoneMap.zone_2?.density ?? 0) * 10) || '--'}</b></div>
-                  <div className="risk-factor-row"><span>Flow Convergence</span><b style={{ color: 'var(--orange)' }}>{((zoneMap.zone_2?.flow_convergence ?? 0) * 100).toFixed(0)}%</b></div>
-                  <div className="risk-factor-row"><span>Turbulence</span><b style={{ color: 'var(--orange)' }}>{((zoneMap.zone_2?.flow_turbulence ?? 0) * 100).toFixed(0)}%</b></div>
-                  <div className="risk-factor-row"><span>Trend Slope</span><b style={{ color: 'var(--text-dim)' }}>{zoneMap.zone_2?.trend_slope?.toFixed(3) ?? '--'}</b></div>
+                  <div className="risk-factor-row">
+                    <span>Crowd Density</span>
+                    <b style={{ color: riskColor }}>
+                      {zone2.density != null ? `${Number(zone2.density).toFixed(2)} p/m²` : '--'}
+                    </b>
+                  </div>
+                  <div className="risk-factor-row">
+                    <span>Flow Convergence</span>
+                    <b style={{ color: 'var(--orange)' }}>
+                      {((zone2.flow_convergence ?? 0) * 100).toFixed(0)}%
+                    </b>
+                  </div>
+                  <div className="risk-factor-row">
+                    <span>Turbulence</span>
+                    <b style={{ color: 'var(--orange)' }}>
+                      {((zone2.flow_turbulence ?? 0) * 100).toFixed(0)}%
+                    </b>
+                  </div>
+                  <div className="risk-factor-row">
+                    <span>Trend Slope</span>
+                    <b style={{ color: 'var(--text-dim)' }}>
+                      {zone2.trend_slope != null ? `${Number(zone2.trend_slope) > 0 ? '+' : ''}${Number(zone2.trend_slope).toFixed(2)} p/m²/min` : '--'}
+                    </b>
+                  </div>
+                  <div className="risk-factor-row">
+                    <span>Temperature</span>
+                    <b style={{ color: (weatherState?.temperature_c ?? weatherState?.temperature ?? 28) > 35 ? 'var(--orange)' : 'var(--text-dim)' }}>
+                      {weatherState?.temperature_c ?? weatherState?.temperature ?? 28}°C
+                    </b>
+                  </div>
+                  <div className="risk-factor-row">
+                    <span>Humidity</span>
+                    <b style={{ color: (weatherState?.humidity_pct ?? weatherState?.humidity ?? 62) > 75 ? 'var(--orange)' : 'var(--text-dim)' }}>
+                      {weatherState?.humidity_pct ?? weatherState?.humidity ?? 62}%
+                    </b>
+                  </div>
+                  <div className="risk-factor-row">
+                    <span>Rain / Precip</span>
+                    <b style={{ color: (weatherState?.precipitation_mm ?? 0) > 0 ? 'var(--cyan)' : 'var(--text-dim)' }}>
+                      {weatherState?.precipitation_mm != null && weatherState.precipitation_mm > 0 ? `${weatherState.precipitation_mm} mm/h` : '0.0 mm/h'}
+                    </b>
+                  </div>
+                  <div className="risk-factor-row">
+                    <span>Air Quality (AQI)</span>
+                    <b style={{ color: (weatherState?.aqi ?? 42) > 100 ? 'var(--orange)' : 'var(--green)' }}>
+                      {weatherState?.aqi ?? 42} AQI ({(weatherState?.aqi ?? 42) <= 50 ? 'Good' : (weatherState?.aqi ?? 42) <= 100 ? 'Moderate' : 'Unhealthy'})
+                    </b>
+                  </div>
+                  <div className="risk-factor-row">
+                    <span>Smoke Level</span>
+                    <b style={{ color: (weatherState?.smoke_ppm ?? 12) > 30 ? 'var(--red)' : 'var(--green)' }}>
+                      {weatherState?.smoke_ppm ?? 12} ppm (Normal)
+                    </b>
+                  </div>
                 </div>
               </div>
             </div>
@@ -452,22 +519,8 @@ export default function App() {
             <span><span className="legend-sw" style={{ background: 'var(--red)' }} /> Critical</span>
           </div>
 
-          {/* Zone 1 secondary panel */}
-          <div style={{ marginBottom: 20 }}>
-            <div className="section-title" style={{ marginBottom: 12 }}>
-              <h2 style={{ fontSize: 16 }}>Zone 1 — General Area</h2>
-              <span className="sub">Secondary monitored zone</span>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 16 }}>
-              <ZonePanel
-                zoneData={zoneMap.zone_1}
-                zoneId="zone_1"
-                panicConfirming={panicConfirming['zone_1'] ?? null}
-                pipelineActive={pipelineActive}
-              />
-              <FlowMetricsDisplay zoneData={zoneMap.zone_1} />
-            </div>
-          </div>
+          {/* CCTV Camera Grid */}
+          <CameraGrid />
 
           {/* Source cards */}
           <div className="source-row">
@@ -489,7 +542,7 @@ export default function App() {
             <div className="card source-card">
               <div className="top"><span style={{ fontSize: 20 }}>🌙</span><span className="pill pill-cyan">Active</span></div>
               <h4>Night Vision</h4>
-              <div className="stat">6/6</div>
+              <div className="stat">0/6</div>
             </div>
           </div>
 
@@ -545,18 +598,25 @@ export default function App() {
             <p>When conditions change, the safest route changes with them.</p>
           </div>
 
-          {/* Critical banner — shows when red alert active */}
-          {activeAlerts.some((a) => a.severity === 'red' && !a.acknowledged_at) && (
-            <div className="critical-banner">
-              <span style={{ fontSize: 20 }}>🚨</span>
-              <div>
-                <b style={{ color: 'var(--red)', fontFamily: 'var(--font-m)', fontSize: 12 }}>CRITICAL SITUATION DETECTED</b>
-                <p style={{ marginTop: 6, color: 'var(--text)' }}>
-                  {activeAlerts.find((a) => a.severity === 'red' && !a.acknowledged_at)?.zone_id?.toUpperCase().replace('_', ' ')} crowd density exceeds safe threshold. AI has analyzed density, movement direction, exit capacity, congestion and responder access.
-                </p>
+          {/* Critical situation banner — dynamic based on live zone telemetry & active alerts */}
+          <div className="critical-banner" style={{ background: (zone2RiskLevel === 'red' || activeAlerts.length > 0) ? 'var(--red-soft)' : 'var(--cyan-soft)', borderColor: (zone2RiskLevel === 'red' || activeAlerts.length > 0) ? 'rgba(255,79,102,0.35)' : 'rgba(6,182,212,0.35)' }}>
+            <span style={{ fontSize: 22 }}>{(zone2RiskLevel === 'red' || activeAlerts.length > 0) ? '🚨' : '⚡'}</span>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <b style={{ color: (zone2RiskLevel === 'red' || activeAlerts.length > 0) ? 'var(--red)' : 'var(--cyan)', fontFamily: 'var(--font-m)', fontSize: 12 }}>
+                  {(zone2RiskLevel === 'red' || activeAlerts.length > 0) ? 'ACTIVE INCIDENT RESPONSE PROTOCOL: ZONE 2 SURGE' : 'DYNAMIC EGRESS & CLEARANCE PROTOCOL ACTIVE'}
+                </b>
+                <span className="pill" style={{ fontSize: 9.5, padding: '2px 8px', background: 'rgba(255,255,255,0.08)' }}>
+                  GROUND SENSORS: LIVE
+                </span>
               </div>
+              <p style={{ marginTop: 6, color: 'var(--text)', fontSize: 13, lineHeight: 1.5 }}>
+                {activeAlerts.length > 0
+                  ? `Live optical flow sensors & camera nodes detected ${activeAlerts[0]?.alert_type?.replace(/_/g, ' ')} in ${activeAlerts[0]?.zone_id?.toUpperCase().replace('_', ' ')}. Localized density reached ${(zone2.density || 1.85).toFixed(2)} p/m² with ${zone2.count || 840} attendees in corridor throat. Dynamic reroute engaged toward open Exits E2 & E4.`
+                  : `Zone 2 Connecting Channels operating at ${(zone2.density || 1.85).toFixed(2)} p/m² with ${zone2.count || 840} attendees. Dynamic clearance path mapped to avoid Gate 3 accumulation.`}
+              </p>
             </div>
-          )}
+          </div>
 
           {/* Main evac grid: 2D Venue Map + Recommended Action & Alert panel */}
           <div className="evac-grid">
@@ -565,17 +625,40 @@ export default function App() {
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14, minHeight: 0 }}>
               <div className="card">
-                <div className="section-title"><h2 style={{ fontSize: 15 }}>Recommended Action</h2></div>
-                <div className="recommend-box" style={{ marginTop: 10 }}>
+                <div className="section-title">
+                  <h2 style={{ fontSize: 15 }}>Dynamic Egress Protocol</h2>
+                  <span className="pill pill-cyan" style={{ fontSize: 10 }}>COMPUTED BY EVACAI</span>
+                </div>
+                <div className="recommend-box" style={{ marginTop: 10, fontSize: 13, lineHeight: 1.45 }}>
                   {activeAlerts.length > 0
-                    ? `Redirect ${activeAlerts[0]?.zone_id?.toUpperCase().replace('_', ' ')} crowd toward nearest open exit corridor`
-                    : 'Redirect Zone 4 → Zone 2 → Emergency Exit E2'}
+                    ? `Divert ${activeAlerts[0]?.zone_id?.toUpperCase().replace('_', ' ')} crowd westward via 4.0m Relief Corridor → Perimeter Promenade → Emergency Exits E2 & E4`
+                    : 'Divert Zone 1 Staging Lawn → 4.0m Relief Corridor → Perimeter Route → Emergency Exit E2'}
                 </div>
                 <div className="evac-stats">
-                  <div className="box"><div className="k" style={{ fontSize: 11, color: 'var(--text-faint)' }}>EVAC TIME</div><div className="v" style={{ fontFamily: 'var(--font-d)', fontSize: 18, fontWeight: 700 }}>4:32</div></div>
-                  <div className="box"><div className="k" style={{ fontSize: 11, color: 'var(--text-faint)' }}>PEOPLE REDIRECTED</div><div className="v" style={{ fontFamily: 'var(--font-d)', fontSize: 18, fontWeight: 700 }}>3,240</div></div>
-                  <div className="box"><div className="k" style={{ fontSize: 11, color: 'var(--text-faint)' }}>CONGESTION REDUCTION</div><div className="v" style={{ fontFamily: 'var(--font-d)', fontSize: 18, fontWeight: 700, color: 'var(--green)' }}>−37%</div></div>
-                  <div className="box"><div className="k" style={{ fontSize: 11, color: 'var(--text-faint)' }}>RISK AFTER REROUTE</div><div className="v" style={{ fontFamily: 'var(--font-d)', fontSize: 18, fontWeight: 700, color: 'var(--green)' }}>LOW</div></div>
+                  <div className="box">
+                    <div className="k" style={{ fontSize: 11, color: 'var(--text-faint)' }}>ESTIMATED CLEARANCE</div>
+                    <div className="v" style={{ fontFamily: 'var(--font-d)', fontSize: 18, fontWeight: 700 }}>
+                      {zone2RiskLevel === 'red' ? '3:45' : '4:30'}
+                    </div>
+                  </div>
+                  <div className="box">
+                    <div className="k" style={{ fontSize: 11, color: 'var(--text-faint)' }}>PEOPLE REDIRECTED</div>
+                    <div className="v" style={{ fontFamily: 'var(--font-d)', fontSize: 18, fontWeight: 700 }}>
+                      {Math.round((zone2.count || 840) * 3.8).toLocaleString()}
+                    </div>
+                  </div>
+                  <div className="box">
+                    <div className="k" style={{ fontSize: 11, color: 'var(--text-faint)' }}>CONGESTION REDUCTION</div>
+                    <div className="v" style={{ fontFamily: 'var(--font-d)', fontSize: 18, fontWeight: 700, color: 'var(--green)' }}>
+                      −42%
+                    </div>
+                  </div>
+                  <div className="box">
+                    <div className="k" style={{ fontSize: 11, color: 'var(--text-faint)' }}>POST-REROUTE RISK</div>
+                    <div className="v" style={{ fontFamily: 'var(--font-d)', fontSize: 18, fontWeight: 700, color: 'var(--green)' }}>
+                      LOW (18/100)
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -593,59 +676,61 @@ export default function App() {
 
           {/* Route update card */}
           <div className="card route-update-card" style={{ marginBottom: 20 }}>
-            <span className="pill pill-cyan">ROUTE UPDATED</span>
-            <span style={{ fontSize: 13, color: 'var(--text-dim)' }}>CCTV detected congestion near Exit C. CrowdSense AI generated a new route.</span>
+            <span className="pill pill-cyan">REAL-TIME ROUTE OPTIMIZATION</span>
+            <span style={{ fontSize: 13, color: 'var(--text-dim)' }}>
+              Optical flow sensors detected Gate 3 throat bottleneck (density {(zone2.density || 1.85).toFixed(2)} p/m²). CrowdSense dynamic rerouting engine computed western clearance path.
+            </span>
             <div className="route-path">
-              <span className="old">Zone 4 → Exit C</span>
+              <span className="old">Zone 1 Staging Lawn → Gate 3 Throat (BLOCKED)</span>
               <span style={{ color: 'var(--text-faint)' }}>→</span>
-              <span className="new">Zone 4 → Zone 2 → Exit E2</span>
+              <span className="new">Zone 1 → 4.0m Relief Corridor 3 → Exit E2 &amp; Northern Assembly Lawn</span>
             </div>
           </div>
 
-          {/* Response Coordination */}
+          {/* Response Coordination Deck */}
           <div className="card" style={{ marginBottom: 20 }}>
-            <div className="section-title"><h2 style={{ fontSize: 16 }}>Response Coordination</h2></div>
-            <div className="coord-grid">
-              <div className="coord-item"><div className="k">Police</div><div className="v" style={{ color: 'var(--green)' }}>Assigned</div></div>
-              <div className="coord-item"><div className="k">Medical Team</div><div className="v" style={{ color: 'var(--cyan)' }}>Dispatched</div></div>
-              <div className="coord-item"><div className="k">Ambulance</div><div className="v" style={{ color: 'var(--green)' }}>Route Clear</div></div>
-              <div className="coord-item"><div className="k">Security</div><div className="v" style={{ color: 'var(--orange)' }}>Redirecting Crowd</div></div>
-              <div className="coord-item"><div className="k">PA Instructions</div><div className="v" style={{ color: 'var(--green)' }}>Ready</div></div>
-              <div className="coord-item"><div className="k">Digital Arrow Boards</div><div className="v" style={{ color: 'var(--green)' }}>Updated</div></div>
+            <div className="section-title">
+              <h2 style={{ fontSize: 16 }}>Physical Response Coordination</h2>
+              <span className="pill pill-green" style={{ fontSize: 10 }}>ALL CHANNELS SYNCHRONIZED</span>
             </div>
-            <div className="disclaimer-strip">
-              CrowdSense acts as a coordination layer over physical safety infrastructure — reducing inflow, creating space, guiding crowds toward available exits, and coordinating police and medical teams. It does not replace responders on the ground.
+            <div className="coord-grid">
+              <div className="coord-item">
+                <div className="k">Police Dispatch</div>
+                <div className="v" style={{ color: 'var(--green)' }}>Assigned — Locking Staging Inflow</div>
+              </div>
+              <div className="coord-item">
+                <div className="k">Medical Unit 2</div>
+                <div className="v" style={{ color: 'var(--cyan)' }}>Dispatched — Standby at Exit E2</div>
+              </div>
+              <div className="coord-item">
+                <div className="k">Emergency Ambulance</div>
+                <div className="v" style={{ color: 'var(--green)' }}>Route Clear — Dedicated Corridor R2</div>
+              </div>
+              <div className="coord-item">
+                <div className="k">Security Marshals</div>
+                <div className="v" style={{ color: 'var(--orange)' }}>Active — Channeling Flow at Barrier 3</div>
+              </div>
+              <div className="coord-item">
+                <div className="k">PA Voice Broadcast</div>
+                <div className="v" style={{ color: 'var(--green)' }}>Broadcasting — "Proceed to Exit E2"</div>
+              </div>
+              <div className="coord-item">
+                <div className="k">Digital VMS Arrow Boards</div>
+                <div className="v" style={{ color: 'var(--green)' }}>Updated — Green Egress Vector Active</div>
+              </div>
             </div>
           </div>
 
-          {/* Dynamic Evacuation Pipeline */}
-          <div className="card" style={{ margin: '20px 0' }}>
-            <div className="section-title">
-              <h2 style={{ fontSize: 16 }}>How the Dynamic Evacuation Pipeline Works</h2>
-              <span className="sub">From raw signal to physical response, in seconds</span>
-            </div>
-            <div className="pipeline">
-              {[
-                ['CCTV / night vision / drone', 'Continuously observe where people are, how dense each zone is, and which direction they\'re moving.'],
-                ['IoT sensors', 'Add environmental conditions and, where applicable, occupancy and density data per zone.'],
-                ['Command & Control Centre', 'CrowdSense combines all sources and identifies the zone that\'s becoming high-risk.'],
-                ['Risk Engine', 'Determines which zone is dangerous, which exits are available, and which route is safest right now.'],
-                ['Digital arrow boards + LED/VMS', 'The displayed direction updates automatically.'],
-                ['PA speakers', 'Give matching voice instructions: "Please move calmly towards Exit B. Do not move towards Zone A."'],
-                ['Smart barricades / temporary barriers', 'Physically redirect the flow and keep people out of the dangerous zone.'],
-                ['Access-control barriers', 'Stop new people from entering an already overloaded zone.'],
-                ['Dedicated emergency corridor', 'Keeps a clear path open for police, medical teams, fire services and ambulances.'],
-                ['Smart lighting', 'Illuminates the currently selected evacuation path, especially in low-light conditions.'],
-                ['Emergency exits', 'The actual physical escape points that the system directs people towards.'],
-                ['Assembly points', 'Once clear of danger, people are guided to predefined safe assembly areas.'],
-              ].map(([title, body], i) => (
-                <div className="pipe-step" key={i}>
-                  <div className="pipe-num">{i + 1}</div>
-                  <div className="pipe-body"><h5>{title}</h5><p>{body}</p></div>
-                </div>
-              ))}
-            </div>
-          </div>
+          {/* Step-by-Step Dynamic Evacuation Guide: Active Venue Incident Protocol */}
+
+
+          {/* Single-Point Coordination Channel with Real-time Feeds */}
+          <SinglePointCoordinationChannel
+            socket={socketInstance}
+            activeAlerts={activeAlerts}
+            assistantInstructions={assistantInstructions}
+            zoneMap={zoneMap}
+          />
 
         </div>
       </section>
@@ -675,45 +760,151 @@ export default function App() {
             <p>Every stage of the crowd-safety lifecycle, in one control room.</p>
           </div>
 
-          {/* Push guidance */}
-          <AssistantPushBanner
-            instructions={assistantInstructions}
-            onDismiss={(id) => setAssistantInstructions((prev) => prev.filter((i) => (i.instructionId || i) !== id))}
-          />
-
           {/* KPI Row */}
           <div className="kpi-row">
-            <div className="card kpi-card"><div className="stat-label">CURRENT CROWD</div><div className="stat-num">{totalCrowd > 0 ? totalCrowd.toLocaleString() : '25,430'}</div></div>
-            <div className="card kpi-card"><div className="stat-label">RISK SCORE</div><div className="stat-num" style={{ color: riskColor }}>{overallRisk || 68}</div></div>
+            <div className="card kpi-card"><div className="stat-label">CURRENT CROWD</div><div className="stat-num">{totalCrowd.toLocaleString()}</div></div>
+            <div className="card kpi-card"><div className="stat-label">RISK SCORE</div><div className="stat-num" style={{ color: riskColor }}>{zone2RiskScore.toFixed(2)}</div></div>
             <div className="card kpi-card"><div className="stat-label">ACTIVE ALERTS</div><div className="stat-num" style={{ color: alertCount > 0 ? 'var(--red)' : 'var(--green)' }}>{alertCount}</div></div>
             <div className="card kpi-card"><div className="stat-label">CV PIPELINE</div><div className="stat-num" style={{ color: pipelineActive ? 'var(--green)' : 'var(--orange)', fontSize: 18 }}>{pipelineActive ? 'LIVE' : 'PAUSED'}</div></div>
-            <div className="card kpi-card"><div className="stat-label">AVAILABLE EXITS</div><div className="stat-num">7/8</div></div>
+            <div className="card kpi-card"><div className="stat-label">AVAILABLE EXITS</div><div className="stat-num">3/4</div></div>
             <div className="card kpi-card"><div className="stat-label">RESPONSE TEAMS</div><div className="stat-num">12</div></div>
           </div>
 
-          {/* CC grid: overview map + panels */}
+          {/* CC Grid: Left = Expanded AI Alerts (1:1), Right = Stacked Evacuation & Responder Status */}
           <div className="cc-grid" style={{ marginBottom: 20 }}>
-            {/* Left: BottleneckExitMap overview */}
-            <div className="venue-wrap" style={{ minHeight: 340 }}>
-              <BottleneckExitMap zoneMap={zoneMap} />
-            </div>
-
-            {/* Right: Mini panels */}
-            <div className="cc-panels">
-              <div className="card">
-                <h4 style={{ fontSize: 14 }}>AI Alerts</h4>
-                <div className="cc-mini-list">
-                  {activeAlerts.slice(0, 4).map((a) => (
-                    <div className="cc-mini-row" key={a.alert_id}>
-                      <span>{a.zone_id?.replace('_', ' ')?.toUpperCase()} — {a.alert_type?.replace(/_/g, ' ')}</span>
-                      <span className={`pill ${a.severity === 'red' ? 'pill-red' : a.severity === 'orange' ? 'pill-orange' : 'pill-cyan'}`}>{a.severity?.toUpperCase()}</span>
-                    </div>
-                  ))}
-                  {activeAlerts.length === 0 && <div className="cc-mini-row"><span>No active alerts</span><span className="pill pill-green">ALL CLEAR</span></div>}
+            {/* Left Column: Expanded AI Alerts (with embedded Push Notifications) */}
+            <div className="card" style={{ display: 'flex', flexDirection: 'column', minHeight: 280 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, paddingBottom: 10, borderBottom: '1px solid var(--border)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <h4 style={{ fontSize: 15, margin: 0, fontWeight: 700 }}>AI Alerts</h4>
+                  {(alertCount > 0 || assistantInstructions.length > 0) ? (
+                    <span className="pill pill-red" style={{ fontSize: 10 }}>
+                      {alertCount + assistantInstructions.length} ACTIVE
+                    </span>
+                  ) : (
+                    <span className="pill pill-green" style={{ fontSize: 10 }}>ALL CLEAR</span>
+                  )}
                 </div>
+                <span style={{ fontSize: 11, color: 'var(--text-faint)' }}>Automated Vision & Push Guidance</span>
               </div>
 
-              <div className="card">
+              <div className="cc-mini-list" style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 10, overflowY: 'auto' }}>
+                {/* 1. Push Guidance / Notifications displayed inline */}
+                {assistantInstructions.map((inst, index) => {
+                  const isPanic = inst.eventType === 'alert_panic' || inst.severity === 'red'
+                  const isCitizen = inst.alertType === 'citizen_report' || Boolean(inst.category)
+                  const zoneLabel = inst.zoneId === 'zone_2' ? 'ZONE 2' : inst.zoneId === 'zone_1' ? 'ZONE 1' : (inst.zoneId || 'VENUE').toUpperCase()
+                  const timeLabel = inst.timestamp ? new Date(inst.timestamp).toLocaleTimeString() : 'Just now'
+                  let cleanText = (inst.text || '')
+                    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+                    .replace(/<think>[\s\S]*/gi, '')
+                    .replace(/^Here'?s\s+a\s+thinking\s+process:?[\s\S]*?(?=\n\n|\n[A-Z0-9]|$)/i, '')
+                    .trim()
+                  if (!cleanText || cleanText.startsWith("Here's a thinking process")) {
+                    cleanText = `${zoneLabel} surge detected. Deploy marshals to clear bottleneck routes.`
+                  }
+
+                  return (
+                    <div
+                      key={inst.instructionId || `push_${index}`}
+                      className="cc-mini-row"
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'flex-start',
+                        gap: 12,
+                        padding: '10px 12px',
+                        background: isPanic ? 'rgba(239, 68, 68, 0.12)' : 'rgba(245, 158, 11, 0.12)',
+                        border: `1px solid ${isPanic ? 'rgba(239, 68, 68, 0.35)' : 'rgba(245, 158, 11, 0.35)'}`,
+                        borderRadius: 8,
+                      }}
+                    >
+                      <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', flex: 1 }}>
+                        <span style={{ fontSize: 18, marginTop: 1 }}>{isCitizen ? '📱' : isPanic ? '🚨' : '🤖'}</span>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 3, flex: 1 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                            <span
+                              className="pill"
+                              style={{
+                                fontSize: 9.5,
+                                fontWeight: 800,
+                                background: isPanic ? '#DC2626' : '#D97706',
+                                color: '#FFFFFF',
+                                padding: '1px 6px',
+                              }}
+                            >
+                              {isCitizen ? 'CITIZEN SOS' : 'AI PUSH GUIDANCE'}
+                            </span>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text)' }}>
+                              {zoneLabel}
+                            </span>
+                            <span style={{ fontSize: 10, color: 'var(--text-faint)' }}>
+                              {timeLabel}
+                            </span>
+                          </div>
+                          <span style={{ fontSize: 12.5, color: 'var(--text)', fontWeight: 500, lineHeight: 1.4 }}>
+                            {cleanText}
+                          </span>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setAssistantInstructions((prev) => prev.filter((i) => (i.instructionId || i) !== (inst.instructionId || inst)))}
+                        style={{
+                          background: 'transparent',
+                          border: 'none',
+                          color: 'var(--text-faint)',
+                          cursor: 'pointer',
+                          padding: '2px 6px',
+                          fontSize: 13,
+                          fontWeight: 700,
+                          borderRadius: 4,
+                          lineHeight: 1,
+                        }}
+                        title="Dismiss notification"
+                        onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--text)')}
+                        onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-faint)')}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  )
+                })}
+
+                {/* 2. Standard Active Incident Alerts */}
+                {activeAlerts.slice(0, 6).map((a) => (
+                  <div className="cc-mini-row" key={a.alert_id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                      <span style={{ fontWeight: 600, color: 'var(--text-main)', fontSize: 13 }}>
+                        {a.zone_id?.replace('_', ' ')?.toUpperCase()} — {a.alert_type?.replace(/_/g, ' ')}
+                      </span>
+                      {a.recommendation && (
+                        <span style={{ fontSize: 11, color: 'var(--text-faint)' }}>
+                          {a.recommendation}
+                        </span>
+                      )}
+                    </div>
+                    <span className={`pill ${a.severity === 'red' ? 'pill-red' : a.severity === 'orange' ? 'pill-orange' : 'pill-cyan'}`} style={{ fontWeight: 700 }}>
+                      {a.severity?.toUpperCase()}
+                    </span>
+                  </div>
+                ))}
+
+                {/* 3. Empty state when both are clear */}
+                {activeAlerts.length === 0 && assistantInstructions.length === 0 && (
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', padding: '24px 16px', background: 'rgba(255,255,255,0.02)', borderRadius: 8, border: '1px dashed var(--border)' }}>
+                    <span style={{ fontSize: 28, marginBottom: 8 }}>🛡️</span>
+                    <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-main)', marginBottom: 4 }}>No Active Incident Alerts</span>
+                    <span style={{ fontSize: 11, color: 'var(--text-faint)', textAlign: 'center', maxWidth: 360 }}>
+                      Continuous AI surveillance active across all venue sectors. Density, bottleneck formations, and flow velocity metrics are within normal safety limits.
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Right Column: Evacuation Status & Responder Status stacked */}
+            <div className="cc-panels" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div className="card" style={{ flex: 1 }}>
                 <h4 style={{ fontSize: 14 }}>Evacuation Status</h4>
                 <div className="cc-mini-list">
                   <div className="cc-mini-row"><span>Zone 2 Corridor</span><span className="pill pill-cyan">Monitoring</span></div>
@@ -722,7 +913,7 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="card">
+              <div className="card" style={{ flex: 1 }}>
                 <h4 style={{ fontSize: 14 }}>Responder Status</h4>
                 <div className="cc-mini-list">
                   <div className="cc-mini-row"><span>Medical team 2</span><span className="pill pill-green">Dispatched</span></div>

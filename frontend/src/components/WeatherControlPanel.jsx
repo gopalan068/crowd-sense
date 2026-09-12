@@ -98,7 +98,7 @@ export default function WeatherControlPanel({ weatherState, backendUrl, pipeline
       <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-2.5" style={{ borderColor: 'var(--color-border)' }}>
         <div className="flex items-center gap-2.5">
           <div className="flex items-center gap-2 px-2.5 py-1 rounded-lg border font-bold text-xs"
-               style={{ background: 'var(--color-bg)', borderColor: 'var(--color-border)', color: 'var(--color-text)' }}>
+            style={{ background: 'var(--color-bg)', borderColor: 'var(--color-border)', color: 'var(--color-text)' }}>
             <span className="text-base">{activeOption.icon}</span>
             <span className="uppercase tracking-wide">{weatherState?.label || activeOption.label}</span>
           </div>
@@ -134,11 +134,10 @@ export default function WeatherControlPanel({ weatherState, backendUrl, pipeline
             onClick={handlePipelineToggle}
             disabled={togglingPipeline}
             title={pipelineActive ? 'Pause continuous CV processing (Freezes to static snapshot)' : 'Resume continuous live CV processing and streaming'}
-            className={`px-3 py-1.5 rounded-lg border font-bold text-xs transition-all flex items-center gap-2 shadow-xs cursor-pointer ${
-              pipelineActive
+            className={`px-3 py-1.5 rounded-lg border font-bold text-xs transition-all flex items-center gap-2 shadow-xs cursor-pointer ${pipelineActive
                 ? 'bg-emerald-500/15 border-emerald-500/50 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/25'
                 : 'bg-amber-500/20 border-amber-500/50 text-amber-700 dark:text-amber-300 hover:bg-amber-500/30 animate-pulse'
-            } ${togglingPipeline ? 'opacity-50 cursor-not-allowed' : ''}`}
+              } ${togglingPipeline ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
             <span className={`w-2.5 h-2.5 rounded-full ${pipelineActive ? 'bg-emerald-500 shadow-xs shadow-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
             <span>{pipelineActive ? '🟢 CV PIPELINE: LIVE' : '⏸️ CV PIPELINE: PAUSED'}</span>
@@ -160,11 +159,10 @@ export default function WeatherControlPanel({ weatherState, backendUrl, pipeline
                 onClick={() => handleSelectPreset(opt.id)}
                 disabled={isLoading}
                 title={`Switch environmental state to ${opt.label}`}
-                className={`px-3 py-2 rounded-lg border text-xs font-bold transition-all flex flex-col items-start gap-0.5 ${
-                  isActive
+                className={`px-3 py-2 rounded-lg border text-xs font-bold transition-all flex flex-col items-start gap-0.5 ${isActive
                     ? opt.activeBg
                     : `${opt.bgColor} hover:brightness-110 opacity-80 hover:opacity-100`
-                } ${isLoading ? 'animate-pulse opacity-50 cursor-not-allowed' : ''}`}
+                  } ${isLoading ? 'animate-pulse opacity-50 cursor-not-allowed' : ''}`}
               >
                 <div className="flex items-center gap-1.5 w-full">
                   <span>{opt.icon}</span>
@@ -181,25 +179,7 @@ export default function WeatherControlPanel({ weatherState, backendUrl, pipeline
       </div>
 
       {/* Advanced CV Override — Gap #8: POST /api/pipeline/set wired up */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingTop: 8, borderTop: '1px solid var(--border)', flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 10, fontFamily: 'var(--font-m)', color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-          Advanced Override:
-        </span>
-        <button
-          onClick={() => handlePipelineForceSet(true)}
-          title="Force pipeline to ACTIVE state via POST /api/pipeline/set"
-          style={{ padding: '4px 10px', fontSize: 11, borderRadius: 6, border: '1px solid rgba(42,217,158,0.4)', background: 'rgba(42,217,158,0.08)', color: 'var(--green)', fontFamily: 'var(--font-m)', cursor: 'pointer' }}
-        >
-          ⏵ Force Start
-        </button>
-        <button
-          onClick={() => handlePipelineForceSet(false)}
-          title="Force pipeline to PAUSED state via POST /api/pipeline/set"
-          style={{ padding: '4px 10px', fontSize: 11, borderRadius: 6, border: '1px solid rgba(255,166,63,0.4)', background: 'rgba(255,166,63,0.08)', color: 'var(--orange)', fontFamily: 'var(--font-m)', cursor: 'pointer' }}
-        >
-          ⏸ Force Pause
-        </button>
-      </div>
+
     </div>
   )
 }

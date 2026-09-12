@@ -499,33 +499,6 @@ class SaturationDetector:
             cv2.putText(blended, "3.5 Dense", (bx + 145, ly1 + 46), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (251, 191, 36), 1, cv2.LINE_AA)
             cv2.putText(blended, "5.0+ Crush", (bx + 224, ly1 + 46), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (239, 68, 68), 1, cv2.LINE_AA)
 
-            # Status Badge (Top Left)
-            tx1, ty1, tw, th = 20, 20, 580, 52
-            sub_top = blended[ty1:ty1+th, tx1:tx1+tw]
-            dark_top = np.zeros_like(sub_top); dark_top[:] = (15, 23, 42)
-            cv2.addWeighted(dark_top, 0.85, sub_top, 0.15, 0, sub_top)
-            cv2.rectangle(blended, (tx1, ty1), (tx1+tw, ty1+th), (56, 189, 248), 1, cv2.LINE_AA)
-            cv2.putText(
-                blended,
-                f"AERIAL CROWD DENSITY HEATMAP | {estimated_people} EST. PEOPLE (STANDALONE_CV)",
-                (tx1 + 14, ty1 + 22),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.48,
-                (255, 255, 255),
-                1,
-                cv2.LINE_AA,
-            )
-            cv2.putText(
-                blended,
-                f"Density: {overall_density:.2f} p/m2 | Latency: {latency_ms:.1f} ms | Engine: Balanced Multi-Tier Field",
-                (tx1 + 14, ty1 + 42),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.42,
-                (56, 189, 248),
-                1,
-                cv2.LINE_AA,
-            )
-
         meta = {
             "estimated_people": estimated_people,
             "overall_density": overall_density,

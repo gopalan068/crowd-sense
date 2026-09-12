@@ -51,15 +51,22 @@ export default function AuditLogView({ logs = [], playbookSteps = [], assistantI
         </div>
       </div>
 
-      {/* Table Content */}
-      <div className="overflow-x-auto">
+      {/* Table Content - Scrollable container sized to 10 items */}
+      <div
+        className="overflow-x-auto overflow-y-auto"
+        style={{
+          maxHeight: '410px',
+          scrollbarWidth: 'thin',
+          scrollbarColor: 'var(--color-border) transparent',
+        }}
+      >
         {filter === 'ASSISTANT GUIDANCE' ? (
           /* Assistant Guidance Audit Table */
           <table className="w-full text-left border-collapse text-xs font-mono-num">
-            <thead>
+            <thead className="sticky top-0 z-10 shadow-xs" style={{ background: 'var(--color-surface)' }}>
               <tr
                 className="border-b uppercase font-bold tracking-wider"
-                style={{ borderColor: 'var(--color-border)', color: 'var(--color-muted)', background: 'var(--color-bg)' }}
+                style={{ borderColor: 'var(--color-border)', color: 'var(--color-muted)', background: 'var(--color-surface)' }}
               >
                 <th className="py-2.5 px-4">Instruction ID</th>
                 <th className="py-2.5 px-4">Zone</th>
@@ -120,10 +127,10 @@ export default function AuditLogView({ logs = [], playbookSteps = [], assistantI
         ) : filter === 'PLAYBOOK STEPS' ? (
           /* Playbook Step Audit Table */
           <table className="w-full text-left border-collapse text-xs font-mono-num">
-            <thead>
+            <thead className="sticky top-0 z-10 shadow-xs" style={{ background: 'var(--color-surface)' }}>
               <tr
                 className="border-b uppercase font-bold tracking-wider"
-                style={{ borderColor: 'var(--color-border)', color: 'var(--color-muted)', background: 'var(--color-bg)' }}
+                style={{ borderColor: 'var(--color-border)', color: 'var(--color-muted)', background: 'var(--color-surface)' }}
               >
                 <th className="py-2.5 px-4">Log ID</th>
                 <th className="py-2.5 px-4">Alert ID</th>
@@ -166,10 +173,10 @@ export default function AuditLogView({ logs = [], playbookSteps = [], assistantI
         ) : (
           /* Standard Alert Audit Table */
           <table className="w-full text-left border-collapse text-xs font-mono-num">
-            <thead>
+            <thead className="sticky top-0 z-10 shadow-xs" style={{ background: 'var(--color-surface)' }}>
               <tr
                 className="border-b uppercase font-bold tracking-wider"
-                style={{ borderColor: 'var(--color-border)', color: 'var(--color-muted)', background: 'var(--color-bg)' }}
+                style={{ borderColor: 'var(--color-border)', color: 'var(--color-muted)', background: 'var(--color-surface)' }}
               >
                 <th className="py-2.5 px-4">Alert ID</th>
                 <th className="py-2.5 px-4">Zone</th>
@@ -254,6 +261,21 @@ export default function AuditLogView({ logs = [], playbookSteps = [], assistantI
             </tbody>
           </table>
         )}
+      </div>
+
+      {/* Table Footer status */}
+      <div
+        className="px-5 py-2.5 border-t flex items-center justify-between text-xs font-mono-num"
+        style={{ borderColor: 'var(--color-border)', background: 'var(--color-surface-hover)', color: 'var(--color-muted)' }}
+      >
+        <span>
+          Showing {
+            filter === 'ASSISTANT GUIDANCE' ? assistantInstructions.length :
+            filter === 'PLAYBOOK STEPS' ? playbookSteps.length :
+            filteredLogs.length
+          } records · 10 items visible per scroll window
+        </span>
+        <span className="opacity-75">Scroll inside table to view full history</span>
       </div>
     </div>
   )
